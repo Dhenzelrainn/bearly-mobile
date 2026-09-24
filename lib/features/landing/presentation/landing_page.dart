@@ -33,6 +33,7 @@ class _LandingPageState extends State<LandingPage> {
   final _repository = const LandingRepository();
   final _heroController = PageController();
   final _searchController = TextEditingController();
+  final _scrollController = ScrollController();
 
   List<LandingProduct> _products = const [];
   List<LandingCategory> _categories = const [];
@@ -90,6 +91,7 @@ class _LandingPageState extends State<LandingPage> {
     _heroTimer?.cancel();
     _heroController.dispose();
     _searchController.dispose();
+    _scrollController.dispose();
     super.dispose();
   }
 
@@ -160,12 +162,110 @@ class _LandingPageState extends State<LandingPage> {
     }
   }
 
+
+  Future<void> _showNotifications() async {
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: BearlyColors.cream50,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 4, 20, 28),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Text(
+                    'Notifications',
+                    style: Theme.of(context).textTheme.headlineSmall,
+                  ),
+                  const Spacer(),
+                  IconButton(
+                    tooltip: 'Close',
+                    onPressed: () => Navigator.pop(sheetContext),
+                    icon: const Icon(Icons.close_rounded),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 20),
+              Center(
+                child: Column(
+                  children: [
+                    Container(
+                      width: 58,
+                      height: 58,
+                      decoration: const BoxDecoration(
+                        color: BearlyColors.cream200,
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        Icons.notifications_none_rounded,
+                        color: BearlyColors.brown700,
+                        size: 28,
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    Text(
+                      'No notifications yet',
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                    const SizedBox(height: 5),
+                    Text(
+                      'Updates about your Bearly activity will appear here.',
+                      textAlign: TextAlign.center,
+                      style: Theme.of(context).textTheme.bodyMedium,
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _handleBottomNavigation(int index) {
+    switch (index) {
+      case 0:
+        if (_scrollController.hasClients) {
+          _scrollController.animateTo(
+            0,
+            duration: const Duration(milliseconds: 350),
+            curve: Curves.easeOutCubic,
+          );
+        }
+        break;
+      case 1:
+        _showCategories();
+        break;
+      case 2:
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Cart will be available when the Buyer module is connected.',
+              ),
+            ),
+          );
+        break;
+      case 3:
+        Navigator.pushNamed(context, AppRoutes.login);
+        break;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       body: SafeArea(
         bottom: false,
         child: CustomScrollView(
+          controller: _scrollController,
           slivers: [
             SliverToBoxAdapter(child: _mobileHeader()),
             SliverToBoxAdapter(child: _searchBar()),
@@ -188,10 +288,11 @@ class _LandingPageState extends State<LandingPage> {
             SliverToBoxAdapter(child: _storySection()),
             SliverToBoxAdapter(child: _supportSection()),
             SliverToBoxAdapter(child: _signupSection()),
-            const SliverToBoxAdapter(child: _LandingFooter()),
+            const SliverToBoxAdapter(child: SizedBox(height: 24)),
           ],
         ),
       ),
+      bottomNavigationBar: _landingBottomNavigation(),
     );
   }
 
@@ -203,19 +304,52 @@ class _LandingPageState extends State<LandingPage> {
           const BearlyLogo(width: 126),
           const Spacer(),
           IconButton(
-            tooltip: 'Saved products',
-            onPressed: _showSaved,
-            icon: Badge(
-              isLabelVisible: _saved.isNotEmpty,
-              label: Text('${_saved.length}'),
-              backgroundColor: BearlyColors.gold,
-              child: const Icon(Icons.favorite_border_rounded),
+            tooltip: 'Notifications',
+            onPressed: _showNotifications,
+            icon: const Icon(
+              Icons.notifications_none_rounded,
+              size: 26,
             ),
           ),
-          IconButton(
-            tooltip: 'Sign in',
-            onPressed: () => Navigator.pushNamed(context, AppRoutes.login),
-            icon: const Icon(Icons.person_outline_rounded),
+        ],
+      ),
+    );
+  }
+
+  Widget _landingBottomNavigation() {
+    return Container(
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        border: Border(
+          top: BorderSide(color: BearlyColors.lineSoft),
+        ),
+      ),
+      child: NavigationBar(
+        selectedIndex: 0,
+        onDestinationSelected: _handleBottomNavigation,
+        backgroundColor: Colors.white,
+        indicatorColor: BearlyColors.cream300,
+        elevation: 0,
+        destinations: const [
+          NavigationDestination(
+            icon: Icon(Icons.home_outlined),
+            selectedIcon: Icon(Icons.home_rounded),
+            label: 'Home',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.storefront_outlined),
+            selectedIcon: Icon(Icons.storefront_rounded),
+            label: 'Shop',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.shopping_cart_outlined),
+            selectedIcon: Icon(Icons.shopping_cart_rounded),
+            label: 'Cart',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.person_outline_rounded),
+            selectedIcon: Icon(Icons.person_rounded),
+            label: 'Account',
           ),
         ],
       ),
@@ -1179,36 +1313,6 @@ class _Eyebrow extends StatelessWidget {
             color: BearlyColors.gold,
             letterSpacing: 1.35,
           ),
-    );
-  }
-}
-
-class _LandingFooter extends StatelessWidget {
-  const _LandingFooter();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      color: BearlyColors.brown950,
-      padding: const EdgeInsets.fromLTRB(22, 28, 22, 38),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const BearlyLogo(width: 138, lightSurface: false),
-          const SizedBox(height: 12),
-          Text(
-            'Shopping should be easy. Bearly stressful.',
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Colors.white70),
-          ),
-          const SizedBox(height: 22),
-          const Divider(color: Colors.white24),
-          const SizedBox(height: 14),
-          Text(
-            '© 2026 Bearly. All rights reserved.',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.white60),
-          ),
-        ],
-      ),
     );
   }
 }
