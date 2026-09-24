@@ -1,0 +1,30 @@
+name: bearly_mobile
+description: Bearly mobile app - Part 1 (Landing + Auth)
+publish_to: "none"
+version: 1.0.0+1
+
+environment:
+  sdk: ">=3.9.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+  file_picker: ^11.0.3
+  google_fonts: ^8.1.0
+  http: ^1.5.0
+  shared_preferences: ^2.5.5
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/data/
+    - assets/images/
+    - assets/images/landing/
+    - assets/images/auth/
+    - assets/images/landing/categories/
