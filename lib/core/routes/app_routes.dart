@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../features/auth/presentation/forgot_password_page.dart';
 import '../../features/auth/presentation/login_page.dart';
 import '../../features/auth/presentation/pending_page.dart';
 import '../../features/auth/presentation/register_page.dart';
@@ -11,23 +12,43 @@ class AppRoutes {
   static const landing = '/';
   static const login = '/login';
   static const register = '/register';
+  static const forgotPassword = '/forgot-password';
   static const pending = '/application/pending';
 
   static Route<dynamic> onGenerateRoute(RouteSettings settings) {
     switch (settings.name) {
       case landing:
-        return MaterialPageRoute(builder: (_) => const LandingPage(), settings: settings);
+        return MaterialPageRoute(
+          builder: (_) => const LandingPage(),
+          settings: settings,
+        );
       case login:
-        return MaterialPageRoute(builder: (_) => const LoginPage(), settings: settings);
+        return MaterialPageRoute(
+          builder: (_) => const LoginPage(),
+          settings: settings,
+        );
       case register:
-        return MaterialPageRoute(builder: (_) => const RegisterPage(), settings: settings);
+        return MaterialPageRoute(
+          builder: (_) => const RegisterPage(),
+          settings: settings,
+        );
+      case forgotPassword:
+        return MaterialPageRoute(
+          builder: (_) => const ForgotPasswordPage(),
+          settings: settings,
+        );
       case pending:
         return MaterialPageRoute(
-          builder: (_) => PendingPage(roleLabel: settings.arguments as String?),
+          builder: (_) => PendingPage(
+            roleLabel: settings.arguments as String?,
+          ),
           settings: settings,
         );
       default:
-        return MaterialPageRoute(builder: (_) => const LandingPage(), settings: settings);
+        return MaterialPageRoute(
+          builder: (_) => const LandingPage(),
+          settings: settings,
+        );
     }
   }
 }

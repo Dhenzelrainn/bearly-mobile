@@ -10,9 +10,12 @@ dependencies:
   flutter:
     sdk: flutter
   cupertino_icons: ^1.0.8
+  country_picker: ^2.0.28
   file_picker: ^11.0.3
   google_fonts: ^8.1.0
   http: ^1.5.0
+  image_picker: ^1.2.2
+  phone_numbers_parser: ^9.0.26
   shared_preferences: ^2.5.5
 
 dev_dependencies:

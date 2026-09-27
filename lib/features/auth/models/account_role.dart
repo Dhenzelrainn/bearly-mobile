@@ -1,35 +1,25 @@
 import 'package:flutter/material.dart';
 
-enum AccountRole { buyer, seller, rider, logistics }
+enum AccountRole { buyer, rider }
 
 extension AccountRoleX on AccountRole {
   String get label => switch (this) {
-    AccountRole.buyer => 'Buyer',
-    AccountRole.seller => 'Seller',
-    AccountRole.rider => 'Rider',
-    AccountRole.logistics => 'Logistics',
-  };
+        AccountRole.buyer => 'Buyer',
+        AccountRole.rider => 'Rider',
+      };
 
   String get subtitle => switch (this) {
-    AccountRole.buyer => 'Shop products from trusted sellers',
-    AccountRole.seller => 'Manage products, orders, and your store',
-    AccountRole.rider => 'Pick up parcels and complete deliveries',
-    AccountRole.logistics => 'Sort parcels and manage rider operations',
-  };
+        AccountRole.buyer => 'Shop products from trusted sellers',
+        AccountRole.rider => 'Pick up parcels and complete deliveries',
+      };
 
   IconData get icon => switch (this) {
-    AccountRole.buyer => Icons.shopping_bag_outlined,
-    AccountRole.seller => Icons.storefront_outlined,
-    AccountRole.rider => Icons.delivery_dining_outlined,
-    AccountRole.logistics => Icons.warehouse_outlined,
-  };
+        AccountRole.buyer => Icons.shopping_bag_outlined,
+        AccountRole.rider => Icons.delivery_dining_outlined,
+      };
 
-  String get detailStepTitle => switch (this) {
-    AccountRole.buyer => 'Buyer details',
-    AccountRole.seller => 'Business details',
-    AccountRole.rider => 'Vehicle details',
-    AccountRole.logistics => 'Logistics details',
-  };
-
-  bool get requiresRoleDetails => this != AccountRole.buyer;
+  String get reviewAuthority => switch (this) {
+        AccountRole.buyer => 'Bearly Administrator',
+        AccountRole.rider => 'Selected Logistics / Sorting Center',
+      };
 }

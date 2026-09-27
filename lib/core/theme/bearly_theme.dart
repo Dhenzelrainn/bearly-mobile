@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 
 class BearlyColors {
   const BearlyColors._();
+
   static const brown950 = Color(0xFF2C1A14);
   static const brown900 = Color(0xFF4A2C20);
   static const brown800 = Color(0xFF5A2C1E);
@@ -10,14 +11,21 @@ class BearlyColors {
   static const brown500 = Color(0xFF936148);
   static const gold = Color(0xFF95601F);
   static const orange = Color(0xFFED7717);
+
   static const cream50 = Color(0xFFFFFCF7);
   static const cream100 = Color(0xFFFFF8EF);
   static const cream200 = Color(0xFFF7EAD8);
   static const cream300 = Color(0xFFF3E7D5);
+
   static const line = Color(0xFFE5CFB7);
   static const lineSoft = Color(0xFFEADFD2);
+
   static const text = Color(0xFF292421);
-  static const muted = Color(0xFF6A625D);
+
+  // Slightly darker than before so helper/body copy stays readable
+  // against cream and white surfaces on small phone screens.
+  static const muted = Color(0xFF5E5651);
+
   static const success = Color(0xFF497B52);
   static const error = Color(0xFFB42318);
 }
@@ -54,25 +62,49 @@ class BearlyTheme {
           color: BearlyColors.brown950,
           fontWeight: FontWeight.w700,
           letterSpacing: -0.8,
-          height: 1.1,
+          height: 1.12,
         ),
         headlineMedium: poppins.headlineMedium?.copyWith(
           color: BearlyColors.brown950,
           fontWeight: FontWeight.w700,
           letterSpacing: -0.5,
+          height: 1.18,
         ),
         titleLarge: poppins.titleLarge?.copyWith(
           color: BearlyColors.brown950,
           fontWeight: FontWeight.w700,
+          fontSize: 20,
+          height: 1.28,
         ),
         titleMedium: poppins.titleMedium?.copyWith(
           color: BearlyColors.text,
           fontWeight: FontWeight.w600,
+          fontSize: 15.5,
+          height: 1.35,
         ),
-        bodyLarge: poppins.bodyLarge?.copyWith(color: BearlyColors.text, height: 1.55),
-        bodyMedium: poppins.bodyMedium?.copyWith(color: BearlyColors.text, height: 1.5),
-        bodySmall: poppins.bodySmall?.copyWith(color: BearlyColors.muted, height: 1.45),
-        labelLarge: poppins.labelLarge?.copyWith(fontWeight: FontWeight.w600),
+        bodyLarge: poppins.bodyLarge?.copyWith(
+          color: BearlyColors.text,
+          fontSize: 16,
+          height: 1.55,
+        ),
+        bodyMedium: poppins.bodyMedium?.copyWith(
+          color: BearlyColors.text,
+          fontSize: 14.5,
+          height: 1.52,
+        ),
+        bodySmall: poppins.bodySmall?.copyWith(
+          color: BearlyColors.muted,
+          fontSize: 13.2,
+          height: 1.5,
+        ),
+        labelLarge: poppins.labelLarge?.copyWith(
+          fontWeight: FontWeight.w600,
+          fontSize: 14.5,
+        ),
+        labelMedium: poppins.labelMedium?.copyWith(
+          fontWeight: FontWeight.w600,
+          fontSize: 13,
+        ),
       ),
       appBarTheme: AppBarTheme(
         backgroundColor: BearlyColors.cream50,
@@ -86,13 +118,36 @@ class BearlyTheme {
           fontSize: 18,
         ),
       ),
-      dividerTheme: const DividerThemeData(color: BearlyColors.lineSoft, thickness: 1, space: 1),
+      dividerTheme: const DividerThemeData(
+        color: BearlyColors.lineSoft,
+        thickness: 1,
+        space: 1,
+      ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
         fillColor: Colors.white,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
-        hintStyle: GoogleFonts.poppins(color: BearlyColors.muted, fontSize: 14),
-        labelStyle: GoogleFonts.poppins(color: BearlyColors.muted, fontSize: 14),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 16,
+          vertical: 16,
+        ),
+        hintStyle: GoogleFonts.poppins(
+          color: BearlyColors.muted,
+          fontSize: 14,
+        ),
+        labelStyle: GoogleFonts.poppins(
+          color: BearlyColors.muted,
+          fontSize: 14,
+          fontWeight: FontWeight.w500,
+        ),
+        helperStyle: GoogleFonts.poppins(
+          color: BearlyColors.muted,
+          fontSize: 13,
+          height: 1.4,
+        ),
+        errorStyle: GoogleFonts.poppins(
+          fontSize: 12.5,
+          height: 1.35,
+        ),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
           borderSide: const BorderSide(color: BearlyColors.line),
@@ -103,7 +158,10 @@ class BearlyTheme {
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: BearlyColors.brown700, width: 1.4),
+          borderSide: const BorderSide(
+            color: BearlyColors.brown700,
+            width: 1.4,
+          ),
         ),
       ),
       filledButtonTheme: FilledButtonThemeData(
@@ -111,8 +169,13 @@ class BearlyTheme {
           backgroundColor: BearlyColors.brown900,
           foregroundColor: Colors.white,
           minimumSize: const Size(0, 52),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-          textStyle: GoogleFonts.poppins(fontWeight: FontWeight.w600, fontSize: 15),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+          ),
+          textStyle: GoogleFonts.poppins(
+            fontWeight: FontWeight.w600,
+            fontSize: 15,
+          ),
         ),
       ),
       outlinedButtonTheme: OutlinedButtonThemeData(
@@ -120,15 +183,33 @@ class BearlyTheme {
           foregroundColor: BearlyColors.brown900,
           minimumSize: const Size(0, 50),
           side: const BorderSide(color: BearlyColors.line),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-          textStyle: GoogleFonts.poppins(fontWeight: FontWeight.w600, fontSize: 14),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+          ),
+          textStyle: GoogleFonts.poppins(
+            fontWeight: FontWeight.w600,
+            fontSize: 14.5,
+          ),
+        ),
+      ),
+      textButtonTheme: TextButtonThemeData(
+        style: TextButton.styleFrom(
+          textStyle: GoogleFonts.poppins(
+            fontWeight: FontWeight.w600,
+            fontSize: 14,
+          ),
         ),
       ),
       snackBarTheme: SnackBarThemeData(
         backgroundColor: BearlyColors.brown950,
-        contentTextStyle: GoogleFonts.poppins(color: Colors.white),
+        contentTextStyle: GoogleFonts.poppins(
+          color: Colors.white,
+          fontSize: 13.5,
+        ),
         behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+        ),
       ),
     );
   }
