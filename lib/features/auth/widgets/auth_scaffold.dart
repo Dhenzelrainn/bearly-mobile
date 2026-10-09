@@ -5,11 +5,7 @@ import '../../../core/theme/bearly_theme.dart';
 import '../../../core/widgets/bearly_logo.dart';
 
 class AuthScaffold extends StatelessWidget {
-  const AuthScaffold({
-    super.key,
-    required this.child,
-    this.trailing,
-  });
+  const AuthScaffold({super.key, required this.child, this.trailing});
 
   final Widget child;
   final Widget? trailing;
@@ -22,8 +18,8 @@ class AuthScaffold extends StatelessWidget {
         child: Column(
           children: [
             Container(
-              height: 72,
-              padding: const EdgeInsets.symmetric(horizontal: 20),
+              height: 64,
+              padding: const EdgeInsets.symmetric(horizontal: 16),
               decoration: const BoxDecoration(
                 color: BearlyColors.cream50,
                 border: Border(
@@ -33,10 +29,10 @@ class AuthScaffold extends StatelessWidget {
               child: Row(
                 children: [
                   BearlyLogo(
-                    height: 42,
+                    height: 36,
                     onTap: () => Navigator.pushNamedAndRemoveUntil(
                       context,
-                      AppRoutes.landing,
+                      AppRoutes.login,
                       (route) => false,
                     ),
                   ),

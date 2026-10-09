@@ -20,9 +20,12 @@ class PasswordRequirements extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final completed = [hasLength, hasUppercase, hasLowercase, hasNumber]
-        .where((item) => item)
-        .length;
+    final completed = [
+      hasLength,
+      hasUppercase,
+      hasLowercase,
+      hasNumber,
+    ].where((item) => item).length;
     final strength = switch (completed) {
       0 => 'Not set',
       1 => 'Weak',
@@ -33,7 +36,7 @@ class PasswordRequirements extends StatelessWidget {
 
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(13),
       decoration: BoxDecoration(
         color: BearlyColors.cream100,
         borderRadius: BorderRadius.circular(16),
@@ -52,13 +55,13 @@ class PasswordRequirements extends StatelessWidget {
               Text(
                 strength,
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: allMet ? BearlyColors.success : BearlyColors.brown700,
-                      fontWeight: FontWeight.w700,
-                    ),
+                  color: allMet ? BearlyColors.success : BearlyColors.brown700,
+                  fontWeight: FontWeight.w700,
+                ),
               ),
             ],
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 9),
           ClipRRect(
             borderRadius: BorderRadius.circular(99),
             child: LinearProgressIndicator(
@@ -68,7 +71,7 @@ class PasswordRequirements extends StatelessWidget {
               color: allMet ? BearlyColors.success : BearlyColors.gold,
             ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 9),
           _Rule(ok: hasLength, label: 'At least 8 characters'),
           _Rule(ok: hasUppercase, label: 'At least 1 uppercase letter'),
           _Rule(ok: hasLowercase, label: 'At least 1 lowercase letter'),
@@ -93,10 +96,10 @@ class PasswordRequirements extends StatelessWidget {
                         ? 'Passwords match.'
                         : 'Passwords do not match yet.',
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: confirmPassword == password
-                              ? BearlyColors.success
-                              : BearlyColors.error,
-                        ),
+                      color: confirmPassword == password
+                          ? BearlyColors.success
+                          : BearlyColors.error,
+                    ),
                   ),
                 ),
               ],
@@ -121,7 +124,9 @@ class _Rule extends StatelessWidget {
       child: Row(
         children: [
           Icon(
-            ok ? Icons.check_circle_rounded : Icons.radio_button_unchecked_rounded,
+            ok
+                ? Icons.check_circle_rounded
+                : Icons.radio_button_unchecked_rounded,
             size: 17,
             color: ok ? BearlyColors.success : BearlyColors.muted,
           ),

@@ -23,10 +23,10 @@ class DocumentUploadCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(13),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(17),
+        borderRadius: BorderRadius.circular(14),
         border: Border.all(color: BearlyColors.lineSoft),
       ),
       child: Column(
@@ -36,18 +36,18 @@ class DocumentUploadCard extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Container(
-                width: 42,
-                height: 42,
+                width: 36,
+                height: 36,
                 decoration: BoxDecoration(
                   color: BearlyColors.cream100,
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(10),
                 ),
                 child: const Icon(
                   Icons.description_outlined,
                   color: BearlyColors.brown900,
                 ),
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: 9),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -62,7 +62,8 @@ class DocumentUploadCard extends StatelessWidget {
                         ),
                         Text(
                           'Required',
-                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(
                                 color: BearlyColors.brown700,
                                 fontWeight: FontWeight.w700,
                               ),
@@ -81,7 +82,7 @@ class DocumentUploadCard extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 14),
+          const SizedBox(height: 11),
           if (file == null)
             SizedBox(
               width: double.infinity,
@@ -112,9 +113,9 @@ class DocumentUploadCard extends StatelessWidget {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: BearlyColors.text,
-                            fontWeight: FontWeight.w600,
-                          ),
+                        color: BearlyColors.text,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                   ),
                   IconButton(

@@ -19,7 +19,7 @@ class PendingPage extends StatelessWidget {
 
     return AuthScaffold(
       child: ListView(
-        padding: const EdgeInsets.fromLTRB(20, 34, 20, 34),
+        padding: const EdgeInsets.fromLTRB(16, 26, 16, 24),
         children: [
           Center(
             child: ConstrainedBox(
@@ -29,8 +29,8 @@ class PendingPage extends StatelessWidget {
                 children: [
                   Center(
                     child: Container(
-                      width: 82,
-                      height: 82,
+                      width: 72,
+                      height: 72,
                       decoration: const BoxDecoration(
                         color: BearlyColors.cream200,
                         shape: BoxShape.circle,
@@ -38,11 +38,11 @@ class PendingPage extends StatelessWidget {
                       child: const Icon(
                         Icons.schedule_send_outlined,
                         color: BearlyColors.brown900,
-                        size: 40,
+                        size: 34,
                       ),
                     ),
                   ),
-                  const SizedBox(height: 22),
+                  const SizedBox(height: 16),
                   Text(
                     'Application received',
                     textAlign: TextAlign.center,
@@ -54,13 +54,13 @@ class PendingPage extends StatelessWidget {
                         ? 'Your Rider account remains locked until your selected Logistics / Sorting Center reviews your credentials.'
                         : 'Your Buyer application remains pending until a Bearly administrator reviews your details and ID.',
                     textAlign: TextAlign.center,
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: BearlyColors.muted,
-                        ),
+                    style: Theme.of(
+                      context,
+                    ).textTheme.bodyMedium?.copyWith(color: BearlyColors.muted),
                   ),
-                  const SizedBox(height: 24),
+                  const SizedBox(height: 20),
                   Container(
-                    padding: const EdgeInsets.all(17),
+                    padding: const EdgeInsets.all(14),
                     decoration: BoxDecoration(
                       color: Colors.white,
                       borderRadius: BorderRadius.circular(17),
@@ -69,7 +69,10 @@ class PendingPage extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        _DetailRow(label: 'Account type', value: roleLabel ?? 'Bearly'),
+                        _DetailRow(
+                          label: 'Account type',
+                          value: roleLabel ?? 'Bearly',
+                        ),
                         _DetailRow(label: 'Status', value: 'Pending review'),
                         _DetailRow(label: 'Review authority', value: authority),
                       ],
@@ -77,7 +80,7 @@ class PendingPage extends StatelessWidget {
                   ),
                   const SizedBox(height: 18),
                   Container(
-                    padding: const EdgeInsets.all(18),
+                    padding: const EdgeInsets.all(15),
                     decoration: BoxDecoration(
                       color: BearlyColors.cream100,
                       borderRadius: BorderRadius.circular(17),
@@ -94,7 +97,8 @@ class PendingPage extends StatelessWidget {
                         const _TimelineItem(
                           number: '✓',
                           title: 'Application prepared',
-                          body: 'Your registration details and required documents are ready for review.',
+                          body:
+                              'Your registration details and required documents are ready for review.',
                           complete: true,
                         ),
                         _TimelineItem(
@@ -107,7 +111,8 @@ class PendingPage extends StatelessWidget {
                         const _TimelineItem(
                           number: '3',
                           title: 'Decision',
-                          body: 'You can sign in after your account is approved and activated.',
+                          body:
+                              'You can sign in after your account is approved and activated.',
                           last: true,
                         ),
                       ],
@@ -154,7 +159,7 @@ class PendingPage extends StatelessWidget {
                   TextButton(
                     onPressed: () => Navigator.pushNamedAndRemoveUntil(
                       context,
-                      AppRoutes.landing,
+                      AppRoutes.login,
                       (route) => false,
                     ),
                     child: const Text('Back to Bearly'),
@@ -190,9 +195,9 @@ class _DetailRow extends StatelessWidget {
             child: Text(
               value,
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: BearlyColors.text,
-                    fontWeight: FontWeight.w700,
-                  ),
+                color: BearlyColors.text,
+                fontWeight: FontWeight.w700,
+              ),
             ),
           ),
         ],
@@ -234,17 +239,13 @@ class _TimelineItem extends StatelessWidget {
               child: Text(
                 number,
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: complete ? Colors.white : BearlyColors.brown900,
-                      fontWeight: FontWeight.w700,
-                    ),
+                  color: complete ? Colors.white : BearlyColors.brown900,
+                  fontWeight: FontWeight.w700,
+                ),
               ),
             ),
             if (!last)
-              Container(
-                width: 1,
-                height: 54,
-                color: BearlyColors.line,
-              ),
+              Container(width: 1, height: 54, color: BearlyColors.line),
           ],
         ),
         const SizedBox(width: 12),

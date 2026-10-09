@@ -31,14 +31,12 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
   Widget build(BuildContext context) {
     return AuthScaffold(
       trailing: TextButton(
-        onPressed: () => Navigator.pushReplacementNamed(
-          context,
-          AppRoutes.login,
-        ),
+        onPressed: () =>
+            Navigator.pushReplacementNamed(context, AppRoutes.login),
         child: const Text('Sign in'),
       ),
       child: ListView(
-        padding: const EdgeInsets.fromLTRB(20, 42, 20, 32),
+        padding: const EdgeInsets.fromLTRB(16, 32, 16, 24),
         children: [
           Center(
             child: ConstrainedBox(
@@ -49,9 +47,9 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
                   const Icon(
                     Icons.mark_email_read_outlined,
                     color: BearlyColors.brown900,
-                    size: 42,
+                    size: 36,
                   ),
-                  const SizedBox(height: 18),
+                  const SizedBox(height: 14),
                   Text(
                     'Reset your password',
                     textAlign: TextAlign.center,
@@ -61,11 +59,11 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
                   Text(
                     'Enter your Bearly email. If an account exists, we’ll send password reset instructions.',
                     textAlign: TextAlign.center,
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: BearlyColors.muted,
-                        ),
+                    style: Theme.of(
+                      context,
+                    ).textTheme.bodyMedium?.copyWith(color: BearlyColors.muted),
                   ),
-                  const SizedBox(height: 28),
+                  const SizedBox(height: 22),
                   if (_sent)
                     Container(
                       padding: const EdgeInsets.all(15),
@@ -94,9 +92,11 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
                           ),
                           validator: (value) {
                             final text = value?.trim() ?? '';
-                            if (text.isEmpty) return 'Enter your email address.';
-                            return RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$')
-                                    .hasMatch(text)
+                            if (text.isEmpty)
+                              return 'Enter your email address.';
+                            return RegExp(
+                                  r'^[^@\s]+@[^@\s]+\.[^@\s]+$',
+                                ).hasMatch(text)
                                 ? null
                                 : 'Enter a valid email address.';
                           },

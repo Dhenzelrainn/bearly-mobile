@@ -21,12 +21,12 @@ class RoleCard extends StatelessWidget {
 
     return Material(
       color: selected ? BearlyColors.brown900 : Colors.white,
-      borderRadius: BorderRadius.circular(18),
+      borderRadius: BorderRadius.circular(14),
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(14),
         child: Container(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(18),
             border: Border.all(
@@ -39,21 +39,21 @@ class RoleCard extends StatelessWidget {
               Row(
                 children: [
                   Container(
-                    width: 42,
-                    height: 42,
+                    width: 36,
+                    height: 36,
                     decoration: BoxDecoration(
                       color: selected
                           ? Colors.white.withValues(alpha: .12)
                           : BearlyColors.cream100,
-                      borderRadius: BorderRadius.circular(12),
+                      borderRadius: BorderRadius.circular(10),
                     ),
                     child: Icon(role.icon, color: foreground, size: 23),
                   ),
                   const Spacer(),
                   AnimatedContainer(
                     duration: const Duration(milliseconds: 160),
-                    width: 22,
-                    height: 22,
+                    width: 20,
+                    height: 20,
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
                       color: selected ? BearlyColors.gold : Colors.transparent,
@@ -62,18 +62,22 @@ class RoleCard extends StatelessWidget {
                       ),
                     ),
                     child: selected
-                        ? const Icon(Icons.check_rounded, color: Colors.white, size: 15)
+                        ? const Icon(
+                            Icons.check_rounded,
+                            color: Colors.white,
+                            size: 15,
+                          )
                         : null,
                   ),
                 ],
               ),
-              const SizedBox(height: 18),
+              const SizedBox(height: 12),
               Text(
                 role.label,
                 style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      color: foreground,
-                      fontWeight: FontWeight.w700,
-                    ),
+                  color: foreground,
+                  fontWeight: FontWeight.w700,
+                ),
               ),
               const SizedBox(height: 4),
               Text(
@@ -81,10 +85,10 @@ class RoleCard extends StatelessWidget {
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: selected
-                          ? Colors.white.withValues(alpha: .78)
-                          : BearlyColors.muted,
-                    ),
+                  color: selected
+                      ? Colors.white.withValues(alpha: .78)
+                      : BearlyColors.muted,
+                ),
               ),
             ],
           ),

@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../../../core/routes/app_routes.dart';
 import '../../../core/theme/bearly_theme.dart';
+import '../models/account_role.dart';
+import '../widgets/role_card.dart';
 import '../widgets/auth_scaffold.dart';
 
 class LoginPage extends StatefulWidget {
@@ -18,6 +20,7 @@ class _LoginPageState extends State<LoginPage> {
 
   bool _showPassword = false;
   bool _remember = false;
+  AccountRole _role = AccountRole.buyer;
 
   @override
   void dispose() {
@@ -29,12 +32,10 @@ class _LoginPageState extends State<LoginPage> {
   void _submit() {
     if (!(_formKey.currentState?.validate() ?? false)) return;
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text(
-          'Login form is ready. Laravel mobile API connection is the next auth step.',
-        ),
-      ),
+    Navigator.pushNamedAndRemoveUntil(
+      context,
+      _role == AccountRole.buyer ? AppRoutes.buyer : AppRoutes.rider,
+      (route) => false,
     );
   }
 
@@ -51,17 +52,8 @@ class _LoginPageState extends State<LoginPage> {
   @override
   Widget build(BuildContext context) {
     return AuthScaffold(
-      trailing: TextButton.icon(
-        onPressed: () => Navigator.pushNamedAndRemoveUntil(
-          context,
-          AppRoutes.landing,
-          (route) => false,
-        ),
-        icon: const Icon(Icons.arrow_back_rounded, size: 18),
-        label: const Text('Back to shop'),
-      ),
       child: ListView(
-        padding: const EdgeInsets.fromLTRB(20, 34, 20, 34),
+        padding: const EdgeInsets.fromLTRB(16, 24, 16, 24),
         children: [
           Center(
             child: ConstrainedBox(
@@ -69,35 +61,47 @@ class _LoginPageState extends State<LoginPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Container(
-                    width: 68,
-                    height: 68,
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      color: BearlyColors.cream200,
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: const Icon(
-                      Icons.lock_open_rounded,
-                      color: BearlyColors.brown900,
-                      size: 30,
-                    ),
-                  ),
-                  const SizedBox(height: 24),
                   Text(
                     'Welcome back to Bearly',
-                    style: Theme.of(context).textTheme.displaySmall?.copyWith(
-                          fontSize: 36,
-                        ),
+                    style: Theme.of(
+                      context,
+                    ).textTheme.displaySmall?.copyWith(fontSize: 32),
                   ),
                   const SizedBox(height: 9),
                   Text(
                     'Sign in to continue shopping or delivering with Bearly.',
-                    style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                          color: BearlyColors.muted,
-                        ),
+                    style: Theme.of(
+                      context,
+                    ).textTheme.bodyLarge?.copyWith(color: BearlyColors.muted),
                   ),
-                  const SizedBox(height: 30),
+                  const SizedBox(height: 24),
+                  Text(
+                    'Continue as',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: RoleCard(
+                          role: AccountRole.buyer,
+                          selected: _role == AccountRole.buyer,
+                          onTap: () =>
+                              setState(() => _role = AccountRole.buyer),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: RoleCard(
+                          role: AccountRole.rider,
+                          selected: _role == AccountRole.rider,
+                          onTap: () =>
+                              setState(() => _role = AccountRole.rider),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 22),
                   Form(
                     key: _formKey,
                     child: Column(
@@ -115,9 +119,11 @@ class _LoginPageState extends State<LoginPage> {
                           ),
                           validator: (value) {
                             final text = value?.trim() ?? '';
-                            if (text.isEmpty) return 'Enter your email address.';
-                            if (!RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$')
-                                .hasMatch(text)) {
+                            if (text.isEmpty)
+                              return 'Enter your email address.';
+                            if (!RegExp(
+                              r'^[^@\s]+@[^@\s]+\.[^@\s]+$',
+                            ).hasMatch(text)) {
                               return 'Enter a valid email address.';
                             }
                             return null;
@@ -157,9 +163,8 @@ class _LoginPageState extends State<LoginPage> {
                             Checkbox(
                               value: _remember,
                               activeColor: BearlyColors.brown900,
-                              onChanged: (value) => setState(
-                                () => _remember = value ?? false,
-                              ),
+                              onChanged: (value) =>
+                                  setState(() => _remember = value ?? false),
                             ),
                             const Text('Remember me'),
                             const Spacer(),
@@ -179,7 +184,7 @@ class _LoginPageState extends State<LoginPage> {
                           icon: const Icon(Icons.arrow_forward_rounded),
                           label: const Text('Sign In'),
                         ),
-                        const SizedBox(height: 22),
+                        const SizedBox(height: 18),
                         const Row(
                           children: [
                             Expanded(child: Divider()),
@@ -190,7 +195,7 @@ class _LoginPageState extends State<LoginPage> {
                             Expanded(child: Divider()),
                           ],
                         ),
-                        const SizedBox(height: 22),
+                        const SizedBox(height: 18),
                         OutlinedButton.icon(
                           onPressed: _googleSignIn,
                           icon: Image.asset(
@@ -204,7 +209,7 @@ class _LoginPageState extends State<LoginPage> {
                           ),
                           label: const Text('Continue with Google'),
                         ),
-                        const SizedBox(height: 18),
+                        const SizedBox(height: 14),
                         Wrap(
                           alignment: WrapAlignment.center,
                           crossAxisAlignment: WrapCrossAlignment.center,
@@ -224,7 +229,7 @@ class _LoginPageState extends State<LoginPage> {
                   ),
                   const SizedBox(height: 26),
                   Container(
-                    padding: const EdgeInsets.all(16),
+                    padding: const EdgeInsets.all(13),
                     decoration: BoxDecoration(
                       color: BearlyColors.cream100,
                       borderRadius: BorderRadius.circular(16),
@@ -236,10 +241,10 @@ class _LoginPageState extends State<LoginPage> {
                           Icons.verified_user_outlined,
                           color: BearlyColors.brown900,
                         ),
-                        const SizedBox(width: 11),
+                        const SizedBox(width: 9),
                         Expanded(
                           child: Text(
-                            'One login for Buyer and Rider accounts. Access is based on your approved role.',
+                            'One login for Buyer and Rider accounts. Choose the approved role you want to open.',
                             style: Theme.of(context).textTheme.bodySmall,
                           ),
                         ),

@@ -17,7 +17,9 @@ import '../widgets/phone_number_field.dart';
 import '../widgets/role_card.dart';
 
 class RegisterPage extends StatefulWidget {
-  const RegisterPage({super.key});
+  const RegisterPage({super.key, this.initialRole = AccountRole.buyer});
+
+  final AccountRole initialRole;
 
   @override
   State<RegisterPage> createState() => _RegisterPageState();
@@ -32,7 +34,7 @@ class _RegisterPageState extends State<RegisterPage> {
   final _postalCodes = PostalCodeService();
   final _imagePicker = ImagePicker();
 
-  AccountRole _role = AccountRole.buyer;
+  late AccountRole _role;
   int _currentStep = 0;
 
   bool _termsAccepted = false;
@@ -81,16 +83,12 @@ class _RegisterPageState extends State<RegisterPage> {
   String? vehicleType;
   final plateNumber = TextEditingController();
 
-  static const _vehicleTypes = [
-    'Motorcycle',
-    'Tricycle',
-    'E-bike',
-    'Van',
-  ];
+  static const _vehicleTypes = ['Motorcycle', 'Tricycle', 'E-bike', 'Van'];
 
   @override
   void initState() {
     super.initState();
+    _role = widget.initialRole;
     _loadProvinces();
     password.addListener(_refreshPasswordGuidance);
     confirmPassword.addListener(_refreshPasswordGuidance);
@@ -138,12 +136,11 @@ class _RegisterPageState extends State<RegisterPage> {
   }
 
   String get _stepTitle => switch (_currentStep) {
-        0 => 'Personal Information',
-        1 => 'Address',
-        _ => _role == AccountRole.buyer
-            ? 'Documents & Review'
-            : 'Vehicle & Documents',
-      };
+    0 => 'Personal Information',
+    1 => 'Address',
+    _ =>
+      _role == AccountRole.buyer ? 'Documents & Review' : 'Vehicle & Documents',
+  };
 
   Future<void> _loadProvinces() async {
     setState(() {
@@ -314,7 +311,9 @@ class _RegisterPageState extends State<RegisterPage> {
 
       final extension = image.name.split('.').last.toLowerCase();
       if (!const ['jpg', 'jpeg', 'png'].contains(extension)) {
-        _showMessage('Choose a JPG or PNG image, or upload the document as PDF.');
+        _showMessage(
+          'Choose a JPG or PNG image, or upload the document as PDF.',
+        );
         return null;
       }
 
@@ -334,9 +333,9 @@ class _RegisterPageState extends State<RegisterPage> {
   }
 
   void _showMessage(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   void _sendEmailCode() {
@@ -372,7 +371,9 @@ class _RegisterPageState extends State<RegisterPage> {
     }
 
     if (_role == AccountRole.buyer && !_termsAccepted) {
-      _showMessage('Accept the Terms of Service and Privacy Policy to continue.');
+      _showMessage(
+        'Accept the Terms of Service and Privacy Policy to continue.',
+      );
       return false;
     }
 
@@ -433,11 +434,7 @@ class _RegisterPageState extends State<RegisterPage> {
     if (_currentStep < 2) {
       setState(() => _currentStep++);
     } else {
-      Navigator.pushNamed(
-        context,
-        AppRoutes.pending,
-        arguments: _role.label,
-      );
+      Navigator.pushNamed(context, AppRoutes.pending, arguments: _role.label);
     }
   }
 
@@ -453,10 +450,8 @@ class _RegisterPageState extends State<RegisterPage> {
   Widget build(BuildContext context) {
     return AuthScaffold(
       trailing: TextButton(
-        onPressed: () => Navigator.pushReplacementNamed(
-          context,
-          AppRoutes.login,
-        ),
+        onPressed: () =>
+            Navigator.pushReplacementNamed(context, AppRoutes.login),
         child: const Text('Sign in'),
       ),
       child: Column(
@@ -472,9 +467,10 @@ class _RegisterPageState extends State<RegisterPage> {
                     child: switch (_currentStep) {
                       0 => _buildPersonalStep(),
                       1 => _buildAddressStep(),
-                      _ => _role == AccountRole.buyer
-                          ? _buildBuyerReviewStep()
-                          : _buildRiderVehicleStep(),
+                      _ =>
+                        _role == AccountRole.buyer
+                            ? _buildBuyerReviewStep()
+                            : _buildRiderVehicleStep(),
                     },
                   ),
                 ),
@@ -500,9 +496,9 @@ class _RegisterPageState extends State<RegisterPage> {
             children: [
               Text(
                 'Step ${_currentStep + 1} of 3',
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      fontWeight: FontWeight.w700,
-                    ),
+                style: Theme.of(
+                  context,
+                ).textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w700),
               ),
               const SizedBox(width: 8),
               Expanded(
@@ -515,9 +511,9 @@ class _RegisterPageState extends State<RegisterPage> {
               Text(
                 _role.label,
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: BearlyColors.gold,
-                      fontWeight: FontWeight.w700,
-                    ),
+                  color: BearlyColors.gold,
+                  fontWeight: FontWeight.w700,
+                ),
               ),
             ],
           ),
@@ -577,7 +573,8 @@ class _RegisterPageState extends State<RegisterPage> {
         children: [
           const _StepHeading(
             title: "Choose how you'll use Bearly",
-            subtitle: 'The Bearly mobile app supports Buyer and Rider accounts.',
+            subtitle:
+                'The Bearly mobile app supports Buyer and Rider accounts.',
           ),
           const SizedBox(height: 18),
           Row(
@@ -627,7 +624,10 @@ class _RegisterPageState extends State<RegisterPage> {
             ),
           ],
           const SizedBox(height: 28),
-          Text('Personal Information', style: Theme.of(context).textTheme.titleLarge),
+          Text(
+            'Personal Information',
+            style: Theme.of(context).textTheme.titleLarge,
+          ),
           const SizedBox(height: 4),
           Text(
             'Tell us a little about yourself.',
@@ -727,14 +727,18 @@ class _RegisterPageState extends State<RegisterPage> {
                     ? 'Select birthday'
                     : '${birthday!.month.toString().padLeft(2, '0')}/${birthday!.day.toString().padLeft(2, '0')}/${birthday!.year}',
                 style: TextStyle(
-                  color: birthday == null ? BearlyColors.muted : BearlyColors.text,
+                  color: birthday == null
+                      ? BearlyColors.muted
+                      : BearlyColors.text,
                 ),
               ),
             ),
           ),
           const SizedBox(height: 12),
           InputDecorator(
-            decoration: const InputDecoration(labelText: 'Age (auto-generated)'),
+            decoration: const InputDecoration(
+              labelText: 'Age (auto-generated)',
+            ),
             child: Text(_age?.toString() ?? '--'),
           ),
           const SizedBox(height: 12),
@@ -912,7 +916,9 @@ class _RegisterPageState extends State<RegisterPage> {
             const SizedBox(height: 12),
             TextFormField(
               controller: cityManual,
-              decoration: const InputDecoration(labelText: 'City / Municipality'),
+              decoration: const InputDecoration(
+                labelText: 'City / Municipality',
+              ),
               validator: _requiredValidator,
             ),
             const SizedBox(height: 12),
@@ -1074,10 +1080,7 @@ class _RegisterPageState extends State<RegisterPage> {
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Icon(
-                  Icons.shield_outlined,
-                  color: BearlyColors.brown900,
-                ),
+                const Icon(Icons.shield_outlined, color: BearlyColors.brown900),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(
@@ -1132,7 +1135,8 @@ class _RegisterPageState extends State<RegisterPage> {
                 .map((item) => DropdownMenuItem(value: item, child: Text(item)))
                 .toList(),
             onChanged: (value) => setState(() => vehicleType = value),
-            validator: (value) => value == null ? 'Select a vehicle type.' : null,
+            validator: (value) =>
+                value == null ? 'Select a vehicle type.' : null,
           ),
           const SizedBox(height: 12),
           TextFormField(
@@ -1169,9 +1173,8 @@ class _RegisterPageState extends State<RegisterPage> {
             contentPadding: EdgeInsets.zero,
             controlAffinity: ListTileControlAffinity.leading,
             activeColor: BearlyColors.brown900,
-            onChanged: (value) => setState(
-              () => _riderCertification = value ?? false,
-            ),
+            onChanged: (value) =>
+                setState(() => _riderCertification = value ?? false),
             title: const Text(
               'I certify that these Rider and vehicle details are accurate.',
             ),
@@ -1246,9 +1249,14 @@ class _RegisterPageState extends State<RegisterPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Application summary', style: Theme.of(context).textTheme.titleLarge),
+          Text(
+            'Application summary',
+            style: Theme.of(context).textTheme.titleLarge,
+          ),
           const SizedBox(height: 14),
-          ...rows.where((row) => row.value.isNotEmpty).map(
+          ...rows
+              .where((row) => row.value.isNotEmpty)
+              .map(
                 (row) => Padding(
                   padding: const EdgeInsets.only(bottom: 9),
                   child: Row(
@@ -1264,7 +1272,8 @@ class _RegisterPageState extends State<RegisterPage> {
                       Expanded(
                         child: Text(
                           row.value,
-                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(
                                 color: BearlyColors.text,
                                 fontWeight: FontWeight.w600,
                               ),
@@ -1316,7 +1325,8 @@ class _RegisterPageState extends State<RegisterPage> {
 
   String? _passwordValidator(String? value) {
     final text = value ?? '';
-    final ok = text.length >= 8 &&
+    final ok =
+        text.length >= 8 &&
         RegExp(r'[A-Z]').hasMatch(text) &&
         RegExp(r'[a-z]').hasMatch(text) &&
         RegExp(r'\d').hasMatch(text);
@@ -1344,9 +1354,9 @@ class _StepHeading extends StatelessWidget {
         const SizedBox(height: 6),
         Text(
           subtitle,
-          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: BearlyColors.muted,
-              ),
+          style: Theme.of(
+            context,
+          ).textTheme.bodyMedium?.copyWith(color: BearlyColors.muted),
         ),
       ],
     );

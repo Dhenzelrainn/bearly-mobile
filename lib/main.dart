@@ -17,7 +17,9 @@ class BearlyApp extends StatelessWidget {
       title: 'Bearly',
       debugShowCheckedModeBanner: false,
       theme: BearlyTheme.light(),
-      initialRoute: AppRoutes.landing,
+      // Laravel redirects `/` to `/login`; the mobile shell follows the same
+      // entry point so visitors never land on the marketplace anonymously.
+      initialRoute: AppRoutes.login,
       onGenerateRoute: AppRoutes.onGenerateRoute,
     );
   }
