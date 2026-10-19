@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../core/theme/bearly_theme.dart';
 import '../../../core/widgets/bearly_logo.dart';
-import '../data/buyer_product.dart';
+import '../models/buyer_product.dart';
 
 class BuyerProductDetailPage extends StatefulWidget {
   const BuyerProductDetailPage({super.key, required this.product});

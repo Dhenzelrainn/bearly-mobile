@@ -1,97 +1,18 @@
 import 'package:flutter/material.dart';
 
-import '../../../core/routes/app_routes.dart';
+import '../../../core/routes/app_route_names.dart';
 import '../../../core/theme/bearly_theme.dart';
 import '../../../core/widgets/bearly_logo.dart';
-
-class RiderJob {
-  const RiderJob({
-    required this.id,
-    required this.order,
-    required this.store,
-    required this.pickup,
-    required this.dropoff,
-    required this.distance,
-    required this.payout,
-    required this.eta,
-    required this.size,
-    required this.priority,
-  });
-
-  final String id;
-  final String order;
-  final String store;
-  final String pickup;
-  final String dropoff;
-  final String distance;
-  final String payout;
-  final String eta;
-  final String size;
-  final bool priority;
-}
-
-const riderJobs = <RiderJob>[
-  RiderJob(
-    id: 'REQ-4108',
-    order: 'ORD-71042',
-    store: 'Northstar Watches',
-    pickup: 'Cubao, Quezon City',
-    dropoff: 'Greenhills, San Juan',
-    distance: '5.8 km',
-    payout: '₱148',
-    eta: '24 min',
-    size: 'Small',
-    priority: true,
-  ),
-  RiderJob(
-    id: 'REQ-4109',
-    order: 'ORD-71043',
-    store: 'Daily Finds MNL',
-    pickup: 'Mandaluyong City',
-    dropoff: 'BGC, Taguig',
-    distance: '7.1 km',
-    payout: '₱176',
-    eta: '31 min',
-    size: 'Medium',
-    priority: false,
-  ),
-  RiderJob(
-    id: 'REQ-4110',
-    order: 'ORD-71044',
-    store: 'Homecraft PH',
-    pickup: 'Pasig City',
-    dropoff: 'Marikina City',
-    distance: '6.4 km',
-    payout: '₱159',
-    eta: '28 min',
-    size: 'Medium',
-    priority: false,
-  ),
-  RiderJob(
-    id: 'REQ-4111',
-    order: 'ORD-71045',
-    store: 'Tech Alley',
-    pickup: 'Tomas Morato, Quezon City',
-    dropoff: 'Katipunan Ave., Quezon City',
-    distance: '4.2 km',
-    payout: '₱126',
-    eta: '19 min',
-    size: 'Small',
-    priority: true,
-  ),
-];
 
 class RiderPageScaffold extends StatelessWidget {
   const RiderPageScaffold({
     super.key,
     required this.title,
-    required this.module,
     required this.subtitle,
     required this.child,
   });
 
   final String title;
-  final String module;
   final String subtitle;
   final Widget child;
 
@@ -109,47 +30,47 @@ class RiderPageScaffold extends StatelessWidget {
             onSelected: (route) => Navigator.pushNamed(context, route),
             itemBuilder: (_) => const [
               PopupMenuItem(
-                value: AppRoutes.rider,
+                value: AppRouteNames.rider,
                 child: Text('Rider dashboard'),
               ),
               PopupMenuItem(
-                value: AppRoutes.riderRegister,
+                value: AppRouteNames.riderRegister,
                 child: Text('Rider registration'),
               ),
               PopupMenuItem(
-                value: AppRoutes.riderPending,
+                value: AppRouteNames.riderPending,
                 child: Text('Application pending'),
               ),
               PopupMenuItem(
-                value: AppRoutes.riderRequests,
+                value: AppRouteNames.riderRequests,
                 child: Text('Requests'),
               ),
               PopupMenuItem(
-                value: AppRoutes.riderPickup,
+                value: AppRouteNames.riderPickup,
                 child: Text('Pick up order'),
               ),
               PopupMenuItem(
-                value: AppRoutes.riderTransit,
+                value: AppRouteNames.riderTransit,
                 child: Text('Deliver order'),
               ),
               PopupMenuItem(
-                value: AppRoutes.riderComplete,
+                value: AppRouteNames.riderComplete,
                 child: Text('Complete delivery'),
               ),
               PopupMenuItem(
-                value: AppRoutes.riderEarnings,
+                value: AppRouteNames.riderEarnings,
                 child: Text('Earnings'),
               ),
               PopupMenuItem(
-                value: AppRoutes.riderHistory,
+                value: AppRouteNames.riderHistory,
                 child: Text('Delivery history'),
               ),
               PopupMenuItem(
-                value: AppRoutes.riderMessages,
+                value: AppRouteNames.riderMessages,
                 child: Text('Messages'),
               ),
               PopupMenuItem(
-                value: AppRoutes.riderAccount,
+                value: AppRouteNames.riderAccount,
                 child: Text('Account'),
               ),
             ],
@@ -157,7 +78,7 @@ class RiderPageScaffold extends StatelessWidget {
           IconButton(
             onPressed: () => Navigator.pushNamedAndRemoveUntil(
               context,
-              AppRoutes.login,
+              AppRouteNames.login,
               (_) => false,
             ),
             icon: const Icon(Icons.logout_rounded),
@@ -167,14 +88,6 @@ class RiderPageScaffold extends StatelessWidget {
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
         children: [
-          Text(
-            module,
-            style: Theme.of(context).textTheme.labelMedium?.copyWith(
-              color: BearlyColors.gold,
-              letterSpacing: 1.1,
-            ),
-          ),
-          const SizedBox(height: 4),
           Text(title, style: Theme.of(context).textTheme.headlineMedium),
           const SizedBox(height: 5),
           Text(

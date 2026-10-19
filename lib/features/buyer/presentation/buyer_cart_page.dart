@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../../../core/routes/app_routes.dart';
+import '../../../core/routes/app_route_names.dart';
 import '../../../core/theme/bearly_theme.dart';
 import '../../../core/widgets/bearly_logo.dart';
 
@@ -65,7 +65,7 @@ class _BuyerCartPageState extends State<BuyerCartPage> {
             OutlinedButton.icon(
               onPressed: () => Navigator.pushNamedAndRemoveUntil(
                 context,
-                AppRoutes.buyer,
+                AppRouteNames.buyer,
                 (_) => false,
               ),
               icon: const Icon(Icons.storefront_outlined),

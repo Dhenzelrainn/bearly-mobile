@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 
-import '../../../core/routes/app_routes.dart';
+import '../../../core/routes/app_route_names.dart';
 import '../../../core/widgets/bearly_logo.dart';
-import '../data/buyer_product.dart';
+import '../data/buyer_demo_data.dart';
+import '../models/buyer_product.dart';
 import 'buyer_account_page.dart';
 import 'buyer_orders_page.dart';
 import 'buyer_saved_page.dart';
@@ -24,7 +25,7 @@ class _BuyerHomePageState extends State<BuyerHomePage> {
   int _cartCount = 0;
 
   void _logout() =>
-      Navigator.pushNamedAndRemoveUntil(context, AppRoutes.login, (_) => false);
+      Navigator.pushNamedAndRemoveUntil(context, AppRouteNames.login, (_) => false);
 
   void _showMessage(String message) => ScaffoldMessenger.of(
     context,
@@ -53,7 +54,7 @@ class _BuyerHomePageState extends State<BuyerHomePage> {
         actions: [
           IconButton(
             tooltip: 'Cart',
-            onPressed: () => Navigator.pushNamed(context, AppRoutes.buyerCart),
+            onPressed: () => Navigator.pushNamed(context, AppRouteNames.buyerCart),
             icon: Badge(
               label: Text('$_cartCount'),
               isLabelVisible: _cartCount > 0,

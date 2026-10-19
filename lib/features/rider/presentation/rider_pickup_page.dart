@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
-import '../../../core/routes/app_routes.dart';
-import 'rider_shared.dart';
+import '../../../core/routes/app_route_names.dart';
+import '../widgets/rider_shared_widgets.dart';
 
 class RiderPickupPage extends StatefulWidget {
   const RiderPickupPage({super.key});
@@ -16,7 +16,6 @@ class _RiderPickupPageState extends State<RiderPickupPage> {
   @override
   Widget build(BuildContext context) => RiderPageScaffold(
     title: 'Pick Up Order',
-    module: 'MODULE 04',
     subtitle:
         'Verify the parcel and order information before leaving the seller.',
     child: Column(
@@ -95,6 +94,6 @@ class _RiderPickupPageState extends State<RiderPickupPage> {
       );
       return;
     }
-    Navigator.pushNamed(context, AppRoutes.riderTransit);
+    Navigator.pushNamed(context, AppRouteNames.riderTransit);
   }
 }

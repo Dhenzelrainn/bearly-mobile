@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 
-import '../../../core/routes/app_routes.dart';
+import '../../../core/routes/app_route_names.dart';
 import '../../../core/theme/bearly_theme.dart';
-import 'rider_shared.dart';
+import '../data/rider_demo_data.dart';
+import '../models/rider_job.dart';
+import '../widgets/rider_shared_widgets.dart';
 
 class RiderRequestsPage extends StatelessWidget {
   const RiderRequestsPage({super.key});
@@ -11,7 +13,6 @@ class RiderRequestsPage extends StatelessWidget {
   Widget build(BuildContext context) {
     return RiderPageScaffold(
       title: 'Delivery Requests',
-      module: 'MODULE 03',
       subtitle:
           'Review pickup and delivery details, then claim a nearby request.',
       child: Column(
@@ -92,7 +93,7 @@ class RiderRequestsPage extends StatelessWidget {
               FilledButton.tonal(
                 onPressed: () {
                   riderMessage(context, '${job.id} accepted.');
-                  Navigator.pushNamed(context, AppRoutes.riderPickup);
+                  Navigator.pushNamed(context, AppRouteNames.riderPickup);
                 },
                 child: const Text('Accept'),
               ),

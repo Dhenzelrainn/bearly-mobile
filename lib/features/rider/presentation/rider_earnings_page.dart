@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../core/theme/bearly_theme.dart';
-import 'rider_shared.dart';
+import '../widgets/rider_shared_widgets.dart';
 
 class RiderEarningsPage extends StatelessWidget {
   const RiderEarningsPage({super.key});
@@ -9,7 +9,6 @@ class RiderEarningsPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) => RiderPageScaffold(
     title: 'Earnings',
-    module: 'MODULE 07',
     subtitle: 'Review your courier payout summary and daily ledger.',
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,

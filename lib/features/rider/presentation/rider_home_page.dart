@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 
-import '../../../core/routes/app_routes.dart';
+import '../../../core/routes/app_route_names.dart';
 import '../../../core/theme/bearly_theme.dart';
 import '../../../core/widgets/bearly_logo.dart';
-import 'rider_shared.dart';
+import '../data/rider_demo_data.dart';
+import '../models/rider_job.dart';
 
 /// Rider dashboard. Other rider modules live in their own page files and are
 /// opened from the bottom navigation or the dashboard menu.
@@ -26,7 +27,7 @@ class _RiderHomePageState extends State<RiderHomePage> {
         title: const BearlyLogo(height: 34, width: 102),
         actions: [
           IconButton(
-            onPressed: () => _open(AppRoutes.riderMessages),
+            onPressed: () => _open(AppRouteNames.riderMessages),
             tooltip: 'Messages',
             icon: const Icon(Icons.chat_bubble_outline_rounded),
           ),
@@ -34,43 +35,43 @@ class _RiderHomePageState extends State<RiderHomePage> {
             onSelected: _open,
             itemBuilder: (_) => const [
               PopupMenuItem(
-                value: AppRoutes.riderRegister,
+                value: AppRouteNames.riderRegister,
                 child: Text('Rider registration'),
               ),
               PopupMenuItem(
-                value: AppRoutes.riderPending,
+                value: AppRouteNames.riderPending,
                 child: Text('Application pending'),
               ),
               PopupMenuItem(
-                value: AppRoutes.riderRequests,
+                value: AppRouteNames.riderRequests,
                 child: Text('Requests'),
               ),
               PopupMenuItem(
-                value: AppRoutes.riderPickup,
+                value: AppRouteNames.riderPickup,
                 child: Text('Pick up order'),
               ),
               PopupMenuItem(
-                value: AppRoutes.riderTransit,
+                value: AppRouteNames.riderTransit,
                 child: Text('Deliver order'),
               ),
               PopupMenuItem(
-                value: AppRoutes.riderComplete,
+                value: AppRouteNames.riderComplete,
                 child: Text('Complete delivery'),
               ),
               PopupMenuItem(
-                value: AppRoutes.riderEarnings,
+                value: AppRouteNames.riderEarnings,
                 child: Text('Earnings'),
               ),
               PopupMenuItem(
-                value: AppRoutes.riderHistory,
+                value: AppRouteNames.riderHistory,
                 child: Text('Delivery history'),
               ),
               PopupMenuItem(
-                value: AppRoutes.riderMessages,
+                value: AppRouteNames.riderMessages,
                 child: Text('Messages'),
               ),
               PopupMenuItem(
-                value: AppRoutes.riderAccount,
+                value: AppRouteNames.riderAccount,
                 child: Text('Account'),
               ),
             ],
@@ -78,7 +79,7 @@ class _RiderHomePageState extends State<RiderHomePage> {
           IconButton(
             onPressed: () => Navigator.pushNamedAndRemoveUntil(
               context,
-              AppRoutes.login,
+              AppRouteNames.login,
               (_) => false,
             ),
             tooltip: 'Log out',
@@ -92,11 +93,11 @@ class _RiderHomePageState extends State<RiderHomePage> {
         selectedIndex: 0,
         onDestinationSelected: (index) {
           const routes = [
-            AppRoutes.rider,
-            AppRoutes.riderRequests,
-            AppRoutes.riderTransit,
-            AppRoutes.riderEarnings,
-            AppRoutes.riderAccount,
+            AppRouteNames.rider,
+            AppRouteNames.riderRequests,
+            AppRouteNames.riderTransit,
+            AppRouteNames.riderEarnings,
+            AppRouteNames.riderAccount,
           ];
           if (index != 0) _open(routes[index]);
         },
@@ -220,7 +221,7 @@ class _RiderHomePageState extends State<RiderHomePage> {
           ),
           const Spacer(),
           TextButton(
-            onPressed: () => _open(AppRoutes.riderTransit),
+            onPressed: () => _open(AppRouteNames.riderTransit),
             child: const Text('Open'),
           ),
         ],
@@ -235,7 +236,7 @@ class _RiderHomePageState extends State<RiderHomePage> {
           ),
           const Spacer(),
           TextButton(
-            onPressed: () => _open(AppRoutes.riderRequests),
+            onPressed: () => _open(AppRouteNames.riderRequests),
             child: const Text('View all'),
           ),
         ],
@@ -254,7 +255,7 @@ class _RiderHomePageState extends State<RiderHomePage> {
             'Use messages to coordinate arrival and handoff details.',
           ),
           trailing: IconButton(
-            onPressed: () => _open(AppRoutes.riderMessages),
+            onPressed: () => _open(AppRouteNames.riderMessages),
             icon: const Icon(Icons.chevron_right_rounded),
           ),
         ),

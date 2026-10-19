@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
-import '../../../core/routes/app_routes.dart';
-import 'rider_shared.dart';
+import '../../../core/routes/app_route_names.dart';
+import '../widgets/rider_shared_widgets.dart';
 
 class RiderCompletePage extends StatefulWidget {
   const RiderCompletePage({super.key});
@@ -22,7 +22,6 @@ class _RiderCompletePageState extends State<RiderCompletePage> {
   @override
   Widget build(BuildContext context) => RiderPageScaffold(
     title: 'Complete Delivery',
-    module: 'MODULE 06',
     subtitle: 'Record the handoff details and close the active delivery.',
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -82,6 +81,6 @@ class _RiderCompletePageState extends State<RiderCompletePage> {
 
   void _complete() {
     riderMessage(context, 'Delivery completed and payout prepared.');
-    Navigator.pushNamedAndRemoveUntil(context, AppRoutes.rider, (_) => false);
+    Navigator.pushNamedAndRemoveUntil(context, AppRouteNames.rider, (_) => false);
   }
 }

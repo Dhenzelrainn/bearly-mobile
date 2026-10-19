@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../../../core/routes/app_routes.dart';
+import '../../../core/routes/app_route_names.dart';
 import '../../../core/theme/bearly_theme.dart';
 import '../widgets/auth_scaffold.dart';
 
@@ -148,7 +148,7 @@ class PendingPage extends StatelessWidget {
                   FilledButton.icon(
                     onPressed: () => Navigator.pushNamedAndRemoveUntil(
                       context,
-                      AppRoutes.login,
+                      AppRouteNames.login,
                       (route) => false,
                     ),
                     iconAlignment: IconAlignment.end,
@@ -159,7 +159,7 @@ class PendingPage extends StatelessWidget {
                   TextButton(
                     onPressed: () => Navigator.pushNamedAndRemoveUntil(
                       context,
-                      AppRoutes.login,
+                      AppRouteNames.login,
                       (route) => false,
                     ),
                     child: const Text('Back to Bearly'),

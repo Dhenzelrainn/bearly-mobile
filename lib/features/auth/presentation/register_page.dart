@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 
-import '../../../core/routes/app_routes.dart';
+import '../../../core/routes/app_route_names.dart';
 import '../../../core/theme/bearly_theme.dart';
 import '../data/postal_code_service.dart';
 import '../data/psgc_service.dart';
@@ -14,6 +14,7 @@ import '../widgets/document_upload_card.dart';
 import '../widgets/location_picker_sheet.dart';
 import '../widgets/password_requirements.dart';
 import '../widgets/phone_number_field.dart';
+import '../widgets/registration_presentation.dart';
 import '../widgets/role_card.dart';
 
 class RegisterPage extends StatefulWidget {
@@ -434,7 +435,7 @@ class _RegisterPageState extends State<RegisterPage> {
     if (_currentStep < 2) {
       setState(() => _currentStep++);
     } else {
-      Navigator.pushNamed(context, AppRoutes.pending, arguments: _role.label);
+      Navigator.pushNamed(context, AppRouteNames.pending, arguments: _role.label);
     }
   }
 
@@ -451,7 +452,7 @@ class _RegisterPageState extends State<RegisterPage> {
     return AuthScaffold(
       trailing: TextButton(
         onPressed: () =>
-            Navigator.pushReplacementNamed(context, AppRoutes.login),
+            Navigator.pushReplacementNamed(context, AppRouteNames.login),
         child: const Text('Sign in'),
       ),
       child: Column(
@@ -571,7 +572,7 @@ class _RegisterPageState extends State<RegisterPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const _StepHeading(
+          const RegistrationStepHeading(
             title: "Choose how you'll use Bearly",
             subtitle:
                 'The Bearly mobile app supports Buyer and Rider accounts.',
@@ -875,7 +876,7 @@ class _RegisterPageState extends State<RegisterPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const _StepHeading(
+          const RegistrationStepHeading(
             title: 'Your address',
             subtitle:
                 'Enter your Philippine address. Postal code is filled after selecting a municipality.',
@@ -1065,7 +1066,7 @@ class _RegisterPageState extends State<RegisterPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const _StepHeading(
+          const RegistrationStepHeading(
             title: 'Documents & review',
             subtitle: 'Upload your ID and confirm the application details.',
           ),
@@ -1106,7 +1107,7 @@ class _RegisterPageState extends State<RegisterPage> {
           const SizedBox(height: 22),
           _buildApplicationSummary(address: address),
           const SizedBox(height: 16),
-          const _InfoCallout(
+          const RegistrationInfoCallout(
             title: 'What happens next?',
             body:
                 'A Bearly administrator will review your Buyer application. Buyer access becomes available after approval.',
@@ -1122,7 +1123,7 @@ class _RegisterPageState extends State<RegisterPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const _StepHeading(
+          const RegistrationStepHeading(
             title: 'Vehicle & documents',
             subtitle:
                 'Your selected Logistics / Sorting Center will review these credentials.',
@@ -1193,7 +1194,7 @@ class _RegisterPageState extends State<RegisterPage> {
             ],
           ),
           const SizedBox(height: 16),
-          const _InfoCallout(
+          const RegistrationInfoCallout(
             title: 'Approval authority',
             body:
                 'Your selected Logistics / Sorting Center reviews the Rider application before dashboard access is activated.',
@@ -1337,65 +1338,6 @@ class _RegisterPageState extends State<RegisterPage> {
 
   String? _requiredValidator(String? value) =>
       (value ?? '').trim().isEmpty ? 'This field is required.' : null;
-}
-
-class _StepHeading extends StatelessWidget {
-  const _StepHeading({required this.title, required this.subtitle});
-
-  final String title;
-  final String subtitle;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(title, style: Theme.of(context).textTheme.headlineMedium),
-        const SizedBox(height: 6),
-        Text(
-          subtitle,
-          style: Theme.of(
-            context,
-          ).textTheme.bodyMedium?.copyWith(color: BearlyColors.muted),
-        ),
-      ],
-    );
-  }
-}
-
-class _InfoCallout extends StatelessWidget {
-  const _InfoCallout({required this.title, required this.body});
-
-  final String title;
-  final String body;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(15),
-      decoration: BoxDecoration(
-        color: BearlyColors.cream100,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: BearlyColors.lineSoft),
-      ),
-      child: RichText(
-        text: TextSpan(
-          style: Theme.of(context).textTheme.bodySmall,
-          children: [
-            TextSpan(
-              text: '$title ',
-              style: const TextStyle(
-                color: BearlyColors.brown900,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            TextSpan(text: body),
-          ],
-        ),
-      ),
-    );
-  }
 }
 
 class _SummaryData {

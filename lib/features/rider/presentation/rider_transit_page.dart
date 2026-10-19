@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 
-import '../../../core/routes/app_routes.dart';
+import '../../../core/routes/app_route_names.dart';
 import '../../../core/theme/bearly_theme.dart';
-import 'rider_shared.dart';
+import '../widgets/rider_shared_widgets.dart';
 
 class RiderTransitPage extends StatefulWidget {
   const RiderTransitPage({super.key});
@@ -17,7 +17,6 @@ class _RiderTransitPageState extends State<RiderTransitPage> {
   @override
   Widget build(BuildContext context) => RiderPageScaffold(
     title: 'Deliver Order',
-    module: 'MODULE 05',
     subtitle: 'Navigate to the customer and keep the delivery status updated.',
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -85,7 +84,7 @@ class _RiderTransitPageState extends State<RiderTransitPage> {
         ),
         OutlinedButton.icon(
           onPressed: () =>
-              Navigator.pushNamed(context, AppRoutes.riderComplete),
+              Navigator.pushNamed(context, AppRouteNames.riderComplete),
           icon: const Icon(Icons.check_circle_outline_rounded),
           label: const Text('Proceed to completion'),
         ),

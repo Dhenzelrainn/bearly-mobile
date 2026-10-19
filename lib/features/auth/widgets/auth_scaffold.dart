@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../../../core/routes/app_routes.dart';
+import '../../../core/routes/app_route_names.dart';
 import '../../../core/theme/bearly_theme.dart';
 import '../../../core/widgets/bearly_logo.dart';
 
@@ -32,7 +32,7 @@ class AuthScaffold extends StatelessWidget {
                     height: 36,
                     onTap: () => Navigator.pushNamedAndRemoveUntil(
                       context,
-                      AppRoutes.login,
+                      AppRouteNames.login,
                       (route) => false,
                     ),
                   ),

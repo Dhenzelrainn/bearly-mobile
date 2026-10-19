@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../core/theme/bearly_theme.dart';
-import '../data/buyer_product.dart';
+import '../models/buyer_product.dart';
 
 class BuyerSavedPage extends StatelessWidget {
   const BuyerSavedPage({

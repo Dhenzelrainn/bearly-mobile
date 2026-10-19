@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../../../core/routes/app_routes.dart';
+import '../../../core/routes/app_route_names.dart';
 import '../../../core/theme/bearly_theme.dart';
 import '../widgets/auth_scaffold.dart';
 
@@ -32,7 +32,7 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
     return AuthScaffold(
       trailing: TextButton(
         onPressed: () =>
-            Navigator.pushReplacementNamed(context, AppRoutes.login),
+            Navigator.pushReplacementNamed(context, AppRouteNames.login),
         child: const Text('Sign in'),
       ),
       child: ListView(
@@ -110,7 +110,7 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
                         TextButton.icon(
                           onPressed: () => Navigator.pushReplacementNamed(
                             context,
-                            AppRoutes.login,
+                            AppRouteNames.login,
                           ),
                           icon: const Icon(Icons.arrow_back_rounded, size: 18),
                           label: const Text('Back to Sign In'),

@@ -3,10 +3,11 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import '../../../core/routes/app_routes.dart';
+import '../../../core/routes/app_route_names.dart';
 import '../../../core/theme/bearly_theme.dart';
 import '../../../core/widgets/bearly_logo.dart';
 import '../data/landing_models.dart';
+import '../widgets/landing_components.dart';
 import '../widgets/sprite_atlas_image.dart';
 
 class LandingPage extends StatefulWidget {
@@ -254,7 +255,7 @@ class _LandingPageState extends State<LandingPage> {
           );
         break;
       case 3:
-        Navigator.pushNamed(context, AppRoutes.login);
+        Navigator.pushNamed(context, AppRouteNames.login);
         break;
     }
   }
@@ -270,7 +271,7 @@ class _LandingPageState extends State<LandingPage> {
             SliverToBoxAdapter(child: _mobileHeader()),
             SliverToBoxAdapter(child: _searchBar()),
             SliverToBoxAdapter(child: _hero()),
-            const SliverToBoxAdapter(child: _BrandStrip()),
+            const SliverToBoxAdapter(child: LandingBrandStrip()),
             SliverToBoxAdapter(child: _categoriesSection()),
             SliverToBoxAdapter(child: _campaignSection()),
             SliverToBoxAdapter(child: _featuredHeading()),
@@ -624,7 +625,7 @@ class _LandingPageState extends State<LandingPage> {
       padding: const EdgeInsets.fromLTRB(18, 8, 18, 34),
       child: Column(
         children: [
-          _CampaignCard(
+          LandingCampaignCard(
             image: 'assets/images/landing/tech.webp',
             eyebrow: 'TECH ESSENTIALS',
             title: 'For your everyday',
@@ -632,7 +633,7 @@ class _LandingPageState extends State<LandingPage> {
             onTap: () => _selectGroup('Tech'),
           ),
           const SizedBox(height: 14),
-          _CampaignCard(
+          LandingCampaignCard(
             image: 'assets/images/landing/fashion.webp',
             eyebrow: 'FRESH LOOKS',
             title: 'A fresh little upgrade',
@@ -715,7 +716,7 @@ class _LandingPageState extends State<LandingPage> {
               delegate: SliverChildBuilderDelegate(
                 (context, index) {
                   final product = products[index];
-                  return _ProductCard(
+                  return LandingProductCard(
                     product: product,
                     saved: _saved.contains(product.id),
                     onSave: () => _toggleSaved(product),
@@ -739,7 +740,7 @@ class _LandingPageState extends State<LandingPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const _Eyebrow('ABOUT BEARLY'),
+          const LandingEyebrow('ABOUT BEARLY'),
           const SizedBox(height: 8),
           Text('Shopping should feel more human.', style: Theme.of(context).textTheme.headlineMedium),
           const SizedBox(height: 12),
@@ -763,7 +764,7 @@ class _LandingPageState extends State<LandingPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const _Eyebrow('CONTACT BEARLY'),
+          const LandingEyebrow('CONTACT BEARLY'),
           const SizedBox(height: 8),
           Text('We’re here to help.', style: Theme.of(context).textTheme.headlineMedium),
           const SizedBox(height: 16),
@@ -815,7 +816,7 @@ class _LandingPageState extends State<LandingPage> {
               backgroundColor: BearlyColors.cream50,
               foregroundColor: BearlyColors.brown950,
             ),
-            onPressed: () => Navigator.pushNamed(context, AppRoutes.register),
+            onPressed: () => Navigator.pushNamed(context, AppRouteNames.register),
             iconAlignment: IconAlignment.end,
             icon: const Icon(Icons.arrow_forward_rounded),
             label: const Text('Create an account'),
@@ -974,7 +975,7 @@ class _LandingPageState extends State<LandingPage> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const _Eyebrow('BEARLY MARKETPLACE'),
+                      const LandingEyebrow('BEARLY MARKETPLACE'),
                       const SizedBox(height: 6),
 
                       Text(
@@ -1133,186 +1134,4 @@ class _HeroData {
   final String description;
   final String button;
   final String group;
-}
-
-class _BrandStrip extends StatelessWidget {
-  const _BrandStrip();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 14),
-      color: BearlyColors.brown950,
-      child: Text(
-        'Find more. Live better.',
-        textAlign: TextAlign.center,
-        style: Theme.of(context).textTheme.titleMedium?.copyWith(color: Colors.white, letterSpacing: .4),
-      ),
-    );
-  }
-}
-
-class _CampaignCard extends StatelessWidget {
-  const _CampaignCard({
-    required this.image,
-    required this.eyebrow,
-    required this.title,
-    required this.subtitle,
-    required this.onTap,
-  });
-
-  final String image;
-  final String eyebrow;
-  final String title;
-  final String subtitle;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(22),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(22),
-        child: SizedBox(
-          height: 250,
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              Image.asset(
-                image,
-                fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => const ColoredBox(color: BearlyColors.cream300),
-              ),
-              const DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [Colors.transparent, Color(0xB32C1A14)],
-                  ),
-                ),
-              ),
-              Positioned(
-                left: 20,
-                right: 20,
-                bottom: 18,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(eyebrow, style: Theme.of(context).textTheme.labelLarge?.copyWith(color: Colors.white70, letterSpacing: 1.2)),
-                    const SizedBox(height: 4),
-                    Text(title, style: Theme.of(context).textTheme.headlineMedium?.copyWith(color: Colors.white)),
-                    const SizedBox(height: 4),
-                    Text(subtitle, style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: Colors.white70)),
-                    const SizedBox(height: 10),
-                    Text('Shop collection ↗', style: Theme.of(context).textTheme.labelLarge?.copyWith(color: Colors.white)),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _ProductCard extends StatelessWidget {
-  const _ProductCard({
-    required this.product,
-    required this.saved,
-    required this.onSave,
-    required this.onOpen,
-  });
-
-  final LandingProduct product;
-  final bool saved;
-  final VoidCallback onSave;
-  final VoidCallback onOpen;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(18),
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: onOpen,
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            border: Border.all(color: BearlyColors.lineSoft),
-            borderRadius: BorderRadius.circular(18),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    SpriteAtlasImage(
-                      assetPath: product.atlas == 'mixed'
-                          ? 'assets/images/landing/mixed-products.webp'
-                          : 'assets/images/catalog-placeholders.png',
-                      cell: product.cell,
-                      rows: product.atlas == 'mixed' ? 3 : 4,
-                      borderRadius: const BorderRadius.vertical(top: Radius.circular(17)),
-                    ),
-                    Positioned(
-                      top: 8,
-                      right: 8,
-                      child: IconButton.filledTonal(
-                        visualDensity: VisualDensity.compact,
-                        tooltip: saved ? 'Remove from saved' : 'Save product',
-                        onPressed: onSave,
-                        icon: Icon(saved ? Icons.favorite_rounded : Icons.favorite_border_rounded, size: 19),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      product.name,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(fontSize: 14),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      product.shop,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _Eyebrow extends StatelessWidget {
-  const _Eyebrow(this.text);
-  final String text;
-
-  @override
-  Widget build(BuildContext context) {
-    return Text(
-      text,
-      style: Theme.of(context).textTheme.labelLarge?.copyWith(
-            color: BearlyColors.gold,
-            letterSpacing: 1.35,
-          ),
-    );
-  }
 }

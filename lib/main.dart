@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'core/routes/app_route_names.dart';
 import 'core/routes/app_routes.dart';
 import 'core/theme/bearly_theme.dart';
 
@@ -19,7 +20,7 @@ class BearlyApp extends StatelessWidget {
       theme: BearlyTheme.light(),
       // Laravel redirects `/` to `/login`; the mobile shell follows the same
       // entry point so visitors never land on the marketplace anonymously.
-      initialRoute: AppRoutes.login,
+      initialRoute: AppRouteNames.login,
       onGenerateRoute: AppRoutes.onGenerateRoute,
     );
   }

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import 'rider_shared.dart';
+import '../widgets/rider_shared_widgets.dart';
 
 class RiderAccountPage extends StatelessWidget {
   const RiderAccountPage({super.key});
@@ -8,7 +8,6 @@ class RiderAccountPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) => RiderPageScaffold(
     title: 'Rider Account',
-    module: 'MODULE 10',
     subtitle: 'Manage your profile, vehicle, documents, and base areas.',
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import 'rider_shared.dart';
+import '../widgets/rider_shared_widgets.dart';
 
 class RiderHistoryPage extends StatelessWidget {
   const RiderHistoryPage({super.key});
@@ -8,7 +8,6 @@ class RiderHistoryPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) => RiderPageScaffold(
     title: 'Delivery History',
-    module: 'MODULE 08',
     subtitle: 'Search completed, cancelled, and returned deliveries.',
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,

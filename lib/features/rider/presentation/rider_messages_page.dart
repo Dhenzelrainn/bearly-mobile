@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import 'rider_shared.dart';
+import '../widgets/rider_shared_widgets.dart';
 
 class RiderMessagesPage extends StatefulWidget {
   const RiderMessagesPage({super.key});
@@ -21,7 +21,6 @@ class _RiderMessagesPageState extends State<RiderMessagesPage> {
   @override
   Widget build(BuildContext context) => RiderPageScaffold(
     title: 'Chat / Messaging',
-    module: 'MODULE 09',
     subtitle: 'Coordinate with buyers, sellers, and Bearly support.',
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,

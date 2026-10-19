@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../../../core/routes/app_routes.dart';
+import '../../../core/routes/app_route_names.dart';
 import '../../../core/theme/bearly_theme.dart';
 import '../models/account_role.dart';
 import '../widgets/role_card.dart';
@@ -34,7 +34,7 @@ class _LoginPageState extends State<LoginPage> {
 
     Navigator.pushNamedAndRemoveUntil(
       context,
-      _role == AccountRole.buyer ? AppRoutes.buyer : AppRoutes.rider,
+      _role == AccountRole.buyer ? AppRouteNames.buyer : AppRouteNames.rider,
       (route) => false,
     );
   }
@@ -171,7 +171,7 @@ class _LoginPageState extends State<LoginPage> {
                             TextButton(
                               onPressed: () => Navigator.pushNamed(
                                 context,
-                                AppRoutes.forgotPassword,
+                                AppRouteNames.forgotPassword,
                               ),
                               child: const Text('Forgot password?'),
                             ),
@@ -218,7 +218,7 @@ class _LoginPageState extends State<LoginPage> {
                             TextButton(
                               onPressed: () => Navigator.pushNamed(
                                 context,
-                                AppRoutes.register,
+                                AppRouteNames.register,
                               ),
                               child: const Text('Create an account'),
                             ),
