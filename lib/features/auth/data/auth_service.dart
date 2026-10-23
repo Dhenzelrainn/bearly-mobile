@@ -94,6 +94,9 @@ class AuthException implements Exception {
   String toString() => message;
 }
 
+/// HTTP methods available to authenticated feature repositories.
+enum AuthenticatedRequestMethod { get, post, put, patch, delete }
+
 /// Laravel mobile authentication and secure local session lifecycle.
 class AuthService {
   AuthService({ApiClient? apiClient, SessionTokenStore? tokenStore})
@@ -195,6 +198,24 @@ class AuthService {
   Future<Object?> getWithSession(
     String path, {
     Map<String, Object?>? queryParameters,
+  }) => requestWithSession<Object?>(
+    method: AuthenticatedRequestMethod.get,
+    path: path,
+    queryParameters: queryParameters,
+    parse: (response) => response,
+  );
+
+  /// Sends an authenticated request while keeping the Sanctum credential
+  /// inside this service, then parses the decoded response into [T].
+  ///
+  /// Only explicit 401/403 responses invalidate the session. Transport,
+  /// timeout, server, malformed JSON, and response-contract failures keep it.
+  Future<T> requestWithSession<T>({
+    required AuthenticatedRequestMethod method,
+    required String path,
+    Map<String, Object?>? queryParameters,
+    Object? body,
+    required T Function(Object? response) parse,
   }) async {
     final token = _ephemeralToken ?? await _tokenStore.read();
     if (token == null || token.trim().isEmpty) {
@@ -202,11 +223,39 @@ class AuthService {
     }
 
     try {
-      return await _apiClient.get(
-        path,
-        queryParameters: queryParameters,
-        headers: _authorization(token),
-      );
+      final headers = _authorization(token);
+      final Object? response = switch (method) {
+        AuthenticatedRequestMethod.get => await _apiClient.get(
+          path,
+          queryParameters: queryParameters,
+          headers: headers,
+        ),
+        AuthenticatedRequestMethod.post => await _apiClient.post(
+          path,
+          queryParameters: queryParameters,
+          headers: headers,
+          body: body,
+        ),
+        AuthenticatedRequestMethod.put => await _apiClient.put(
+          path,
+          queryParameters: queryParameters,
+          headers: headers,
+          body: body,
+        ),
+        AuthenticatedRequestMethod.patch => await _apiClient.patch(
+          path,
+          queryParameters: queryParameters,
+          headers: headers,
+          body: body,
+        ),
+        AuthenticatedRequestMethod.delete => await _apiClient.delete(
+          path,
+          queryParameters: queryParameters,
+          headers: headers,
+          body: body,
+        ),
+      };
+      return parse(response);
     } on ApiHttpException catch (error) {
       if (error.statusCode == 401 || error.statusCode == 403) {
         await _clearLocalSession();
