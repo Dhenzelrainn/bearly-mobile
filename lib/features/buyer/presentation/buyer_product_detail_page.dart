@@ -1,24 +1,114 @@
 import 'package:flutter/material.dart';
 
+import '../../../core/network/api_client.dart';
+import '../../../core/routes/app_route_names.dart';
 import '../../../core/theme/bearly_theme.dart';
 import '../../../core/widgets/bearly_logo.dart';
-import '../models/buyer_product.dart';
+import '../../auth/data/auth_service.dart';
+import '../data/buyer_catalog_repository.dart';
+import '../models/buyer_catalog_models.dart';
 
 class BuyerProductDetailPage extends StatefulWidget {
-  const BuyerProductDetailPage({super.key, required this.product});
+  const BuyerProductDetailPage({
+    super.key,
+    required this.productId,
+    required this.repository,
+  });
 
-  final BuyerProduct product;
+  final int productId;
+  final BuyerCatalogRepository repository;
 
   @override
   State<BuyerProductDetailPage> createState() => _BuyerProductDetailPageState();
 }
 
 class _BuyerProductDetailPageState extends State<BuyerProductDetailPage> {
-  int _quantity = 1;
-
-  BuyerProduct get _product => widget.product;
+  BuyerCatalogProduct? _product;
+  Object? _error;
+  int? _selectedVariantId;
+  int _selectedImageIndex = 0;
+  int _requestSequence = 0;
+  bool _loading = true;
 
   bool get _compact => MediaQuery.sizeOf(context).width < 600;
+
+  BuyerCatalogVariant? get _selectedVariant {
+    final product = _product;
+    if (product == null || _selectedVariantId == null) return null;
+    for (final variant in product.variants) {
+      if (variant.id == _selectedVariantId) return variant;
+    }
+    return null;
+  }
+
+  List<String> get _imageUrls {
+    final product = _product;
+    if (product == null) return const [];
+    final gallery = product.images.map((image) => image.url).toList();
+    if (gallery.isNotEmpty) return gallery;
+    final primary = product.imageUrl;
+    return primary == null ? const [] : [primary];
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _loadProduct();
+  }
+
+  Future<void> _loadProduct() async {
+    final sequence = ++_requestSequence;
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final product = await widget.repository.getProduct(widget.productId);
+      if (!mounted || sequence != _requestSequence) return;
+      final selected = _initialVariant(product.variants);
+      final primaryImageIndex = product.images.indexWhere(
+        (image) => image.url == product.imageUrl,
+      );
+      setState(() {
+        _product = product;
+        _selectedVariantId = selected?.id;
+        _selectedImageIndex = primaryImageIndex < 0 ? 0 : primaryImageIndex;
+        _loading = false;
+      });
+    } catch (error) {
+      if (!mounted || sequence != _requestSequence) return;
+      setState(() {
+        _error = error;
+        _loading = false;
+      });
+    }
+  }
+
+  BuyerCatalogVariant? _initialVariant(List<BuyerCatalogVariant> variants) {
+    for (final variant in variants) {
+      if (variant.inStock) return variant;
+    }
+    return variants.isEmpty ? null : variants.first;
+  }
+
+  bool _needsSignIn(Object? error) =>
+      error is AuthException ||
+      (error is ApiHttpException &&
+          (error.statusCode == 401 || error.statusCode == 403));
+
+  bool _isUnavailable(Object? error) =>
+      error is ApiHttpException && error.statusCode == 404;
+
+  void _signInAgain() => Navigator.pushNamedAndRemoveUntil(
+    context,
+    AppRouteNames.login,
+    (_) => false,
+  );
+
+  void _showUnavailableAction(String action) =>
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('$action will be available in a later phase.')),
+      );
 
   @override
   Widget build(BuildContext context) {
@@ -40,52 +130,109 @@ class _BuyerProductDetailPageState extends State<BuyerProductDetailPage> {
           ),
         ],
       ),
-      body: LayoutBuilder(
-        builder: (context, constraints) {
-          final wide = constraints.maxWidth >= 760;
-          final content = [
-            _gallery(),
-            _details(),
-            _sellerCard(),
-            _description(),
-            _reviews(),
-          ];
+      body: _loading && _product == null
+          ? const Center(child: CircularProgressIndicator())
+          : _error != null && _product == null
+          ? _errorState()
+          : _product == null
+          ? _errorState()
+          : _productContent(_product!),
+    );
+  }
 
-          if (wide) {
-            return ListView(
-              padding: const EdgeInsets.fromLTRB(24, 18, 24, 34),
-              children: [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(child: content[0]),
-                    const SizedBox(width: 24),
-                    Expanded(child: content[1]),
-                  ],
-                ),
-                const SizedBox(height: 18),
-                content[2],
-                content[3],
-                content[4],
-              ],
-            );
-          }
+  Widget _errorState() {
+    final error = _error;
+    final unavailable = _isUnavailable(error);
+    final requiresSignIn = _needsSignIn(error);
+    final message = unavailable
+        ? 'This product is no longer available.'
+        : requiresSignIn
+        ? 'Your session needs attention. Sign in again to view products.'
+        : 'We could not load this product. Check your connection and try again.';
+    final action = unavailable
+        ? 'Back to marketplace'
+        : requiresSignIn
+        ? 'Sign in again'
+        : 'Retry';
 
-          return ListView(
-            padding: EdgeInsets.fromLTRB(
-              _compact ? 10 : 16,
-              _compact ? 8 : 12,
-              _compact ? 10 : 16,
-              _compact ? 20 : 28,
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(28),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              unavailable
+                  ? Icons.inventory_2_outlined
+                  : Icons.cloud_off_outlined,
+              size: 42,
+              color: BearlyColors.brown700,
             ),
-            children: [...content, const SizedBox(height: 4)],
-          );
-        },
+            const SizedBox(height: 12),
+            Text(message, textAlign: TextAlign.center),
+            const SizedBox(height: 10),
+            FilledButton(
+              onPressed: unavailable
+                  ? () => Navigator.pop(context)
+                  : requiresSignIn
+                  ? _signInAgain
+                  : _loadProduct,
+              child: Text(action),
+            ),
+          ],
+        ),
       ),
     );
   }
 
-  Widget _gallery() {
+  Widget _productContent(BuyerCatalogProduct product) {
+    final content = [
+      _gallery(product),
+      _details(product),
+      _sellerCard(product),
+      _description(product),
+      _reviews(product),
+    ];
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final wide = constraints.maxWidth >= 760;
+        if (wide) {
+          return ListView(
+            padding: const EdgeInsets.fromLTRB(24, 18, 24, 34),
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(child: content[0]),
+                  const SizedBox(width: 24),
+                  Expanded(child: content[1]),
+                ],
+              ),
+              const SizedBox(height: 18),
+              content[2],
+              content[3],
+              content[4],
+            ],
+          );
+        }
+        return ListView(
+          padding: EdgeInsets.fromLTRB(
+            _compact ? 10 : 16,
+            _compact ? 8 : 12,
+            _compact ? 10 : 16,
+            _compact ? 20 : 28,
+          ),
+          children: [...content, const SizedBox(height: 4)],
+        );
+      },
+    );
+  }
+
+  Widget _gallery(BuyerCatalogProduct product) {
+    final images = _imageUrls;
+    final selectedUrl = images.isEmpty
+        ? null
+        : images[_selectedImageIndex.clamp(0, images.length - 1).toInt()];
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -98,38 +245,86 @@ class _BuyerProductDetailPageState extends State<BuyerProductDetailPage> {
             borderRadius: BorderRadius.circular(_compact ? 14 : 18),
             border: Border.all(color: BearlyColors.lineSoft),
           ),
-          child: Image.asset(
-            _product.image,
-            fit: BoxFit.contain,
-            errorBuilder: (_, __, ___) => const Icon(
-              Icons.image_outlined,
-              size: 64,
-              color: BearlyColors.brown500,
+          child: _networkImage(selectedUrl, fit: BoxFit.contain, iconSize: 64),
+        ),
+        if (images.isNotEmpty) ...[
+          SizedBox(height: _compact ? 6 : 8),
+          SizedBox(
+            height: _compact ? 58 : 68,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              itemCount: images.length,
+              separatorBuilder: (_, _) => const SizedBox(width: 8),
+              itemBuilder: (context, index) => InkWell(
+                key: ValueKey('buyer-detail-image-$index'),
+                borderRadius: BorderRadius.circular(_compact ? 8 : 10),
+                onTap: () => setState(() => _selectedImageIndex = index),
+                child: Container(
+                  width: _compact ? 58 : 68,
+                  padding: const EdgeInsets.all(5),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(_compact ? 8 : 10),
+                    border: Border.all(
+                      color: index == _selectedImageIndex
+                          ? BearlyColors.gold
+                          : BearlyColors.lineSoft,
+                      width: index == _selectedImageIndex ? 1.5 : 1,
+                    ),
+                  ),
+                  child: _networkImage(images[index], fit: BoxFit.cover),
+                ),
+              ),
             ),
           ),
-        ),
-        SizedBox(height: _compact ? 6 : 8),
-        Container(
-          height: _compact ? 48 : 58,
-          width: _compact ? 48 : 58,
-          padding: const EdgeInsets.all(5),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(_compact ? 8 : 10),
-            border: Border.all(color: BearlyColors.gold, width: 1.5),
-          ),
-          child: Image.asset(_product.image, fit: BoxFit.cover),
-        ),
+        ],
       ],
     );
   }
 
-  Widget _details() {
+  Widget _networkImage(
+    String? url, {
+    required BoxFit fit,
+    double iconSize = 38,
+  }) {
+    if (url == null) return _imagePlaceholder(iconSize);
+    return Image.network(
+      url,
+      fit: fit,
+      errorBuilder: (_, _, _) => _imagePlaceholder(iconSize),
+    );
+  }
+
+  Widget _imagePlaceholder(double size) => ColoredBox(
+    color: BearlyColors.cream200,
+    child: Center(
+      child: Icon(
+        Icons.image_outlined,
+        size: size,
+        color: BearlyColors.brown500,
+      ),
+    ),
+  );
+
+  Widget _details(BuyerCatalogProduct product) {
+    final variant = _selectedVariant;
+    final price = variant?.formattedPrice ?? product.formattedPrice;
+    final regularPrice =
+        variant?.regularPriceMinor ?? product.regularPriceMinor;
+    final currentPrice = variant?.priceMinor ?? product.priceMinor;
+    final discount = variant?.discountPercent ?? product.discountPercent;
+    final inStock = variant?.inStock ?? product.inStock;
+    final regularPriceText = variant == null
+        ? product.formattedRegularPrice
+        : formatPriceMinorUnits(
+            variant.regularPriceMinor,
+            currency: variant.currency,
+          );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          _product.category,
+          product.category?.name ?? 'Category not available',
           style: Theme.of(context).textTheme.labelMedium?.copyWith(
             color: BearlyColors.gold,
             fontSize: _compact ? 11.5 : null,
@@ -137,45 +332,13 @@ class _BuyerProductDetailPageState extends State<BuyerProductDetailPage> {
         ),
         SizedBox(height: _compact ? 3 : 5),
         Text(
-          _product.name,
+          product.name,
           style: Theme.of(
             context,
           ).textTheme.displaySmall?.copyWith(fontSize: _compact ? 25 : null),
         ),
         SizedBox(height: _compact ? 4 : 7),
-        Row(
-          children: [
-            Icon(
-              Icons.star_rounded,
-              color: BearlyColors.orange,
-              size: _compact ? 17 : 19,
-            ),
-            Icon(
-              Icons.star_rounded,
-              color: BearlyColors.orange,
-              size: _compact ? 17 : 19,
-            ),
-            Icon(
-              Icons.star_rounded,
-              color: BearlyColors.orange,
-              size: _compact ? 17 : 19,
-            ),
-            Icon(
-              Icons.star_rounded,
-              color: BearlyColors.orange,
-              size: _compact ? 17 : 19,
-            ),
-            Icon(
-              Icons.star_half_rounded,
-              color: BearlyColors.orange,
-              size: _compact ? 17 : 19,
-            ),
-            SizedBox(width: _compact ? 5 : 7),
-            Text('4.4', style: Theme.of(context).textTheme.bodySmall),
-            SizedBox(width: _compact ? 8 : 10),
-            Text('41 sold', style: Theme.of(context).textTheme.bodySmall),
-          ],
-        ),
+        _ratingLine(product),
         SizedBox(height: _compact ? 9 : 14),
         Container(
           width: double.infinity,
@@ -187,83 +350,99 @@ class _BuyerProductDetailPageState extends State<BuyerProductDetailPage> {
             color: BearlyColors.cream200,
             borderRadius: BorderRadius.circular(11),
           ),
-          child: Text(
-            _product.price,
-            style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-              color: BearlyColors.brown950,
-              fontSize: _compact ? 24 : null,
-            ),
-          ),
-        ),
-        SizedBox(height: _compact ? 7 : 9),
-        Wrap(
-          spacing: 7,
-          runSpacing: 7,
-          children: [
-            _infoChip(Icons.local_shipping_outlined, 'Free shipping'),
-            _infoChip(Icons.sell_outlined, 'Voucher available'),
-          ],
-        ),
-        Divider(height: _compact ? 20 : 26),
-        Row(
-          children: [
-            Expanded(child: _detailValue('Condition', 'New')),
-            Expanded(child: _detailValue('Ships from', 'Laguna')),
-          ],
-        ),
-        Divider(height: _compact ? 20 : 26),
-        Row(
-          children: [
-            Text('Color', style: Theme.of(context).textTheme.titleMedium),
-            const Spacer(),
-            Text('Yellow', style: Theme.of(context).textTheme.bodySmall),
-          ],
-        ),
-        SizedBox(height: _compact ? 6 : 8),
-        Container(
-          padding: EdgeInsets.symmetric(
-            horizontal: _compact ? 10 : 12,
-            vertical: _compact ? 6 : 8,
-          ),
-          decoration: BoxDecoration(
-            color: BearlyColors.brown900,
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
+          child: Wrap(
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: 8,
+            runSpacing: 4,
             children: [
-              Container(
-                width: _compact ? 16 : 18,
-                height: _compact ? 16 : 18,
-                decoration: const BoxDecoration(
-                  color: BearlyColors.gold,
-                  shape: BoxShape.circle,
+              Text(
+                price,
+                key: const ValueKey('buyer-detail-price'),
+                style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                  color: BearlyColors.brown950,
+                  fontSize: _compact ? 24 : null,
                 ),
               ),
-              SizedBox(width: _compact ? 6 : 8),
-              const Text('Yellow', style: TextStyle(color: Colors.white)),
+              if (regularPrice > currentPrice)
+                Text(
+                  regularPriceText,
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: BearlyColors.muted,
+                    decoration: TextDecoration.lineThrough,
+                  ),
+                ),
+              if (discount > 0)
+                Text(
+                  '$discount% off',
+                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                    color: BearlyColors.brown700,
+                  ),
+                ),
             ],
           ),
+        ),
+        SizedBox(height: _compact ? 10 : 13),
+        _availability(inStock),
+        if (product.variants.isNotEmpty) ...[
+          Divider(height: _compact ? 20 : 26),
+          Text('Options', style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 7),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final item in product.variants)
+                ChoiceChip(
+                  key: ValueKey('buyer-variant-${item.id}'),
+                  selected: item.id == _selectedVariantId,
+                  onSelected: (_) => setState(() {
+                    _selectedVariantId = item.id;
+                  }),
+                  label: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 190),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          _variantLabel(item),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        Text(
+                          item.inStock ? item.formattedPrice : 'Out of stock',
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ],
+        Divider(height: _compact ? 20 : 26),
+        Row(
+          children: [
+            Expanded(
+              child: _detailValue(
+                'Store',
+                product.store?.name ?? 'Unavailable',
+              ),
+            ),
+            Expanded(
+              child: _detailValue(
+                'Availability',
+                inStock ? 'In stock' : 'Out of stock',
+              ),
+            ),
+          ],
         ),
         SizedBox(height: _compact ? 11 : 16),
         Row(
           children: [
-            Text('Quantity', style: Theme.of(context).textTheme.titleMedium),
-            const Spacer(),
-            Text(
-              '13 pieces available',
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-          ],
-        ),
-        SizedBox(height: _compact ? 6 : 8),
-        _quantityControl(),
-        SizedBox(height: _compact ? 9 : 12),
-        Row(
-          children: [
             Expanded(
               child: OutlinedButton.icon(
-                onPressed: _addToCart,
+                onPressed: () => _showUnavailableAction('Add to cart'),
                 icon: const Icon(Icons.shopping_cart_outlined),
                 label: const Text('Add to Cart'),
                 style: _compact
@@ -277,14 +456,14 @@ class _BuyerProductDetailPageState extends State<BuyerProductDetailPage> {
             const SizedBox(width: 8),
             Expanded(
               child: FilledButton(
-                onPressed: _buyNow,
-                child: const Text('Buy Now'),
+                onPressed: () => _showUnavailableAction('Buy Now'),
                 style: _compact
                     ? FilledButton.styleFrom(
                         minimumSize: const Size(0, 44),
                         padding: const EdgeInsets.symmetric(horizontal: 8),
                       )
                     : null,
+                child: const Text('Buy Now'),
               ),
             ),
           ],
@@ -301,7 +480,7 @@ class _BuyerProductDetailPageState extends State<BuyerProductDetailPage> {
             const SizedBox(width: 6),
             Expanded(
               child: Text(
-                'Frontend preview only — checkout and inventory will be connected during backend integration.',
+                'Prices and availability come from the marketplace. Cart and checkout are not available yet.',
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                   fontSize: _compact ? 10 : 11,
                   height: 1.35,
@@ -314,24 +493,54 @@ class _BuyerProductDetailPageState extends State<BuyerProductDetailPage> {
     );
   }
 
-  Widget _infoChip(IconData icon, String label) => Container(
-    padding: EdgeInsets.symmetric(
-      horizontal: _compact ? 8 : 9,
-      vertical: _compact ? 5 : 6,
-    ),
-    decoration: BoxDecoration(
-      border: Border.all(color: BearlyColors.line),
-      borderRadius: BorderRadius.circular(7),
-    ),
-    child: Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(icon, size: _compact ? 14 : 15, color: BearlyColors.brown700),
-        SizedBox(width: _compact ? 4 : 5),
-        Text(label, style: Theme.of(context).textTheme.bodySmall),
-      ],
-    ),
+  Widget _ratingLine(BuyerCatalogProduct product) => Row(
+    children: [
+      for (var index = 1; index <= 5; index++)
+        Icon(
+          product.ratingSummary.average >= index
+              ? Icons.star_rounded
+              : product.ratingSummary.average >= index - .5
+              ? Icons.star_half_rounded
+              : Icons.star_border_rounded,
+          color: BearlyColors.orange,
+          size: _compact ? 17 : 19,
+        ),
+      SizedBox(width: _compact ? 5 : 7),
+      Text(
+        product.ratingSummary.average.toStringAsFixed(1),
+        key: const ValueKey('buyer-detail-rating'),
+        style: Theme.of(context).textTheme.bodySmall,
+      ),
+      SizedBox(width: _compact ? 8 : 10),
+      Text(
+        '(${product.ratingSummary.count})',
+        style: Theme.of(context).textTheme.bodySmall,
+      ),
+    ],
   );
+
+  Widget _availability(bool inStock) => Row(
+    children: [
+      Icon(
+        inStock ? Icons.check_circle_outline : Icons.remove_circle_outline,
+        size: 18,
+        color: inStock ? Colors.green.shade700 : BearlyColors.muted,
+      ),
+      const SizedBox(width: 7),
+      Text(
+        inStock ? 'In stock' : 'Out of stock',
+        key: const ValueKey('buyer-detail-availability'),
+        style: Theme.of(context).textTheme.bodyMedium,
+      ),
+    ],
+  );
+
+  String _variantLabel(BuyerCatalogVariant variant) {
+    if (variant.options.isEmpty) return variant.name;
+    return variant.options.entries
+        .map((entry) => '${entry.key}: ${entry.value}')
+        .join(' · ');
+  }
 
   Widget _detailValue(String label, String value) => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
@@ -342,47 +551,7 @@ class _BuyerProductDetailPageState extends State<BuyerProductDetailPage> {
     ],
   );
 
-  Widget _quantityControl() => Container(
-    width: _compact ? 108 : 120,
-    height: _compact ? 36 : 40,
-    decoration: BoxDecoration(
-      color: Colors.white,
-      border: Border.all(color: BearlyColors.line),
-      borderRadius: BorderRadius.circular(_compact ? 6 : 7),
-    ),
-    child: Row(
-      children: [
-        _quantityButton(
-          Icons.remove_rounded,
-          _quantity > 1 ? () => setState(() => _quantity--) : null,
-        ),
-        Expanded(
-          child: Center(
-            child: Text(
-              '$_quantity',
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
-          ),
-        ),
-        _quantityButton(
-          Icons.add_rounded,
-          _quantity < 13 ? () => setState(() => _quantity++) : null,
-        ),
-      ],
-    ),
-  );
-
-  Widget _quantityButton(IconData icon, VoidCallback? onPressed) => IconButton(
-    onPressed: onPressed,
-    icon: Icon(icon, size: _compact ? 16 : 18),
-    padding: EdgeInsets.zero,
-    constraints: BoxConstraints.tightFor(
-      width: _compact ? 34 : 38,
-      height: _compact ? 34 : 38,
-    ),
-  );
-
-  Widget _sellerCard() => Container(
+  Widget _sellerCard(BuyerCatalogProduct product) => Container(
     margin: EdgeInsets.only(top: _compact ? 12 : 16),
     padding: EdgeInsets.all(_compact ? 11 : 14),
     decoration: BoxDecoration(
@@ -396,7 +565,7 @@ class _BuyerProductDetailPageState extends State<BuyerProductDetailPage> {
           radius: _compact ? 21 : 24,
           backgroundColor: BearlyColors.gold,
           foregroundColor: BearlyColors.brown950,
-          child: Text('B', style: TextStyle(fontWeight: FontWeight.w800)),
+          child: const Icon(Icons.storefront_outlined),
         ),
         SizedBox(width: _compact ? 9 : 11),
         Expanded(
@@ -405,18 +574,14 @@ class _BuyerProductDetailPageState extends State<BuyerProductDetailPage> {
             children: [
               Text('Sold by', style: Theme.of(context).textTheme.bodySmall),
               Text(
-                _product.store,
+                product.store?.name ?? 'Store details unavailable',
                 style: Theme.of(context).textTheme.titleMedium,
-              ),
-              Text(
-                '★ 4.5 seller rating  •  Laguna',
-                style: Theme.of(context).textTheme.bodySmall,
               ),
             ],
           ),
         ),
         OutlinedButton(
-          onPressed: () => _message('Chat will connect to Laravel.'),
+          onPressed: () => _showUnavailableAction('Contacting the seller'),
           style: _compact
               ? OutlinedButton.styleFrom(
                   minimumSize: const Size(70, 42),
@@ -429,25 +594,22 @@ class _BuyerProductDetailPageState extends State<BuyerProductDetailPage> {
     ),
   );
 
-  Widget _description() => _section(
-    'Product Description',
-    Text(
-      '${_product.name} sample listing for the Bearly marketplace preview. Product details, stock, seller information, and checkout will be connected to the backend later.',
-      style: Theme.of(context).textTheme.bodySmall,
-    ),
-    extra: Wrap(
-      spacing: 28,
-      runSpacing: 12,
-      children: [
-        _detailValue('Category', _product.category),
-        _detailValue('Condition', 'New'),
-        _detailValue('Color', 'Yellow'),
-        _detailValue('Location', 'Laguna'),
-      ],
-    ),
-  );
+  Widget _description(BuyerCatalogProduct product) {
+    final description = product.descriptionSummary.trim();
+    return _section(
+      'Product Description',
+      Text(
+        description.isEmpty ? 'No description provided.' : description,
+        key: const ValueKey('buyer-detail-description'),
+        style: Theme.of(context).textTheme.bodySmall,
+      ),
+      extra: product.category == null
+          ? null
+          : _detailValue('Category', product.category!.name),
+    );
+  }
 
-  Widget _reviews() => _section(
+  Widget _reviews(BuyerCatalogProduct product) => _section(
     'Ratings & Reviews',
     Row(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -455,31 +617,20 @@ class _BuyerProductDetailPageState extends State<BuyerProductDetailPage> {
         Column(
           children: [
             Text(
-              '4.4',
+              product.ratingSummary.average.toStringAsFixed(1),
               style: Theme.of(context).textTheme.headlineMedium?.copyWith(
                 color: BearlyColors.gold,
                 fontSize: _compact ? 26 : null,
               ),
             ),
             Text('out of 5', style: Theme.of(context).textTheme.bodySmall),
-            const Text(
-              '★★★★★',
-              style: TextStyle(color: BearlyColors.orange, letterSpacing: 1),
-            ),
           ],
         ),
         SizedBox(width: _compact ? 16 : 22),
         Expanded(
-          child: Wrap(
-            spacing: 14,
-            runSpacing: 10,
-            children: const [
-              Text('All (18)'),
-              Text('5 Star (15)'),
-              Text('4 Star (2)'),
-              Text('3 Star (1)'),
-              Text('With Comments (12)'),
-            ],
+          child: Text(
+            '${product.ratingSummary.count} ratings',
+            style: Theme.of(context).textTheme.bodyMedium,
           ),
         ),
       ],
@@ -509,20 +660,4 @@ class _BuyerProductDetailPageState extends State<BuyerProductDetailPage> {
       ],
     ),
   );
-
-  void _addToCart() {
-    riderlessMessage('Added $_quantity ${_product.name} to cart.');
-  }
-
-  void _buyNow() {
-    riderlessMessage(
-      'Buy Now will continue to checkout after the Laravel API is connected.',
-    );
-  }
-
-  void _message(String message) => riderlessMessage(message);
-
-  void riderlessMessage(String message) => ScaffoldMessenger.of(
-    context,
-  ).showSnackBar(SnackBar(content: Text(message)));
 }

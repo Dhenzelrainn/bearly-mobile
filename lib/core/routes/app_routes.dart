@@ -8,9 +8,9 @@ import '../../features/auth/presentation/logout_page.dart';
 import '../../features/auth/presentation/login_page.dart';
 import '../../features/auth/presentation/pending_page.dart';
 import '../../features/auth/presentation/register_page.dart';
+import '../../features/buyer/data/buyer_catalog_repository.dart';
 import '../../features/buyer/presentation/buyer_home_page.dart';
 import '../../features/buyer/presentation/buyer_cart_page.dart';
-import '../../features/buyer/models/buyer_product.dart';
 import '../../features/buyer/presentation/buyer_product_detail_page.dart';
 import '../../features/rider/presentation/rider_home_page.dart';
 import '../../features/rider/presentation/rider_module_page.dart';
@@ -39,7 +39,7 @@ class AppRoutes {
           : AppRouteNames.rider;
       return MaterialPageRoute(
         builder: (_) => sessionRole == AccountRole.buyer
-            ? const BuyerHomePage()
+            ? BuyerHomePage(authService: authService)
             : const RiderHomePage(),
         settings: RouteSettings(name: route),
       );
@@ -78,12 +78,12 @@ class AppRoutes {
         );
       case AppRouteNames.buyer:
         return MaterialPageRoute(
-          builder: (_) => const BuyerHomePage(),
+          builder: (_) => BuyerHomePage(authService: authService),
           settings: settings,
         );
       case AppRouteNames.buyerHome:
         return MaterialPageRoute(
-          builder: (_) => const BuyerHomePage(),
+          builder: (_) => BuyerHomePage(authService: authService),
           settings: settings,
         );
       case AppRouteNames.buyerCart:
@@ -92,15 +92,18 @@ class AppRoutes {
           settings: settings,
         );
       case AppRouteNames.buyerProduct:
-        final product = settings.arguments;
-        if (product is BuyerProduct) {
+        final productId = settings.arguments;
+        if (productId is int && productId > 0) {
           return MaterialPageRoute(
-            builder: (_) => BuyerProductDetailPage(product: product),
+            builder: (_) => BuyerProductDetailPage(
+              productId: productId,
+              repository: BuyerCatalogRepository(authService: authService),
+            ),
             settings: settings,
           );
         }
         return MaterialPageRoute(
-          builder: (_) => const BuyerHomePage(),
+          builder: (_) => BuyerHomePage(authService: authService),
           settings: settings,
         );
       case AppRouteNames.rider:

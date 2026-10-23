@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../../../core/routes/app_route_names.dart';
 import '../../../core/widgets/bearly_logo.dart';
-import '../data/buyer_demo_data.dart';
-import '../models/buyer_product.dart';
+import '../../auth/data/auth_service.dart';
+import '../data/buyer_catalog_repository.dart';
 import 'buyer_account_page.dart';
 import 'buyer_orders_page.dart';
 import 'buyer_saved_page.dart';
@@ -12,7 +12,14 @@ import 'buyer_shop_page.dart';
 /// Buyer shell: navigation and shared buyer state live here; each tab owns its
 /// actual page UI in a separate file.
 class BuyerHomePage extends StatefulWidget {
-  const BuyerHomePage({super.key});
+  const BuyerHomePage({
+    super.key,
+    required this.authService,
+    this.catalogRepository,
+  });
+
+  final AuthService authService;
+  final BuyerCatalogRepository? catalogRepository;
 
   @override
   State<BuyerHomePage> createState() => _BuyerHomePageState();
@@ -20,9 +27,9 @@ class BuyerHomePage extends StatefulWidget {
 
 class _BuyerHomePageState extends State<BuyerHomePage> {
   int _tab = 0;
-  String _query = '';
-  final Set<String> _saved = <String>{};
-  int _cartCount = 0;
+  late final BuyerCatalogRepository _catalogRepository =
+      widget.catalogRepository ??
+      BuyerCatalogRepository(authService: widget.authService);
 
   void _logout() => Navigator.pushNamedAndRemoveUntil(
     context,
@@ -34,36 +41,31 @@ class _BuyerHomePageState extends State<BuyerHomePage> {
     context,
   ).showSnackBar(SnackBar(content: Text(message)));
 
-  void _toggleSaved(BuyerProduct product) {
-    setState(() {
-      if (!_saved.add(product.name)) _saved.remove(product.name);
-    });
-  }
+  void _showUnavailableAction(String action) =>
+      _showMessage('$action will be available in a later phase.');
 
-  void _addToCart(BuyerProduct product) {
-    setState(() => _cartCount++);
-    _showMessage('${product.name} added to cart.');
-  }
+  void _signInAgain() => Navigator.pushNamedAndRemoveUntil(
+    context,
+    AppRouteNames.login,
+    (_) => false,
+  );
+
+  void _openProduct(int productId) => Navigator.pushNamed(
+    context,
+    AppRouteNames.buyerProduct,
+    arguments: productId,
+  );
 
   @override
   Widget build(BuildContext context) {
-    final savedProducts = buyerProducts
-        .where((product) => _saved.contains(product.name))
-        .toList();
-
     return Scaffold(
       appBar: AppBar(
         title: const BearlyLogo(height: 34, width: 102),
         actions: [
           IconButton(
             tooltip: 'Cart',
-            onPressed: () =>
-                Navigator.pushNamed(context, AppRouteNames.buyerCart),
-            icon: Badge(
-              label: Text('$_cartCount'),
-              isLabelVisible: _cartCount > 0,
-              child: const Icon(Icons.shopping_cart_outlined),
-            ),
+            onPressed: () => _showUnavailableAction('Cart'),
+            icon: const Icon(Icons.shopping_cart_outlined),
           ),
           IconButton(
             onPressed: () => _showMessage('You are all caught up.'),
@@ -81,15 +83,16 @@ class _BuyerHomePageState extends State<BuyerHomePage> {
         index: _tab,
         children: [
           BuyerShopPage(
-            query: _query,
-            saved: _saved,
-            onQueryChanged: (value) => setState(() => _query = value),
-            onToggleSaved: _toggleSaved,
-            onAddToCart: _addToCart,
-            onMessage: _showMessage,
+            repository: _catalogRepository,
+            onOpenProduct: _openProduct,
+            onUnavailableAction: _showUnavailableAction,
+            onSignInAgain: _signInAgain,
           ),
           const BuyerOrdersPage(),
-          BuyerSavedPage(products: savedProducts, onAddToCart: _addToCart),
+          BuyerSavedPage(
+            products: const [],
+            onAddToCart: (_) => _showUnavailableAction('Cart'),
+          ),
           BuyerAccountPage(onLogout: _logout, onMessage: _showMessage),
         ],
       ),
@@ -110,8 +113,7 @@ class _BuyerHomePageState extends State<BuyerHomePage> {
           ),
           NavigationDestination(
             icon: Badge(
-              label: Text('${_saved.length}'),
-              isLabelVisible: _saved.isNotEmpty,
+              isLabelVisible: false,
               child: const Icon(Icons.favorite_border_rounded),
             ),
             selectedIcon: const Icon(Icons.favorite_rounded),
