@@ -1,16 +1,20 @@
 import 'package:flutter/material.dart';
 
-import 'core/routes/app_route_names.dart';
+import 'features/auth/data/auth_service.dart';
+import 'features/auth/presentation/session_startup_page.dart';
 import 'core/routes/app_routes.dart';
 import 'core/theme/bearly_theme.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  runApp(const BearlyApp());
+  runApp(BearlyApp());
 }
 
 class BearlyApp extends StatelessWidget {
-  const BearlyApp({super.key});
+  BearlyApp({super.key, AuthService? authService})
+    : authService = authService ?? AuthService();
+
+  final AuthService authService;
 
   @override
   Widget build(BuildContext context) {
@@ -18,10 +22,9 @@ class BearlyApp extends StatelessWidget {
       title: 'Bearly',
       debugShowCheckedModeBanner: false,
       theme: BearlyTheme.light(),
-      // Laravel redirects `/` to `/login`; the mobile shell follows the same
-      // entry point so visitors never land on the marketplace anonymously.
-      initialRoute: AppRouteNames.login,
-      onGenerateRoute: AppRoutes.onGenerateRoute,
+      home: SessionStartupPage(authService: authService),
+      onGenerateRoute: (settings) =>
+          AppRoutes.onGenerateRoute(settings, authService: authService),
     );
   }
 }

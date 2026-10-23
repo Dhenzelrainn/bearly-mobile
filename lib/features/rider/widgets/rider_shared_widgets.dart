@@ -78,7 +78,7 @@ class RiderPageScaffold extends StatelessWidget {
           IconButton(
             onPressed: () => Navigator.pushNamedAndRemoveUntil(
               context,
-              AppRouteNames.login,
+              AppRouteNames.logout,
               (_) => false,
             ),
             icon: const Icon(Icons.logout_rounded),

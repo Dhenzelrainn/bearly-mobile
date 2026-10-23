@@ -24,8 +24,11 @@ class _BuyerHomePageState extends State<BuyerHomePage> {
   final Set<String> _saved = <String>{};
   int _cartCount = 0;
 
-  void _logout() =>
-      Navigator.pushNamedAndRemoveUntil(context, AppRouteNames.login, (_) => false);
+  void _logout() => Navigator.pushNamedAndRemoveUntil(
+    context,
+    AppRouteNames.logout,
+    (_) => false,
+  );
 
   void _showMessage(String message) => ScaffoldMessenger.of(
     context,
@@ -54,7 +57,8 @@ class _BuyerHomePageState extends State<BuyerHomePage> {
         actions: [
           IconButton(
             tooltip: 'Cart',
-            onPressed: () => Navigator.pushNamed(context, AppRouteNames.buyerCart),
+            onPressed: () =>
+                Navigator.pushNamed(context, AppRouteNames.buyerCart),
             icon: Badge(
               label: Text('$_cartCount'),
               isLabelVisible: _cartCount > 0,

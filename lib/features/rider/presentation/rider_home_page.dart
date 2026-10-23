@@ -79,7 +79,7 @@ class _RiderHomePageState extends State<RiderHomePage> {
           IconButton(
             onPressed: () => Navigator.pushNamedAndRemoveUntil(
               context,
-              AppRouteNames.login,
+              AppRouteNames.logout,
               (_) => false,
             ),
             tooltip: 'Log out',

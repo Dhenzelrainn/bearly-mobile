@@ -2,12 +2,15 @@ import 'package:flutter/material.dart';
 
 import '../../../core/routes/app_route_names.dart';
 import '../../../core/theme/bearly_theme.dart';
+import '../data/auth_service.dart';
 import '../models/account_role.dart';
 import '../widgets/role_card.dart';
 import '../widgets/auth_scaffold.dart';
 
 class LoginPage extends StatefulWidget {
-  const LoginPage({super.key});
+  const LoginPage({super.key, required this.authService});
+
+  final AuthService authService;
 
   @override
   State<LoginPage> createState() => _LoginPageState();
@@ -20,6 +23,7 @@ class _LoginPageState extends State<LoginPage> {
 
   bool _showPassword = false;
   bool _remember = false;
+  bool _submitting = false;
   AccountRole _role = AccountRole.buyer;
 
   @override
@@ -29,15 +33,51 @@ class _LoginPageState extends State<LoginPage> {
     super.dispose();
   }
 
-  void _submit() {
+  Future<void> _submit() async {
     if (!(_formKey.currentState?.validate() ?? false)) return;
 
-    Navigator.pushNamedAndRemoveUntil(
-      context,
-      _role == AccountRole.buyer ? AppRouteNames.buyer : AppRouteNames.rider,
-      (route) => false,
-    );
+    final selectedRole = _role;
+    setState(() => _submitting = true);
+
+    try {
+      final session = await widget.authService.login(
+        email: _email.text,
+        password: _password.text,
+        rememberMe: _remember,
+      );
+      if (!mounted) return;
+
+      if (session.role != selectedRole) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'This account is ${session.role.label}. Opening the ${session.role.label} account.',
+            ),
+          ),
+        );
+      }
+
+      Navigator.pushNamedAndRemoveUntil(
+        context,
+        session.role == AccountRole.buyer
+            ? AppRouteNames.buyer
+            : AppRouteNames.rider,
+        (_) => false,
+      );
+    } on AuthException catch (error) {
+      if (mounted) _showSignInMessage(error.message);
+    } catch (_) {
+      if (mounted) {
+        _showSignInMessage('Bearly could not complete sign-in. Try again.');
+      }
+    } finally {
+      if (mounted) setState(() => _submitting = false);
+    }
   }
+
+  void _showSignInMessage(String message) => ScaffoldMessenger.of(
+    context,
+  ).showSnackBar(SnackBar(content: Text(message)));
 
   void _googleSignIn() {
     ScaffoldMessenger.of(context).showSnackBar(
@@ -179,10 +219,17 @@ class _LoginPageState extends State<LoginPage> {
                         ),
                         const SizedBox(height: 8),
                         FilledButton.icon(
-                          onPressed: _submit,
+                          onPressed: _submitting ? null : _submit,
                           iconAlignment: IconAlignment.end,
-                          icon: const Icon(Icons.arrow_forward_rounded),
-                          label: const Text('Sign In'),
+                          icon: _submitting
+                              ? const SizedBox.square(
+                                  dimension: 20,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Icon(Icons.arrow_forward_rounded),
+                          label: Text(_submitting ? 'Signing in…' : 'Sign In'),
                         ),
                         const SizedBox(height: 18),
                         const Row(

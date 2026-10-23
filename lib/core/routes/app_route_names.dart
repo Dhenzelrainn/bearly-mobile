@@ -7,6 +7,7 @@ class AppRouteNames {
 
   static const landing = '/';
   static const login = '/login';
+  static const logout = '/logout';
   static const register = '/register';
   static const forgotPassword = '/forgot-password';
   static const pending = '/application/pending';
