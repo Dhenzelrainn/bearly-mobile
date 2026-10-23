@@ -7,10 +7,12 @@ class BuyerAccountPage extends StatelessWidget {
     super.key,
     required this.onLogout,
     required this.onMessage,
+    required this.onManageAddresses,
   });
 
   final VoidCallback onLogout;
   final ValueChanged<String> onMessage;
+  final VoidCallback onManageAddresses;
 
   @override
   Widget build(BuildContext context) => ListView(
@@ -36,6 +38,7 @@ class BuyerAccountPage extends StatelessWidget {
         Icons.location_on_outlined,
         'Delivery addresses',
         'Home and saved drop-off locations',
+        onTap: onManageAddresses,
       ),
       _action(
         Icons.credit_card_outlined,
@@ -56,14 +59,19 @@ class BuyerAccountPage extends StatelessWidget {
     ],
   );
 
-  Widget _action(IconData icon, String title, String subtitle) => Card(
+  Widget _action(
+    IconData icon,
+    String title,
+    String subtitle, {
+    VoidCallback? onTap,
+  }) => Card(
     color: Colors.white,
     child: ListTile(
       leading: Icon(icon, color: BearlyColors.brown700),
       title: Text(title),
       subtitle: Text(subtitle),
       trailing: const Icon(Icons.chevron_right_rounded),
-      onTap: () => onMessage('$title will be connected to Laravel.'),
+      onTap: onTap ?? () => onMessage('$title will be connected to Laravel.'),
     ),
   );
 }

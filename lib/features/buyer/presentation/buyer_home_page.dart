@@ -7,10 +7,13 @@ import '../../../core/routes/app_route_names.dart';
 import '../../../core/widgets/bearly_logo.dart';
 import '../../auth/data/auth_service.dart';
 import '../data/buyer_cart_controller.dart';
+import '../data/buyer_address_controller.dart';
 import '../data/buyer_catalog_repository.dart';
+import '../data/buyer_location_repository.dart';
 import '../data/buyer_wishlist_controller.dart';
 import '../models/buyer_catalog_models.dart';
 import 'buyer_account_page.dart';
+import 'buyer_addresses_page.dart';
 import 'buyer_orders_page.dart';
 import 'buyer_saved_page.dart';
 import 'buyer_shop_page.dart';
@@ -24,12 +27,16 @@ class BuyerHomePage extends StatefulWidget {
     required this.cartController,
     required this.wishlistController,
     this.catalogRepository,
+    this.addressController,
+    this.locationRepository,
   });
 
   final AuthService authService;
   final BuyerCartController cartController;
   final BuyerWishlistController wishlistController;
   final BuyerCatalogRepository? catalogRepository;
+  final BuyerAddressController? addressController;
+  final BuyerLocationRepository? locationRepository;
 
   @override
   State<BuyerHomePage> createState() => _BuyerHomePageState();
@@ -40,18 +47,26 @@ class _BuyerHomePageState extends State<BuyerHomePage> {
   late final BuyerCatalogRepository _catalogRepository =
       widget.catalogRepository ??
       BuyerCatalogRepository(authService: widget.authService);
+  late final BuyerAddressController _addressController =
+      widget.addressController ??
+      BuyerAddressController(authService: widget.authService);
+  late final BuyerLocationRepository _locationRepository =
+      widget.locationRepository ??
+      BuyerLocationRepository(apiClient: ApiClient());
 
   @override
   void initState() {
     super.initState();
     widget.cartController.synchronizeSession();
     widget.wishlistController.synchronizeSession();
+    _addressController.synchronizeSession();
     unawaited(widget.wishlistController.refresh());
   }
 
   void _logout() {
     widget.cartController.clear();
     widget.wishlistController.clear();
+    _addressController.clear();
     Navigator.pushNamedAndRemoveUntil(
       context,
       AppRouteNames.logout,
@@ -77,6 +92,24 @@ class _BuyerHomePageState extends State<BuyerHomePage> {
     AppRouteNames.buyerProduct,
     arguments: productId,
   );
+
+  void _openAddresses() {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => BuyerAddressesPage(
+          controller: _addressController,
+          locationRepository: _locationRepository,
+          onSignInAgain: _signInAgain,
+        ),
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    if (widget.addressController == null) _addressController.dispose();
+    super.dispose();
+  }
 
   Future<void> _toggleWishlist(BuyerCatalogProduct product) async {
     final wasSaved = widget.wishlistController.isSaved(product.id) == true;
@@ -171,7 +204,11 @@ class _BuyerHomePageState extends State<BuyerHomePage> {
               );
             },
           ),
-          BuyerAccountPage(onLogout: _logout, onMessage: _showMessage),
+          BuyerAccountPage(
+            onLogout: _logout,
+            onMessage: _showMessage,
+            onManageAddresses: _openAddresses,
+          ),
         ],
       ),
       bottomNavigationBar: NavigationBar(
