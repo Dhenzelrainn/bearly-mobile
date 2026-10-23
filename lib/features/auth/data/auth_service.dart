@@ -187,6 +187,34 @@ class AuthService {
     }
   }
 
+  /// Sends a read-only authenticated request using the active local session.
+  ///
+  /// The credential remains inside this service. Explicit 401/403 responses
+  /// follow the same local invalidation behavior as session restoration;
+  /// transient API, timeout, and transport failures leave the session intact.
+  Future<Object?> getWithSession(
+    String path, {
+    Map<String, Object?>? queryParameters,
+  }) async {
+    final token = _ephemeralToken ?? await _tokenStore.read();
+    if (token == null || token.trim().isEmpty) {
+      throw const AuthException('Sign in to access this Bearly resource.');
+    }
+
+    try {
+      return await _apiClient.get(
+        path,
+        queryParameters: queryParameters,
+        headers: _authorization(token),
+      );
+    } on ApiHttpException catch (error) {
+      if (error.statusCode == 401 || error.statusCode == 403) {
+        await _clearLocalSession();
+      }
+      rethrow;
+    }
+  }
+
   /// Attempts server revocation, then always removes the local credential.
   Future<void> logout() async {
     String? token;
