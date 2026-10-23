@@ -6,6 +6,7 @@ import 'package:bearly_mobile/core/network/api_client.dart';
 import 'package:bearly_mobile/features/auth/data/auth_service.dart';
 import 'package:bearly_mobile/features/auth/models/account_role.dart';
 import 'package:bearly_mobile/features/buyer/data/buyer_cart_controller.dart';
+import 'package:bearly_mobile/features/buyer/data/buyer_wishlist_controller.dart';
 import 'package:bearly_mobile/features/buyer/presentation/buyer_home_page.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -236,6 +237,9 @@ void main() {
     ) async {
       var productRequests = 0;
       final auth = _authService((request) async {
+        if (request.url.path == '/api/mobile/buyer/wishlist') {
+          return _wishlistPage([]);
+        }
         if (request.url.path.endsWith('/categories')) {
           return _jsonResponse({'data': []});
         }
@@ -284,12 +288,22 @@ void main() {
       );
     });
 
-    testWidgets('cart quick-add opens detail and save remains read-only', (
+    testWidgets('cart quick-add opens detail and save uses Wishlist only', (
       tester,
     ) async {
       final requests = <http.Request>[];
       final auth = _authService((request) async {
         requests.add(request);
+        if (request.url.path == '/api/mobile/buyer/wishlist' &&
+            request.method == 'GET') {
+          return _wishlistPage([]);
+        }
+        if (request.url.path == '/api/mobile/buyer/wishlist/41' &&
+            request.method == 'PUT') {
+          return _jsonResponse({
+            'data': {'product_id': 41, 'is_saved': true},
+          });
+        }
         if (request.url.path.endsWith('/categories')) {
           return _jsonResponse({'data': []});
         }
@@ -319,18 +333,23 @@ void main() {
       await tester.pumpAndSettle();
       await tester.ensureVisible(find.byKey(const ValueKey('buyer-save-41')));
       await tester.tap(find.byKey(const ValueKey('buyer-save-41')));
-      await tester.pump();
+      await tester.pumpAndSettle();
 
+      expect(find.text('Added to saved products.'), findsOneWidget);
       expect(
-        find.text('Saving products will be available in a later phase.'),
-        findsOneWidget,
+        requests.any(
+          (request) =>
+              request.method == 'PUT' &&
+              request.url.path == '/api/mobile/buyer/wishlist/41',
+        ),
+        isTrue,
       );
       expect(requests, isNotEmpty);
-      expect(requests.every((request) => request.method == 'GET'), isTrue);
       expect(
         requests.map((request) => request.url.path),
         isNot(contains('/cart')),
       );
+      expect(find.text('Full description for Handmade Bear.'), findsNothing);
     });
 
     testWidgets('a stale search result cannot replace the latest response', (
@@ -384,12 +403,18 @@ Future<void> _pumpApp(WidgetTester tester, AuthService auth) async {
 
 Widget _app(AuthService auth) {
   final cartController = BuyerCartController(authService: auth);
+  final wishlistController = BuyerWishlistController(authService: auth);
   return MaterialApp(
-    home: BuyerHomePage(authService: auth, cartController: cartController),
+    home: BuyerHomePage(
+      authService: auth,
+      cartController: cartController,
+      wishlistController: wishlistController,
+    ),
     onGenerateRoute: (settings) => AppRoutes.onGenerateRoute(
       settings,
       authService: auth,
       cartController: cartController,
+      wishlistController: wishlistController,
     ),
   );
 }
@@ -418,6 +443,18 @@ AuthSession _buyerSession() => const AuthSession(
 
 http.Response _jsonResponse(Object value, [int statusCode = 200]) =>
     http.Response(jsonEncode(value), statusCode);
+
+http.Response _wishlistPage(List<Map<String, Object?>> entries) =>
+    _jsonResponse({
+      'data': entries,
+      'meta': {
+        'current_page': 1,
+        'per_page': 12,
+        'total': entries.length,
+        'last_page': 1,
+        'has_more': false,
+      },
+    });
 
 Map<String, Object?> _page(
   List<Map<String, Object?>> products, {

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../../core/network/api_client.dart';
@@ -7,7 +9,9 @@ import '../../../core/widgets/bearly_logo.dart';
 import '../../auth/data/auth_service.dart';
 import '../data/buyer_cart_controller.dart';
 import '../data/buyer_catalog_repository.dart';
+import '../data/buyer_wishlist_controller.dart';
 import '../models/buyer_catalog_models.dart';
+import 'buyer_wishlist_heart_button.dart';
 
 class BuyerProductDetailPage extends StatefulWidget {
   const BuyerProductDetailPage({
@@ -15,11 +19,13 @@ class BuyerProductDetailPage extends StatefulWidget {
     required this.productId,
     required this.repository,
     required this.cartController,
+    required this.wishlistController,
   });
 
   final int productId;
   final BuyerCatalogRepository repository;
   final BuyerCartController cartController;
+  final BuyerWishlistController wishlistController;
 
   @override
   State<BuyerProductDetailPage> createState() => _BuyerProductDetailPageState();
@@ -60,6 +66,14 @@ class _BuyerProductDetailPageState extends State<BuyerProductDetailPage> {
   void initState() {
     super.initState();
     widget.cartController.synchronizeSession();
+    widget.wishlistController.synchronizeSession();
+    if (!widget.wishlistController.membershipLoaded) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && !widget.wishlistController.membershipLoaded) {
+          unawaited(widget.wishlistController.refresh());
+        }
+      });
+    }
     _loadProduct();
   }
 
@@ -258,6 +272,34 @@ class _BuyerProductDetailPageState extends State<BuyerProductDetailPage> {
       }
     } finally {
       if (mounted) setState(() => _addingToCart = false);
+    }
+  }
+
+  Future<void> _toggleWishlist(BuyerCatalogProduct product) async {
+    final wasSaved = widget.wishlistController.isSaved(product.id) == true;
+    try {
+      final saved = await widget.wishlistController.toggleProduct(product);
+      if (!mounted || !saved) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            wasSaved
+                ? 'Removed from saved products.'
+                : 'Added to saved products.',
+          ),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      final needsSignIn = _needsSignIn(error);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(buyerWishlistErrorMessage(error)),
+          action: needsSignIn
+              ? SnackBarAction(label: 'Sign in', onPressed: _signInAgain)
+              : null,
+        ),
+      );
     }
   }
 
@@ -512,11 +554,25 @@ class _BuyerProductDetailPageState extends State<BuyerProductDetailPage> {
           ),
         ),
         SizedBox(height: _compact ? 3 : 5),
-        Text(
-          product.name,
-          style: Theme.of(
-            context,
-          ).textTheme.displaySmall?.copyWith(fontSize: _compact ? 25 : null),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Text(
+                product.name,
+                style: Theme.of(context).textTheme.displaySmall?.copyWith(
+                  fontSize: _compact ? 25 : null,
+                ),
+              ),
+            ),
+            const SizedBox(width: 6),
+            BuyerWishlistHeartButton(
+              key: ValueKey('buyer-detail-save-${product.id}'),
+              controller: widget.wishlistController,
+              productId: product.id,
+              onPressed: () => unawaited(_toggleWishlist(product)),
+            ),
+          ],
         ),
         SizedBox(height: _compact ? 4 : 7),
         _ratingLine(product),

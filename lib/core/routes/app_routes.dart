@@ -10,6 +10,7 @@ import '../../features/auth/presentation/pending_page.dart';
 import '../../features/auth/presentation/register_page.dart';
 import '../../features/buyer/data/buyer_catalog_repository.dart';
 import '../../features/buyer/data/buyer_cart_controller.dart';
+import '../../features/buyer/data/buyer_wishlist_controller.dart';
 import '../../features/buyer/presentation/buyer_home_page.dart';
 import '../../features/buyer/presentation/buyer_cart_page.dart';
 import '../../features/buyer/presentation/buyer_product_detail_page.dart';
@@ -25,6 +26,7 @@ class AppRoutes {
     RouteSettings settings, {
     required AuthService authService,
     required BuyerCartController cartController,
+    required BuyerWishlistController wishlistController,
   }) {
     final requiredRole = _requiredRole(settings.name);
     final sessionRole = authService.currentSession?.role;
@@ -44,6 +46,7 @@ class AppRoutes {
             ? BuyerHomePage(
                 authService: authService,
                 cartController: cartController,
+                wishlistController: wishlistController,
               )
             : const RiderHomePage(),
         settings: RouteSettings(name: route),
@@ -86,6 +89,7 @@ class AppRoutes {
           builder: (_) => BuyerHomePage(
             authService: authService,
             cartController: cartController,
+            wishlistController: wishlistController,
           ),
           settings: settings,
         );
@@ -94,6 +98,7 @@ class AppRoutes {
           builder: (_) => BuyerHomePage(
             authService: authService,
             cartController: cartController,
+            wishlistController: wishlistController,
           ),
           settings: settings,
         );
@@ -110,6 +115,7 @@ class AppRoutes {
               productId: productId,
               repository: BuyerCatalogRepository(authService: authService),
               cartController: cartController,
+              wishlistController: wishlistController,
             ),
             settings: settings,
           );
@@ -118,6 +124,7 @@ class AppRoutes {
           builder: (_) => BuyerHomePage(
             authService: authService,
             cartController: cartController,
+            wishlistController: wishlistController,
           ),
           settings: settings,
         );

@@ -1,10 +1,15 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
+import '../../../core/network/api_client.dart';
 import '../../../core/routes/app_route_names.dart';
 import '../../../core/widgets/bearly_logo.dart';
 import '../../auth/data/auth_service.dart';
 import '../data/buyer_cart_controller.dart';
 import '../data/buyer_catalog_repository.dart';
+import '../data/buyer_wishlist_controller.dart';
+import '../models/buyer_catalog_models.dart';
 import 'buyer_account_page.dart';
 import 'buyer_orders_page.dart';
 import 'buyer_saved_page.dart';
@@ -17,11 +22,13 @@ class BuyerHomePage extends StatefulWidget {
     super.key,
     required this.authService,
     required this.cartController,
+    required this.wishlistController,
     this.catalogRepository,
   });
 
   final AuthService authService;
   final BuyerCartController cartController;
+  final BuyerWishlistController wishlistController;
   final BuyerCatalogRepository? catalogRepository;
 
   @override
@@ -38,10 +45,13 @@ class _BuyerHomePageState extends State<BuyerHomePage> {
   void initState() {
     super.initState();
     widget.cartController.synchronizeSession();
+    widget.wishlistController.synchronizeSession();
+    unawaited(widget.wishlistController.refresh());
   }
 
   void _logout() {
     widget.cartController.clear();
+    widget.wishlistController.clear();
     Navigator.pushNamedAndRemoveUntil(
       context,
       AppRouteNames.logout,
@@ -67,6 +77,33 @@ class _BuyerHomePageState extends State<BuyerHomePage> {
     AppRouteNames.buyerProduct,
     arguments: productId,
   );
+
+  Future<void> _toggleWishlist(BuyerCatalogProduct product) async {
+    final wasSaved = widget.wishlistController.isSaved(product.id) == true;
+    try {
+      final saved = await widget.wishlistController.toggleProduct(product);
+      if (!mounted || !saved) return;
+      _showMessage(
+        wasSaved ? 'Removed from saved products.' : 'Added to saved products.',
+      );
+    } catch (error) {
+      if (!mounted) return;
+      final needsSignIn = _needsSignIn(error);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(buyerWishlistErrorMessage(error)),
+          action: needsSignIn
+              ? SnackBarAction(label: 'Sign in', onPressed: _signInAgain)
+              : null,
+        ),
+      );
+    }
+  }
+
+  bool _needsSignIn(Object error) =>
+      error is AuthException ||
+      (error is ApiHttpException &&
+          (error.statusCode == 401 || error.statusCode == 403));
 
   @override
   Widget build(BuildContext context) {
@@ -107,14 +144,32 @@ class _BuyerHomePageState extends State<BuyerHomePage> {
         children: [
           BuyerShopPage(
             repository: _catalogRepository,
+            wishlistController: widget.wishlistController,
+            onToggleWishlist: _toggleWishlist,
             onOpenProduct: _openProduct,
             onUnavailableAction: _showUnavailableAction,
             onSignInAgain: _signInAgain,
           ),
           const BuyerOrdersPage(),
           BuyerSavedPage(
-            products: const [],
-            onAddToCart: (_) => _showUnavailableAction('Cart'),
+            controller: widget.wishlistController,
+            isActive: _tab == 2,
+            onOpenProduct: _openProduct,
+            onSignInAgain: _signInAgain,
+            onWishlistError: (error) {
+              final needsSignIn = _needsSignIn(error);
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(buyerWishlistErrorMessage(error)),
+                  action: needsSignIn
+                      ? SnackBarAction(
+                          label: 'Sign in',
+                          onPressed: _signInAgain,
+                        )
+                      : null,
+                ),
+              );
+            },
           ),
           BuyerAccountPage(onLogout: _logout, onMessage: _showMessage),
         ],
@@ -122,7 +177,9 @@ class _BuyerHomePageState extends State<BuyerHomePage> {
       bottomNavigationBar: NavigationBar(
         height: 72,
         selectedIndex: _tab,
-        onDestinationSelected: (value) => setState(() => _tab = value),
+        onDestinationSelected: (value) {
+          setState(() => _tab = value);
+        },
         destinations: [
           const NavigationDestination(
             icon: Icon(Icons.storefront_outlined),

@@ -6,6 +6,7 @@ import 'package:bearly_mobile/core/routes/app_routes.dart';
 import 'package:bearly_mobile/features/auth/data/auth_service.dart';
 import 'package:bearly_mobile/features/auth/models/account_role.dart';
 import 'package:bearly_mobile/features/buyer/data/buyer_cart_controller.dart';
+import 'package:bearly_mobile/features/buyer/data/buyer_wishlist_controller.dart';
 import 'package:bearly_mobile/features/buyer/presentation/buyer_home_page.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -673,11 +674,13 @@ class _Harness {
     );
     auth.currentSession = _buyerSession(accountId);
     cartController = BuyerCartController(authService: auth);
+    wishlistController = BuyerWishlistController(authService: auth);
   }
 
   final Future<http.Response> Function(http.Request) handler;
   late final AuthService auth;
   late final BuyerCartController cartController;
+  late final BuyerWishlistController wishlistController;
   int accountId = 8;
 }
 
@@ -691,11 +694,13 @@ Future<void> _pumpHome(WidgetTester tester, _Harness h) async {
       home: BuyerHomePage(
         authService: h.auth,
         cartController: h.cartController,
+        wishlistController: h.wishlistController,
       ),
       onGenerateRoute: (settings) => AppRoutes.onGenerateRoute(
         settings,
         authService: h.auth,
         cartController: h.cartController,
+        wishlistController: h.wishlistController,
       ),
     ),
   );
@@ -729,6 +734,26 @@ bool _isCart(http.Request request) =>
     request.method == 'GET' && request.url.path == '/api/mobile/buyer/cart';
 
 Future<http.Response> _catalogResponse(http.Request request) async {
+  if (request.url.path == '/api/mobile/buyer/wishlist' &&
+      request.method == 'GET') {
+    return _json({
+      'data': [],
+      'meta': {
+        'current_page': 1,
+        'per_page': 12,
+        'total': 0,
+        'last_page': 1,
+        'has_more': false,
+      },
+    });
+  }
+  if (request.url.path.startsWith('/api/mobile/buyer/wishlist/') &&
+      (request.method == 'PUT' || request.method == 'DELETE')) {
+    final id = int.parse(request.url.path.split('/').last);
+    return _json({
+      'data': {'product_id': id, 'is_saved': request.method == 'PUT'},
+    });
+  }
   if (request.method == 'POST' &&
       request.url.path == '/api/mobile/buyer/cart/items') {
     final body = jsonDecode(request.body) as Map<String, dynamic>;

@@ -5,6 +5,7 @@ import 'features/auth/presentation/session_startup_page.dart';
 import 'core/routes/app_routes.dart';
 import 'core/theme/bearly_theme.dart';
 import 'features/buyer/data/buyer_cart_controller.dart';
+import 'features/buyer/data/buyer_wishlist_controller.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -16,13 +17,18 @@ class BearlyApp extends StatelessWidget {
     super.key,
     AuthService? authService,
     BuyerCartController? cartController,
+    BuyerWishlistController? wishlistController,
   }) : authService = authService ?? AuthService() {
     this.cartController =
         cartController ?? BuyerCartController(authService: this.authService);
+    this.wishlistController =
+        wishlistController ??
+        BuyerWishlistController(authService: this.authService);
   }
 
   final AuthService authService;
   late final BuyerCartController cartController;
+  late final BuyerWishlistController wishlistController;
 
   @override
   Widget build(BuildContext context) {
@@ -35,6 +41,7 @@ class BearlyApp extends StatelessWidget {
         settings,
         authService: authService,
         cartController: cartController,
+        wishlistController: wishlistController,
       ),
     );
   }

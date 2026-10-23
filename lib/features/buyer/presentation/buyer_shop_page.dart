@@ -6,7 +6,9 @@ import '../../../core/network/api_client.dart';
 import '../../../core/theme/bearly_theme.dart';
 import '../../auth/data/auth_service.dart';
 import '../data/buyer_catalog_repository.dart';
+import '../data/buyer_wishlist_controller.dart';
 import '../models/buyer_catalog_models.dart';
+import 'buyer_wishlist_heart_button.dart';
 
 class BuyerShopPage extends StatefulWidget {
   const BuyerShopPage({
@@ -15,12 +17,16 @@ class BuyerShopPage extends StatefulWidget {
     required this.onOpenProduct,
     required this.onUnavailableAction,
     required this.onSignInAgain,
+    required this.wishlistController,
+    required this.onToggleWishlist,
   });
 
   final BuyerCatalogRepository repository;
   final ValueChanged<int> onOpenProduct;
   final ValueChanged<String> onUnavailableAction;
   final VoidCallback onSignInAgain;
+  final BuyerWishlistController wishlistController;
+  final Future<void> Function(BuyerCatalogProduct product) onToggleWishlist;
 
   @override
   State<BuyerShopPage> createState() => _BuyerShopPageState();
@@ -528,12 +534,12 @@ class _BuyerShopPageState extends State<BuyerShopPage> {
                 Positioned(
                   top: 6,
                   right: 6,
-                  child: IconButton.filledTonal(
+                  child: BuyerWishlistHeartButton(
                     key: ValueKey('buyer-save-${product.id}'),
-                    visualDensity: VisualDensity.compact,
+                    controller: widget.wishlistController,
+                    productId: product.id,
                     onPressed: () =>
-                        widget.onUnavailableAction('Saving products'),
-                    icon: const Icon(Icons.favorite_border_rounded, size: 19),
+                        unawaited(widget.onToggleWishlist(product)),
                   ),
                 ),
               ],
