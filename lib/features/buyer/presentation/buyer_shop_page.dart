@@ -581,8 +581,8 @@ class _BuyerShopPageState extends State<BuyerShopPage> {
                       ),
                       IconButton.filled(
                         key: ValueKey('buyer-add-cart-${product.id}'),
-                        onPressed: () =>
-                            widget.onUnavailableAction('Add to cart'),
+                        tooltip: 'Choose options and add to cart',
+                        onPressed: () => widget.onOpenProduct(product.id),
                         visualDensity: VisualDensity.compact,
                         icon: const Icon(Icons.add_rounded, size: 19),
                         padding: EdgeInsets.zero,

@@ -5,6 +5,7 @@ import '../../../core/routes/app_route_names.dart';
 import '../../../core/theme/bearly_theme.dart';
 import '../../../core/widgets/bearly_logo.dart';
 import '../../auth/data/auth_service.dart';
+import '../data/buyer_cart_controller.dart';
 import '../data/buyer_catalog_repository.dart';
 import '../models/buyer_catalog_models.dart';
 
@@ -13,10 +14,12 @@ class BuyerProductDetailPage extends StatefulWidget {
     super.key,
     required this.productId,
     required this.repository,
+    required this.cartController,
   });
 
   final int productId;
   final BuyerCatalogRepository repository;
+  final BuyerCartController cartController;
 
   @override
   State<BuyerProductDetailPage> createState() => _BuyerProductDetailPageState();
@@ -26,9 +29,12 @@ class _BuyerProductDetailPageState extends State<BuyerProductDetailPage> {
   BuyerCatalogProduct? _product;
   Object? _error;
   int? _selectedVariantId;
+  Map<String, Object?> _selectedOptions = const {};
   int _selectedImageIndex = 0;
   int _requestSequence = 0;
+  int _quantity = 1;
   bool _loading = true;
+  bool _addingToCart = false;
 
   bool get _compact => MediaQuery.sizeOf(context).width < 600;
 
@@ -53,6 +59,7 @@ class _BuyerProductDetailPageState extends State<BuyerProductDetailPage> {
   @override
   void initState() {
     super.initState();
+    widget.cartController.synchronizeSession();
     _loadProduct();
   }
 
@@ -69,10 +76,20 @@ class _BuyerProductDetailPageState extends State<BuyerProductDetailPage> {
       final primaryImageIndex = product.images.indexWhere(
         (image) => image.url == product.imageUrl,
       );
+      final variantImageIndex = selected == null
+          ? -1
+          : product.images.indexWhere(
+              (image) => image.variantId == selected.id,
+            );
       setState(() {
         _product = product;
         _selectedVariantId = selected?.id;
-        _selectedImageIndex = primaryImageIndex < 0 ? 0 : primaryImageIndex;
+        _selectedOptions = Map.unmodifiable(selected?.options ?? const {});
+        _selectedImageIndex = variantImageIndex >= 0
+            ? variantImageIndex
+            : primaryImageIndex < 0
+            ? 0
+            : primaryImageIndex;
         _loading = false;
       });
     } catch (error) {
@@ -89,6 +106,159 @@ class _BuyerProductDetailPageState extends State<BuyerProductDetailPage> {
       if (variant.inStock) return variant;
     }
     return variants.isEmpty ? null : variants.first;
+  }
+
+  List<_VariantOptionGroup>? _structuredOptionGroups(
+    List<BuyerCatalogVariant> variants,
+  ) {
+    if (variants.isEmpty || variants.first.options.isEmpty) return null;
+    final keys = variants.first.options.keys.toList(growable: false);
+    if (keys.any((key) => key.trim().isEmpty)) return null;
+
+    bool isScalar(Object? value) =>
+        value is String || value is num || value is bool;
+
+    for (final variant in variants) {
+      if (variant.options.length != keys.length ||
+          !keys.every(
+            (key) => variant.options.keys.any(
+              (candidate) => _sameOptionKeyKey(key, candidate),
+            ),
+          ) ||
+          !variant.options.values.every(isScalar)) {
+        return null;
+      }
+    }
+
+    return [
+      for (final key in keys)
+        _VariantOptionGroup(
+          key: key,
+          label: key,
+          values: [
+            for (final variant in variants)
+              if (!_valueAlreadyAdded(
+                variants,
+                key,
+                _optionValue(variant.options, key),
+                beforeVariant: variant,
+              ))
+                _optionValue(variant.options, key)!,
+          ],
+        ),
+    ];
+  }
+
+  bool _sameOptionKeyKey(String key, String candidate) =>
+      key.toLowerCase() == candidate.toLowerCase();
+
+  bool _valueAlreadyAdded(
+    List<BuyerCatalogVariant> variants,
+    String key,
+    Object? value, {
+    required BuyerCatalogVariant beforeVariant,
+  }) {
+    for (final variant in variants) {
+      if (identical(variant, beforeVariant)) return false;
+      final candidate = _optionValue(variant.options, key);
+      if (candidate.runtimeType == value.runtimeType && candidate == value) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  Object? _optionValue(Map<String, Object?> options, String key) {
+    for (final entry in options.entries) {
+      if (_sameOptionKeyKey(key, entry.key)) return entry.value;
+    }
+    return null;
+  }
+
+  BuyerCatalogVariant? _resolveVariant(
+    List<BuyerCatalogVariant> variants,
+    Map<String, Object?> options,
+  ) {
+    if (options.isEmpty) return null;
+    final matches = variants
+        .where((variant) {
+          if (variant.options.length != options.length) return false;
+          return options.entries.every((selection) {
+            final value = _optionValue(variant.options, selection.key);
+            return value != null &&
+                value.runtimeType == selection.value.runtimeType &&
+                value == selection.value;
+          });
+        })
+        .toList(growable: false);
+    return matches.length == 1 ? matches.single : null;
+  }
+
+  void _selectOption(String key, Object value, BuyerCatalogProduct product) {
+    final nextOptions = Map<String, Object?>.of(_selectedOptions)
+      ..[key] = value;
+    final variant = _resolveVariant(product.variants, nextOptions);
+    setState(() {
+      _selectedOptions = Map.unmodifiable(nextOptions);
+      _selectedVariantId = variant?.id;
+      if (variant != null) _selectVariantImage(variant);
+    });
+  }
+
+  void _selectVariant(BuyerCatalogVariant variant) {
+    setState(() {
+      _selectedVariantId = variant.id;
+      _selectedOptions = Map.unmodifiable(variant.options);
+      _selectVariantImage(variant);
+    });
+  }
+
+  void _selectVariantImage(BuyerCatalogVariant variant) {
+    final imageIndex = _product?.images.indexWhere(
+      (image) => image.variantId == variant.id,
+    );
+    if (imageIndex != null && imageIndex >= 0) _selectedImageIndex = imageIndex;
+  }
+
+  bool _variantCanBeAdded(BuyerCatalogProduct product) {
+    final variant = _selectedVariant;
+    return !_addingToCart &&
+        !widget.cartController.isMutating &&
+        product.variants.isNotEmpty &&
+        variant != null &&
+        variant.inStock;
+  }
+
+  Future<void> _addToCart(BuyerCatalogProduct product) async {
+    final variant = _selectedVariant;
+    if (variant == null || !variant.inStock || _addingToCart) return;
+    setState(() => _addingToCart = true);
+    try {
+      await widget.cartController.addItem(
+        productVariantId: variant.id,
+        quantity: _quantity,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Added to your cart.')));
+    } catch (error) {
+      if (!mounted) return;
+      if (_needsSignIn(error)) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(buyerCartErrorMessage(error)),
+            action: SnackBarAction(label: 'Sign in', onPressed: _signInAgain),
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(buyerCartErrorMessage(error))));
+      }
+    } finally {
+      if (mounted) setState(() => _addingToCart = false);
+    }
   }
 
   bool _needsSignIn(Object? error) =>
@@ -308,13 +478,24 @@ class _BuyerProductDetailPageState extends State<BuyerProductDetailPage> {
 
   Widget _details(BuyerCatalogProduct product) {
     final variant = _selectedVariant;
-    final price = variant?.formattedPrice ?? product.formattedPrice;
-    final regularPrice =
-        variant?.regularPriceMinor ?? product.regularPriceMinor;
-    final currentPrice = variant?.priceMinor ?? product.priceMinor;
-    final discount = variant?.discountPercent ?? product.discountPercent;
-    final inStock = variant?.inStock ?? product.inStock;
-    final regularPriceText = variant == null
+    final optionGroups = _structuredOptionGroups(product.variants);
+    final combinationUnavailable =
+        optionGroups != null && _selectedOptions.isNotEmpty && variant == null;
+    final price = combinationUnavailable
+        ? 'Unavailable'
+        : variant?.formattedPrice ?? product.formattedPrice;
+    final regularPrice = combinationUnavailable
+        ? 0
+        : variant?.regularPriceMinor ?? product.regularPriceMinor;
+    final currentPrice = combinationUnavailable
+        ? 0
+        : variant?.priceMinor ?? product.priceMinor;
+    final discount = combinationUnavailable
+        ? 0
+        : variant?.discountPercent ?? product.discountPercent;
+    final inStock =
+        !combinationUnavailable && (variant?.inStock ?? product.inStock);
+    final regularPriceText = variant == null || combinationUnavailable
         ? product.formattedRegularPrice
         : formatPriceMinorUnits(
             variant.regularPriceMinor,
@@ -382,43 +563,71 @@ class _BuyerProductDetailPageState extends State<BuyerProductDetailPage> {
           ),
         ),
         SizedBox(height: _compact ? 10 : 13),
-        _availability(inStock),
+        if (combinationUnavailable)
+          const Row(
+            key: ValueKey('buyer-detail-combination-unavailable'),
+            children: [
+              Icon(
+                Icons.remove_circle_outline,
+                size: 18,
+                color: BearlyColors.muted,
+              ),
+              SizedBox(width: 7),
+              Expanded(child: Text('This combination is unavailable.')),
+            ],
+          )
+        else
+          _availability(inStock),
         if (product.variants.isNotEmpty) ...[
           Divider(height: _compact ? 20 : 26),
-          Text('Options', style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 7),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              for (final item in product.variants)
-                ChoiceChip(
-                  key: ValueKey('buyer-variant-${item.id}'),
-                  selected: item.id == _selectedVariantId,
-                  onSelected: (_) => setState(() {
-                    _selectedVariantId = item.id;
-                  }),
-                  label: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 190),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          _variantLabel(item),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        Text(
-                          item.inStock ? item.formattedPrice : 'Out of stock',
-                          style: Theme.of(context).textTheme.bodySmall,
-                        ),
-                      ],
+          if (optionGroups != null)
+            for (final group in optionGroups) ...[
+              Text(group.label, style: Theme.of(context).textTheme.titleSmall),
+              const SizedBox(height: 5),
+              Wrap(
+                spacing: 7,
+                runSpacing: 6,
+                children: [
+                  for (final value in group.values)
+                    _optionChoice(product, group, value),
+                ],
+              ),
+              const SizedBox(height: 9),
+            ]
+          else if (product.variants.length > 1) ...[
+            Text('Options', style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: 7),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final item in product.variants)
+                  ChoiceChip(
+                    key: ValueKey('buyer-variant-${item.id}'),
+                    selected: item.id == _selectedVariantId,
+                    onSelected: (_) => _selectVariant(item),
+                    label: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 190),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            _variantLabel(item),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          Text(
+                            item.inStock ? item.formattedPrice : 'Out of stock',
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
+                        ],
+                      ),
                     ),
                   ),
-                ),
-            ],
-          ),
+              ],
+            ),
+          ],
         ],
         Divider(height: _compact ? 20 : 26),
         Row(
@@ -438,13 +647,18 @@ class _BuyerProductDetailPageState extends State<BuyerProductDetailPage> {
           ],
         ),
         SizedBox(height: _compact ? 11 : 16),
+        _quantitySelector(),
+        SizedBox(height: _compact ? 8 : 10),
         Row(
           children: [
             Expanded(
               child: OutlinedButton.icon(
-                onPressed: () => _showUnavailableAction('Add to cart'),
+                key: const ValueKey('buyer-detail-add-to-cart'),
+                onPressed: _variantCanBeAdded(product)
+                    ? () => _addToCart(product)
+                    : null,
                 icon: const Icon(Icons.shopping_cart_outlined),
-                label: const Text('Add to Cart'),
+                label: Text(_addingToCart ? 'Adding…' : 'Add to Cart'),
                 style: _compact
                     ? OutlinedButton.styleFrom(
                         minimumSize: const Size(0, 44),
@@ -480,7 +694,7 @@ class _BuyerProductDetailPageState extends State<BuyerProductDetailPage> {
             const SizedBox(width: 6),
             Expanded(
               child: Text(
-                'Prices and availability come from the marketplace. Cart and checkout are not available yet.',
+                'Price and availability come from the marketplace. Checkout will be available in a later phase.',
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                   fontSize: _compact ? 10 : 11,
                   height: 1.35,
@@ -541,6 +755,100 @@ class _BuyerProductDetailPageState extends State<BuyerProductDetailPage> {
         .map((entry) => '${entry.key}: ${entry.value}')
         .join(' · ');
   }
+
+  Widget _optionChoice(
+    BuyerCatalogProduct product,
+    _VariantOptionGroup group,
+    Object value,
+  ) {
+    final status = _optionStatus(product, group.key, value);
+    final selectedValue = _optionValue(_selectedOptions, group.key);
+    final selected =
+        selectedValue?.runtimeType == value.runtimeType &&
+        selectedValue == value;
+    final label = _displayOption(value);
+    return ChoiceChip(
+      key: ValueKey(
+        'buyer-option-${_optionKeyPart(group.label)}-${_optionKeyPart(label)}',
+      ),
+      selected: selected,
+      onSelected: (_) => _selectOption(group.key, value, product),
+      label: Text(status == null ? label : '$label · $status'),
+      labelStyle: status == null
+          ? null
+          : const TextStyle(color: BearlyColors.muted),
+      visualDensity: VisualDensity.compact,
+      padding: const EdgeInsets.symmetric(horizontal: 4),
+    );
+  }
+
+  String? _optionStatus(
+    BuyerCatalogProduct product,
+    String optionKey,
+    Object value,
+  ) {
+    final compatible = product.variants
+        .where((variant) {
+          final optionValue = _optionValue(variant.options, optionKey);
+          if (optionValue?.runtimeType != value.runtimeType ||
+              optionValue != value) {
+            return false;
+          }
+          return _selectedOptions.entries
+              .where(
+                (selection) => !_sameOptionKeyKey(selection.key, optionKey),
+              )
+              .every((selection) {
+                final candidate = _optionValue(variant.options, selection.key);
+                return candidate?.runtimeType == selection.value.runtimeType &&
+                    candidate == selection.value;
+              });
+        })
+        .toList(growable: false);
+
+    if (compatible.isEmpty) return 'Unavailable';
+    if (compatible.every((variant) => !variant.inStock)) return 'Out of stock';
+    return null;
+  }
+
+  String _displayOption(Object value) =>
+      value is bool ? (value ? 'Yes' : 'No') : value.toString();
+
+  String _optionKeyPart(String value) =>
+      value.replaceAll(RegExp(r'[^a-zA-Z0-9_-]+'), '-');
+
+  Widget _quantitySelector() => Row(
+    children: [
+      Expanded(
+        child: Text('Quantity', style: Theme.of(context).textTheme.titleSmall),
+      ),
+      IconButton(
+        key: const ValueKey('buyer-detail-quantity-minus'),
+        tooltip: 'Decrease quantity',
+        visualDensity: VisualDensity.compact,
+        onPressed: _quantity <= 1 ? null : () => setState(() => _quantity--),
+        icon: const Icon(Icons.remove_circle_outline_rounded),
+      ),
+      SizedBox(
+        width: 34,
+        child: Text(
+          '$_quantity',
+          key: const ValueKey('buyer-detail-quantity'),
+          textAlign: TextAlign.center,
+          style: Theme.of(context).textTheme.titleMedium,
+        ),
+      ),
+      IconButton(
+        key: const ValueKey('buyer-detail-quantity-plus'),
+        tooltip: 'Increase quantity',
+        visualDensity: VisualDensity.compact,
+        onPressed: _quantity >= 2147483647
+            ? null
+            : () => setState(() => _quantity++),
+        icon: const Icon(Icons.add_circle_outline_rounded),
+      ),
+    ],
+  );
 
   Widget _detailValue(String label, String value) => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
@@ -629,7 +937,7 @@ class _BuyerProductDetailPageState extends State<BuyerProductDetailPage> {
         SizedBox(width: _compact ? 16 : 22),
         Expanded(
           child: Text(
-            '${product.ratingSummary.count} ratings',
+            '${product.ratingSummary.count} ${product.ratingSummary.count == 1 ? 'rating' : 'ratings'}',
             style: Theme.of(context).textTheme.bodyMedium,
           ),
         ),
@@ -660,4 +968,16 @@ class _BuyerProductDetailPageState extends State<BuyerProductDetailPage> {
       ],
     ),
   );
+}
+
+class _VariantOptionGroup {
+  const _VariantOptionGroup({
+    required this.key,
+    required this.label,
+    required this.values,
+  });
+
+  final String key;
+  final String label;
+  final List<Object> values;
 }

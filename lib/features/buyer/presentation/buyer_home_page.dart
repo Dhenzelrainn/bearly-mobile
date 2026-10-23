@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../core/routes/app_route_names.dart';
 import '../../../core/widgets/bearly_logo.dart';
 import '../../auth/data/auth_service.dart';
+import '../data/buyer_cart_controller.dart';
 import '../data/buyer_catalog_repository.dart';
 import 'buyer_account_page.dart';
 import 'buyer_orders_page.dart';
@@ -15,10 +16,12 @@ class BuyerHomePage extends StatefulWidget {
   const BuyerHomePage({
     super.key,
     required this.authService,
+    required this.cartController,
     this.catalogRepository,
   });
 
   final AuthService authService;
+  final BuyerCartController cartController;
   final BuyerCatalogRepository? catalogRepository;
 
   @override
@@ -31,11 +34,20 @@ class _BuyerHomePageState extends State<BuyerHomePage> {
       widget.catalogRepository ??
       BuyerCatalogRepository(authService: widget.authService);
 
-  void _logout() => Navigator.pushNamedAndRemoveUntil(
-    context,
-    AppRouteNames.logout,
-    (_) => false,
-  );
+  @override
+  void initState() {
+    super.initState();
+    widget.cartController.synchronizeSession();
+  }
+
+  void _logout() {
+    widget.cartController.clear();
+    Navigator.pushNamedAndRemoveUntil(
+      context,
+      AppRouteNames.logout,
+      (_) => false,
+    );
+  }
 
   void _showMessage(String message) => ScaffoldMessenger.of(
     context,
@@ -64,8 +76,19 @@ class _BuyerHomePageState extends State<BuyerHomePage> {
         actions: [
           IconButton(
             tooltip: 'Cart',
-            onPressed: () => _showUnavailableAction('Cart'),
-            icon: const Icon(Icons.shopping_cart_outlined),
+            onPressed: () =>
+                Navigator.pushNamed(context, AppRouteNames.buyerCart),
+            icon: ListenableBuilder(
+              listenable: widget.cartController,
+              builder: (context, _) {
+                final count = widget.cartController.cart?.cartCount ?? 0;
+                return Badge(
+                  isLabelVisible: count > 0,
+                  label: Text(count > 99 ? '99+' : '$count'),
+                  child: const Icon(Icons.shopping_cart_outlined),
+                );
+              },
+            ),
           ),
           IconButton(
             onPressed: () => _showMessage('You are all caught up.'),

@@ -5,6 +5,7 @@ import 'package:bearly_mobile/core/routes/app_routes.dart';
 import 'package:bearly_mobile/core/network/api_client.dart';
 import 'package:bearly_mobile/features/auth/data/auth_service.dart';
 import 'package:bearly_mobile/features/auth/models/account_role.dart';
+import 'package:bearly_mobile/features/buyer/data/buyer_cart_controller.dart';
 import 'package:bearly_mobile/features/buyer/presentation/buyer_home_page.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -182,10 +183,13 @@ void main() {
         '₱125.00',
       );
       expect(find.text('In stock'), findsWidgets);
-      await tester.ensureVisible(
-        find.byKey(const ValueKey('buyer-variant-10')),
+      await tester.tap(find.byKey(const ValueKey('buyer-option-Color-Cream')));
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('buyer-detail-combination-unavailable')),
+        findsOneWidget,
       );
-      await tester.tap(find.byKey(const ValueKey('buyer-variant-10')));
+      await tester.tap(find.byKey(const ValueKey('buyer-option-Size-Small')));
       await tester.pumpAndSettle();
 
       expect(
@@ -280,7 +284,7 @@ void main() {
       );
     });
 
-    testWidgets('cart and save actions do not send mutation requests', (
+    testWidgets('cart quick-add opens detail and save remains read-only', (
       tester,
     ) async {
       final requests = <http.Request>[];
@@ -288,6 +292,14 @@ void main() {
         requests.add(request);
         if (request.url.path.endsWith('/categories')) {
           return _jsonResponse({'data': []});
+        }
+        if (request.url.path.endsWith('/products/41')) {
+          return _jsonResponse({
+            'data': _product(
+              detail: true,
+              variants: [_variant(id: 9, price: 12500, inStock: true)],
+            ),
+          });
         }
         return _jsonResponse(_page([_product()]));
       });
@@ -298,15 +310,21 @@ void main() {
         find.byKey(const ValueKey('buyer-add-cart-41')),
       );
       await tester.tap(find.byKey(const ValueKey('buyer-add-cart-41')));
-      await tester.pump();
+      await tester.pumpAndSettle();
       expect(
-        find.text('Add to cart will be available in a later phase.'),
+        find.byKey(const ValueKey('buyer-detail-add-to-cart')),
         findsOneWidget,
       );
+      await tester.tap(find.byIcon(Icons.arrow_back_rounded).first);
+      await tester.pumpAndSettle();
       await tester.ensureVisible(find.byKey(const ValueKey('buyer-save-41')));
       await tester.tap(find.byKey(const ValueKey('buyer-save-41')));
       await tester.pump();
 
+      expect(
+        find.text('Saving products will be available in a later phase.'),
+        findsOneWidget,
+      );
       expect(requests, isNotEmpty);
       expect(requests.every((request) => request.method == 'GET'), isTrue);
       expect(
@@ -364,11 +382,17 @@ Future<void> _pumpApp(WidgetTester tester, AuthService auth) async {
   await tester.pumpWidget(_app(auth));
 }
 
-Widget _app(AuthService auth) => MaterialApp(
-  home: BuyerHomePage(authService: auth),
-  onGenerateRoute: (settings) =>
-      AppRoutes.onGenerateRoute(settings, authService: auth),
-);
+Widget _app(AuthService auth) {
+  final cartController = BuyerCartController(authService: auth);
+  return MaterialApp(
+    home: BuyerHomePage(authService: auth, cartController: cartController),
+    onGenerateRoute: (settings) => AppRoutes.onGenerateRoute(
+      settings,
+      authService: auth,
+      cartController: cartController,
+    ),
+  );
+}
 
 AuthService _authService(
   Future<http.Response> Function(http.Request) handler, {
