@@ -27,5 +27,6 @@ class AppRouteNames {
   static const riderAccount = '/rider/account';
   static const buyerCart = '/buyer/cart';
   static const buyerCheckoutReview = '/buyer/checkout/review';
+  static const buyerOrderDetails = '/buyer/orders/details';
   static const buyerProduct = '/buyer/product';
 }

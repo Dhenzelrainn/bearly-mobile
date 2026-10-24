@@ -20,6 +20,7 @@ import '../../features/buyer/data/buyer_wishlist_controller.dart';
 import '../../features/buyer/presentation/buyer_home_page.dart';
 import '../../features/buyer/presentation/buyer_cart_page.dart';
 import '../../features/buyer/presentation/buyer_checkout_review_page.dart';
+import '../../features/buyer/presentation/buyer_order_details_page.dart';
 import '../../features/buyer/presentation/buyer_product_detail_page.dart';
 import '../../features/rider/presentation/rider_home_page.dart';
 import '../../features/rider/presentation/rider_module_page.dart';
@@ -75,6 +76,7 @@ class AppRoutes {
                 authService: authService,
                 cartController: cartController,
                 wishlistController: wishlistController,
+                checkoutRepository: resolveCheckoutRepository(),
                 addressController: addressController,
                 locationRepository: locationRepository,
               )
@@ -120,6 +122,7 @@ class AppRoutes {
             authService: authService,
             cartController: cartController,
             wishlistController: wishlistController,
+            checkoutRepository: resolveCheckoutRepository(),
             addressController: addressController,
             locationRepository: locationRepository,
           ),
@@ -131,6 +134,7 @@ class AppRoutes {
             authService: authService,
             cartController: cartController,
             wishlistController: wishlistController,
+            checkoutRepository: resolveCheckoutRepository(),
             addressController: addressController,
             locationRepository: locationRepository,
           ),
@@ -164,6 +168,27 @@ class AppRoutes {
           },
           settings: settings,
         );
+      case AppRouteNames.buyerOrderDetails:
+        final orderId = settings.arguments;
+        if (orderId is int && orderId > 0) {
+          return MaterialPageRoute(
+            builder: (context) => BuyerOrderDetailsPage(
+              authService: authService,
+              checkoutRepository: resolveCheckoutRepository(),
+              orderId: orderId,
+              onSignInAgain: () => Navigator.of(
+                context,
+              ).pushNamedAndRemoveUntil(AppRouteNames.login, (_) => false),
+            ),
+            settings: settings,
+          );
+        }
+        return MaterialPageRoute<void>(
+          builder: (_) => const Scaffold(
+            body: Center(child: Text('This order could not be opened.')),
+          ),
+          settings: settings,
+        );
       case AppRouteNames.buyerProduct:
         final productId = settings.arguments;
         if (productId is int && productId > 0) {
@@ -182,6 +207,7 @@ class AppRoutes {
             authService: authService,
             cartController: cartController,
             wishlistController: wishlistController,
+            checkoutRepository: resolveCheckoutRepository(),
             addressController: addressController,
             locationRepository: locationRepository,
           ),
@@ -247,6 +273,7 @@ class AppRoutes {
       AppRouteNames.buyerHome,
       AppRouteNames.buyerCart,
       AppRouteNames.buyerCheckoutReview,
+      AppRouteNames.buyerOrderDetails,
       AppRouteNames.buyerProduct,
     }.contains(name)) {
       return AccountRole.buyer;

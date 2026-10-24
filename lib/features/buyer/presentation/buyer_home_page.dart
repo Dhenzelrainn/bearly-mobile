@@ -9,6 +9,7 @@ import '../../auth/data/auth_service.dart';
 import '../data/buyer_cart_controller.dart';
 import '../data/buyer_address_controller.dart';
 import '../data/buyer_catalog_repository.dart';
+import '../data/buyer_checkout_repository.dart';
 import '../data/buyer_location_repository.dart';
 import '../data/buyer_wishlist_controller.dart';
 import '../models/buyer_catalog_models.dart';
@@ -27,6 +28,7 @@ class BuyerHomePage extends StatefulWidget {
     required this.cartController,
     required this.wishlistController,
     this.catalogRepository,
+    this.checkoutRepository,
     this.addressController,
     this.locationRepository,
   });
@@ -35,6 +37,7 @@ class BuyerHomePage extends StatefulWidget {
   final BuyerCartController cartController;
   final BuyerWishlistController wishlistController;
   final BuyerCatalogRepository? catalogRepository;
+  final BuyerCheckoutRepository? checkoutRepository;
   final BuyerAddressController? addressController;
   final BuyerLocationRepository? locationRepository;
 
@@ -47,6 +50,9 @@ class _BuyerHomePageState extends State<BuyerHomePage> {
   late final BuyerCatalogRepository _catalogRepository =
       widget.catalogRepository ??
       BuyerCatalogRepository(authService: widget.authService);
+  late final BuyerCheckoutRepository _checkoutRepository =
+      widget.checkoutRepository ??
+      BuyerCheckoutRepository(authService: widget.authService);
   late final BuyerAddressController _addressController =
       widget.addressController ??
       BuyerAddressController(authService: widget.authService);
@@ -183,7 +189,12 @@ class _BuyerHomePageState extends State<BuyerHomePage> {
             onUnavailableAction: _showUnavailableAction,
             onSignInAgain: _signInAgain,
           ),
-          const BuyerOrdersPage(),
+          BuyerOrdersPage(
+            authService: widget.authService,
+            checkoutRepository: _checkoutRepository,
+            onSignInAgain: _signInAgain,
+            isActive: _tab == 1,
+          ),
           BuyerSavedPage(
             controller: widget.wishlistController,
             isActive: _tab == 2,
