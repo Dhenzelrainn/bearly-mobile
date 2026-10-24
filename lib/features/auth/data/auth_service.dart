@@ -94,6 +94,14 @@ class AuthException implements Exception {
   String toString() => message;
 }
 
+/// Raised when an authenticated request outlives the session that started it.
+class AuthSessionChangedException extends AuthException {
+  const AuthSessionChangedException({required this.requestMayHaveReachedServer})
+    : super('The active Bearly account changed during the request.');
+
+  final bool requestMayHaveReachedServer;
+}
+
 /// HTTP methods available to authenticated feature repositories.
 enum AuthenticatedRequestMethod { get, post, put, patch, delete }
 
@@ -108,6 +116,10 @@ class AuthService {
 
   AuthSession? currentSession;
   String? _ephemeralToken;
+  int _sessionEpoch = 0;
+
+  /// Changes whenever this service installs or clears an authenticated session.
+  int get sessionEpoch => _sessionEpoch;
 
   Future<AuthSession> login({
     required String email,
@@ -153,6 +165,7 @@ class AuthService {
       );
     }
 
+    _sessionEpoch++;
     currentSession = session;
     return session;
   }
@@ -165,7 +178,9 @@ class AuthService {
   Future<AuthSession?> restoreSession() async {
     final token = await _tokenStore.read();
     if (token == null || token.trim().isEmpty) {
+      if (currentSession != null || _ephemeralToken != null) _sessionEpoch++;
       currentSession = null;
+      _ephemeralToken = null;
       return null;
     }
 
@@ -176,6 +191,7 @@ class AuthService {
       );
       final payload = _asMap(response);
       final session = AuthSession.fromJson(payload['user']);
+      _sessionEpoch++;
       currentSession = session;
       return session;
     } on ApiHttpException catch (error) {
@@ -215,9 +231,24 @@ class AuthService {
     required String path,
     Map<String, Object?>? queryParameters,
     Object? body,
+    int? expectedSessionEpoch,
+    int? expectedAccountId,
     required T Function(Object? response) parse,
   }) async {
+    final requestEpoch = _sessionEpoch;
+    final requestAccountId = currentSession?.id;
+    _checkExpectedSession(
+      expectedSessionEpoch: expectedSessionEpoch,
+      expectedAccountId: expectedAccountId,
+      requestMayHaveReachedServer: false,
+    );
     final token = _ephemeralToken ?? await _tokenStore.read();
+    _checkRequestSession(
+      requestEpoch,
+      expectedSessionEpoch: expectedSessionEpoch,
+      expectedAccountId: expectedAccountId,
+      requestMayHaveReachedServer: false,
+    );
     if (token == null || token.trim().isEmpty) {
       throw const AuthException('Sign in to access this Bearly resource.');
     }
@@ -255,9 +286,17 @@ class AuthService {
           body: body,
         ),
       };
+      _checkRequestSession(
+        requestEpoch,
+        expectedSessionEpoch: expectedSessionEpoch,
+        expectedAccountId: expectedAccountId,
+        requestMayHaveReachedServer: true,
+      );
       return parse(response);
     } on ApiHttpException catch (error) {
-      if (error.statusCode == 401 || error.statusCode == 403) {
+      if ((error.statusCode == 401 || error.statusCode == 403) &&
+          _sessionEpoch == requestEpoch &&
+          currentSession?.id == requestAccountId) {
         await _clearLocalSession();
       }
       rethrow;
@@ -294,9 +333,43 @@ class AuthService {
   }
 
   Future<void> _clearLocalSession() async {
-    await _tokenStore.clear();
     _ephemeralToken = null;
     currentSession = null;
+    _sessionEpoch++;
+    await _tokenStore.clear();
+  }
+
+  void _checkExpectedSession({
+    required int? expectedSessionEpoch,
+    required int? expectedAccountId,
+    required bool requestMayHaveReachedServer,
+  }) {
+    if ((expectedSessionEpoch != null &&
+            expectedSessionEpoch != _sessionEpoch) ||
+        (expectedAccountId != null &&
+            currentSession?.id != expectedAccountId)) {
+      throw AuthSessionChangedException(
+        requestMayHaveReachedServer: requestMayHaveReachedServer,
+      );
+    }
+  }
+
+  void _checkRequestSession(
+    int requestEpoch, {
+    required int? expectedSessionEpoch,
+    required int? expectedAccountId,
+    required bool requestMayHaveReachedServer,
+  }) {
+    if (_sessionEpoch != requestEpoch) {
+      throw AuthSessionChangedException(
+        requestMayHaveReachedServer: requestMayHaveReachedServer,
+      );
+    }
+    _checkExpectedSession(
+      expectedSessionEpoch: expectedSessionEpoch,
+      expectedAccountId: expectedAccountId,
+      requestMayHaveReachedServer: requestMayHaveReachedServer,
+    );
   }
 
   static Map<String, String> _authorization(String token) => {
