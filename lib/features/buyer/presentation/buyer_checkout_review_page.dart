@@ -7,10 +7,14 @@ import '../../../core/routes/app_route_names.dart';
 import '../../../core/theme/bearly_theme.dart';
 import '../../auth/data/auth_service.dart';
 import '../data/buyer_address_controller.dart';
+import '../data/buyer_checkout_placement_controller.dart';
+import '../data/buyer_checkout_repository.dart';
 import '../data/buyer_checkout_review_controller.dart';
 import '../data/buyer_location_repository.dart';
+import '../models/buyer_checkout_attempt.dart';
 import '../models/buyer_catalog_models.dart';
 import '../models/buyer_checkout_models.dart';
+import '../models/buyer_order_models.dart';
 import '../models/buyer_shopping_models.dart';
 import 'buyer_address_form_page.dart';
 
@@ -18,11 +22,13 @@ class BuyerCheckoutReviewPage extends StatefulWidget {
   const BuyerCheckoutReviewPage({
     super.key,
     required this.reviewController,
+    required this.placementController,
     required this.addressController,
     required this.locationRepository,
   });
 
   final BuyerCheckoutReviewController reviewController;
+  final BuyerCheckoutPlacementController placementController;
   final BuyerAddressController addressController;
   final BuyerLocationRepository locationRepository;
 
@@ -33,44 +39,356 @@ class BuyerCheckoutReviewPage extends StatefulWidget {
 
 class _BuyerCheckoutReviewPageState extends State<BuyerCheckoutReviewPage> {
   BuyerCheckoutReviewController get controller => widget.reviewController;
+  BuyerCheckoutPlacementController get placement => widget.placementController;
+  bool _reviewInitializationStarted = false;
+  int? _observedPlacementSessionGeneration;
+  Future<void>? _reviewInitialization;
 
   @override
   void initState() {
     super.initState();
+    placement.addListener(_onPlacementChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) unawaited(controller.initialize());
+      if (mounted) unawaited(_initializeCheckout());
     });
+  }
+
+  Future<void> _initializeCheckout() async {
+    await placement.initialize();
+    if (mounted) await _initializeReviewIfReady();
+  }
+
+  void _onPlacementChanged() {
+    if (mounted && placement.canShowCheckoutReview) {
+      unawaited(_initializeReviewIfReady());
+    }
+  }
+
+  Future<void> _initializeReviewIfReady() async {
+    final generation = placement.sessionGeneration;
+    if (_observedPlacementSessionGeneration != generation) {
+      _observedPlacementSessionGeneration = generation;
+      _reviewInitializationStarted = false;
+      _reviewInitialization = null;
+    }
+    if (_reviewInitializationStarted || !placement.canShowCheckoutReview) {
+      await _reviewInitialization;
+      return;
+    }
+    _reviewInitializationStarted = true;
+    _reviewInitialization = controller.initialize();
+    await _reviewInitialization;
   }
 
   @override
   void dispose() {
+    placement.removeListener(_onPlacementChanged);
+    placement.dispose();
     controller.dispose();
     super.dispose();
   }
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(
-      leading: IconButton(
-        key: const ValueKey('buyer-checkout-review-back'),
-        tooltip: 'Back to cart',
-        onPressed: _returnToCart,
-        icon: const Icon(Icons.arrow_back_rounded),
+  Widget build(BuildContext context) => AnimatedBuilder(
+    animation: Listenable.merge([controller, placement]),
+    builder: (context, _) {
+      final order = placement.confirmedOrder;
+      if (order != null) {
+        return BuyerOrderConfirmationPage(
+          order: order,
+          isRefreshingCart: placement.isRefreshingCart,
+          cartRefreshFailed: placement.cartRefreshFailed,
+          onRefreshCart: placement.refreshCart,
+          onContinueShopping: _continueShopping,
+        );
+      }
+      if (placement.isInitializing ||
+          !placement.attemptCheckComplete ||
+          placement.attemptLoadError != null) {
+        return _attemptCheckPage();
+      }
+      final attempt = placement.attempt;
+      if (attempt != null &&
+          !(placement.isSubmitting &&
+              attempt.status == BuyerCheckoutAttemptStatus.ready)) {
+        return _recoveryPage(attempt);
+      }
+      return _reviewPage();
+    },
+  );
+
+  Widget _reviewPage() => PopScope(
+    canPop: !placement.isSubmitting,
+    child: Scaffold(
+      appBar: AppBar(
+        leading: IconButton(
+          key: const ValueKey('buyer-checkout-review-back'),
+          tooltip: 'Back to cart',
+          onPressed: placement.isSubmitting ? null : _returnToCart,
+          icon: const Icon(Icons.arrow_back_rounded),
+        ),
+        title: const Text('Checkout Review'),
       ),
-      title: const Text('Checkout Review'),
-    ),
-    body: AnimatedBuilder(
-      animation: controller,
-      builder: (context, _) => _body(),
-    ),
-    bottomNavigationBar: SafeArea(
-      top: false,
-      child: AnimatedBuilder(
-        animation: controller,
-        builder: (context, _) => _bottomAction(),
-      ),
+      body: _body(),
+      bottomNavigationBar: SafeArea(top: false, child: _bottomAction()),
     ),
   );
+
+  Widget _attemptCheckPage() {
+    final error = placement.attemptLoadError;
+    final isSessionError =
+        error is BuyerCheckoutException &&
+        error.category == BuyerCheckoutFailureCategory.noBuyerSession;
+    return Scaffold(
+      appBar: AppBar(title: const Text('Checkout Recovery')),
+      body: SafeArea(
+        child: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (placement.isInitializing || error == null)
+                  const CircularProgressIndicator(
+                    key: ValueKey('buyer-checkout-recovery-checking'),
+                  )
+                else
+                  const Icon(
+                    Icons.lock_clock_outlined,
+                    size: 52,
+                    color: BearlyColors.brown700,
+                  ),
+                const SizedBox(height: 18),
+                Text(
+                  placement.isInitializing
+                      ? 'Checking secure checkout state'
+                      : 'Checkout recovery needs attention',
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  placement.isInitializing
+                      ? 'Your saved order attempt is checked before a new quote can be requested.'
+                      : error is BuyerCheckoutException
+                      ? placement.messageFor(error)
+                      : 'Bearly could not read the saved checkout state. Another order is blocked until recovery can be checked.',
+                  textAlign: TextAlign.center,
+                ),
+                if (isSessionError) ...[
+                  const SizedBox(height: 16),
+                  FilledButton(
+                    key: const ValueKey('buyer-checkout-recovery-sign-in'),
+                    onPressed: _signInAgain,
+                    child: const Text('Sign in again'),
+                  ),
+                ] else if (error != null) ...[
+                  const SizedBox(height: 16),
+                  FilledButton.icon(
+                    key: const ValueKey('buyer-checkout-recovery-retry'),
+                    onPressed: placement.isInitializing
+                        ? null
+                        : _retryAttemptCheck,
+                    icon: const Icon(Icons.refresh_rounded),
+                    label: const Text('Retry recovery check'),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _recoveryPage(BuyerCheckoutAttempt attempt) {
+    final isSubmitting = placement.isSubmitting;
+    final conflict = placement.hasUnresolvedConflict;
+    final unsubmitted = attempt.status == BuyerCheckoutAttemptStatus.ready;
+    final definitivelyRejected = placement.canStartFreshCheckoutAfterRejection;
+    final error = placement.actionError;
+    final message = error != null
+        ? placement.messageFor(error)
+        : attempt.failureCategory == null
+        ? null
+        : _messageForAttempt(attempt);
+    return PopScope(
+      canPop: !isSubmitting,
+      child: Scaffold(
+        appBar: AppBar(
+          leading: IconButton(
+            tooltip: 'Return to Cart',
+            onPressed: isSubmitting ? null : _returnToCart,
+            icon: const Icon(Icons.arrow_back_rounded),
+          ),
+          title: const Text('Checkout Recovery'),
+        ),
+        body: SafeArea(
+          child: ListView(
+            padding: const EdgeInsets.all(20),
+            children: [
+              Icon(
+                conflict
+                    ? Icons.report_gmailerrorred_outlined
+                    : unsubmitted
+                    ? Icons.receipt_long_outlined
+                    : attempt.status == BuyerCheckoutAttemptStatus.rejected
+                    ? Icons.error_outline_rounded
+                    : Icons.cloud_sync_outlined,
+                size: 50,
+                color: conflict || definitivelyRejected
+                    ? BearlyColors.error
+                    : BearlyColors.brown700,
+              ),
+              const SizedBox(height: 14),
+              Text(
+                isSubmitting
+                    ? 'Checking the original order request'
+                    : conflict
+                    ? 'Checkout request conflict'
+                    : unsubmitted
+                    ? 'A fresh quote is needed'
+                    : definitivelyRejected
+                    ? 'This placement was rejected'
+                    : 'Order status needs verification',
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                message ??
+                    (unsubmitted
+                        ? 'This request was saved before the placement POST began, so no order was sent. Request a fresh quote before placing it.'
+                        : 'The order may already have been created. Bearly can safely reconcile it by retrying the exact saved request.'),
+                textAlign: TextAlign.center,
+              ),
+              if (isSubmitting) ...[
+                const SizedBox(height: 18),
+                const Center(
+                  child: CircularProgressIndicator(
+                    key: ValueKey('buyer-checkout-placement-progress'),
+                  ),
+                ),
+              ],
+              if (attempt.validationErrors.isNotEmpty && error == null) ...[
+                const SizedBox(height: 14),
+                for (final validation
+                    in attempt.validationErrors.values
+                        .expand((items) => items)
+                        .take(3))
+                  _notice(
+                    key: ValueKey('buyer-checkout-validation-$validation'),
+                    message: validation,
+                  ),
+              ],
+              const SizedBox(height: 20),
+              if (!isSubmitting && placement.canRetryOriginalRequest)
+                FilledButton.icon(
+                  key: const ValueKey('buyer-checkout-retry-original'),
+                  onPressed: placement.retryOriginalRequest,
+                  icon: const Icon(Icons.refresh_rounded),
+                  label: const Text('Retry Original Request'),
+                ),
+              if (!isSubmitting && unsubmitted)
+                FilledButton.icon(
+                  key: const ValueKey('buyer-checkout-refresh-unsubmitted'),
+                  onPressed: _refreshUnsubmittedQuote,
+                  icon: const Icon(Icons.receipt_long_outlined),
+                  label: const Text('Request a Fresh Quote'),
+                ),
+              if (!isSubmitting && definitivelyRejected)
+                FilledButton.icon(
+                  key: const ValueKey('buyer-checkout-requote-after-rejection'),
+                  onPressed: _refreshAfterRejection,
+                  icon: const Icon(Icons.refresh_rounded),
+                  label: const Text('Review Cart and Refresh Quote'),
+                ),
+              const SizedBox(height: 8),
+              if (!isSubmitting)
+                OutlinedButton(
+                  key: const ValueKey('buyer-checkout-recovery-return-cart'),
+                  onPressed: _returnToCart,
+                  child: const Text('Return to Cart'),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  String _messageForAttempt(BuyerCheckoutAttempt attempt) {
+    if (attempt.failureCategory == BuyerCheckoutFailureCategory.conflict.name ||
+        attempt.serverErrorCode == 'checkout_request_conflict') {
+      return placement.messageFor(
+        const BuyerCheckoutException(BuyerCheckoutFailureCategory.conflict),
+      );
+    }
+    final category = BuyerCheckoutFailureCategory.values
+        .where((value) => value.name == attempt.failureCategory)
+        .firstOrNull;
+    if (category == null) {
+      return 'Bearly could not confirm this attempt. Keep it saved and contact support before placing another order.';
+    }
+    return placement.messageFor(
+      BuyerCheckoutException(
+        category,
+        serverErrorCode: attempt.serverErrorCode,
+        validationErrors: attempt.validationErrors,
+      ),
+    );
+  }
+
+  Future<void> _retryAttemptCheck() async {
+    await placement.initialize(force: true);
+    if (mounted) await _initializeReviewIfReady();
+  }
+
+  Future<void> _refreshUnsubmittedQuote() async {
+    final saved = placement.attempt;
+    if (saved == null) return;
+    final wasInitialized = controller.isInitialized;
+    await placement.discardUnsubmittedAttempt();
+    if (!mounted || placement.attempt != null) return;
+    await _initializeReviewIfReady();
+    await _restoreSelectionAndRequestFreshQuote(saved, wasInitialized);
+  }
+
+  Future<void> _refreshAfterRejection() async {
+    final saved = placement.attempt;
+    if (saved == null) return;
+    final wasInitialized = controller.isInitialized;
+    await placement.clearDefinitiveRejection();
+    if (!mounted || placement.attempt != null) return;
+    await _initializeReviewIfReady();
+    await _restoreSelectionAndRequestFreshQuote(saved, wasInitialized);
+  }
+
+  Future<void> _restoreSelectionAndRequestFreshQuote(
+    BuyerCheckoutAttempt saved,
+    bool wasInitialized,
+  ) async {
+    for (final id in saved.request.cartItemIds) {
+      controller.cartController.setItemSelected(id, true);
+    }
+    controller.selectAddress(saved.request.addressId);
+    final quote = controller.quote;
+    final selection = quote?.sourceRequest;
+    final alreadyFreshForSavedSelection =
+        selection != null &&
+        selection.addressId == saved.request.addressId &&
+        selection.cartItemIds.join(',') == saved.request.cartItemIds.join(',');
+    if (wasInitialized || !alreadyFreshForSavedSelection) {
+      await controller.requestQuote();
+    }
+  }
+
+  Future<void> _continueShopping() async {
+    if (!await placement.acknowledgeSuccess() || !mounted) return;
+    Navigator.of(
+      context,
+    ).pushNamedAndRemoveUntil(AppRouteNames.buyerHome, (_) => false);
+  }
 
   Widget _body() {
     final cart = controller.cartController.cart;
@@ -82,7 +400,9 @@ class _BuyerCheckoutReviewPageState extends State<BuyerCheckoutReviewPage> {
       );
     }
     return RefreshIndicator(
-      onRefresh: controller.refreshInputs,
+      onRefresh: placement.isSubmitting
+          ? () async {}
+          : controller.refreshInputs,
       child: ListView(
         key: const ValueKey('buyer-checkout-review-list'),
         physics: const AlwaysScrollableScrollPhysics(),
@@ -118,6 +438,11 @@ class _BuyerCheckoutReviewPageState extends State<BuyerCheckoutReviewPage> {
             _notice(
               key: const ValueKey('buyer-checkout-local-error'),
               message: controller.localError!,
+            ),
+          if (placement.actionError != null && placement.attempt == null)
+            _notice(
+              key: const ValueKey('buyer-checkout-placement-error'),
+              message: placement.messageFor(placement.actionError!),
             ),
           if (controller.quoteError case final error?) ...[
             _notice(
@@ -200,7 +525,9 @@ class _BuyerCheckoutReviewPageState extends State<BuyerCheckoutReviewPage> {
       trailing: addresses != null && addresses.isNotEmpty
           ? TextButton(
               key: const ValueKey('buyer-checkout-change-address'),
-              onPressed: controller.isLoadingAddresses ? null : _chooseAddress,
+              onPressed: controller.isLoadingAddresses || placement.isSubmitting
+                  ? null
+                  : _chooseAddress,
               child: Text(selected == null ? 'Choose' : 'Change'),
             )
           : null,
@@ -288,7 +615,7 @@ class _BuyerCheckoutReviewPageState extends State<BuyerCheckoutReviewPage> {
             const SizedBox(height: 8),
             OutlinedButton.icon(
               key: const ValueKey('buyer-checkout-change-items'),
-              onPressed: _returnToCart,
+              onPressed: placement.isSubmitting ? null : _returnToCart,
               icon: const Icon(Icons.shopping_cart_outlined),
               label: const Text('Change selected items'),
             ),
@@ -300,7 +627,7 @@ class _BuyerCheckoutReviewPageState extends State<BuyerCheckoutReviewPage> {
       title: 'Selected products',
       trailing: TextButton(
         key: const ValueKey('buyer-checkout-change-items'),
-        onPressed: _returnToCart,
+        onPressed: placement.isSubmitting ? null : _returnToCart,
         child: const Text('Change items'),
       ),
       child: Text(
@@ -779,6 +1106,25 @@ class _BuyerCheckoutReviewPageState extends State<BuyerCheckoutReviewPage> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          if (placement.isSubmitting) ...[
+            const Center(
+              child: Padding(
+                padding: EdgeInsets.only(bottom: 8),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                    SizedBox(width: 10),
+                    Text('Placing your COD order…'),
+                  ],
+                ),
+              ),
+            ),
+          ],
           if (quote != null)
             Padding(
               padding: const EdgeInsets.only(bottom: 8),
@@ -799,27 +1145,83 @@ class _BuyerCheckoutReviewPageState extends State<BuyerCheckoutReviewPage> {
                 ],
               ),
             ),
-          FilledButton.icon(
-            key: const ValueKey('buyer-checkout-request-quote'),
-            onPressed: canRequest ? controller.requestQuote : null,
-            icon: controller.isQuoting
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.receipt_long_outlined),
-            label: Text(label),
-          ),
+          if (quote != null && controller.canPlaceOrder)
+            FilledButton.icon(
+              key: const ValueKey('buyer-checkout-place-order'),
+              onPressed: placement.canPlaceOrder(quote)
+                  ? () => unawaited(_confirmAndPlaceOrder(quote))
+                  : null,
+              icon: placement.isSubmitting
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.lock_outline_rounded),
+              label: const Text('Place Order · Cash on Delivery'),
+            )
+          else
+            FilledButton.icon(
+              key: const ValueKey('buyer-checkout-request-quote'),
+              onPressed: canRequest && !placement.isSubmitting
+                  ? controller.requestQuote
+                  : null,
+              icon: controller.isQuoting
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.receipt_long_outlined),
+              label: Text(label),
+            ),
+          if (quote != null && controller.canPlaceOrder)
+            TextButton.icon(
+              key: const ValueKey('buyer-checkout-refresh-quote'),
+              onPressed: canRequest && !placement.isSubmitting
+                  ? controller.requestQuote
+                  : null,
+              icon: const Icon(Icons.refresh_rounded),
+              label: const Text('Refresh quoted total'),
+            ),
           const SizedBox(height: 4),
           TextButton(
             key: const ValueKey('buyer-checkout-return-to-cart'),
-            onPressed: _returnToCart,
+            onPressed: placement.isSubmitting ? null : _returnToCart,
             child: const Text('Return to Cart'),
           ),
         ],
       ),
     );
+  }
+
+  Future<void> _confirmAndPlaceOrder(BuyerCheckoutQuote quote) async {
+    if (!controller.canPlaceOrder || !placement.canPlaceOrder(quote)) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Place this COD order?'),
+        content: Text(
+          'You are placing this order with Cash on Delivery. '
+          'The server quoted ${formatPriceMinorUnits(quote.totalMinor, currency: quote.currency)} payable.',
+        ),
+        actions: [
+          TextButton(
+            key: const ValueKey('buyer-checkout-cancel-placement'),
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Review again'),
+          ),
+          FilledButton(
+            key: const ValueKey('buyer-checkout-confirm-placement'),
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Confirm Place Order'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true && mounted) {
+      await placement.placeOrder(quote);
+    }
   }
 
   Future<void> _chooseAddress() async {
@@ -944,4 +1346,235 @@ class _BuyerCheckoutReviewPageState extends State<BuyerCheckoutReviewPage> {
           (error.statusCode == 401 || error.statusCode == 403));
 
   String _normalize(String value) => value.trim().toLowerCase();
+}
+
+class BuyerOrderConfirmationPage extends StatelessWidget {
+  const BuyerOrderConfirmationPage({
+    super.key,
+    required this.order,
+    required this.isRefreshingCart,
+    required this.cartRefreshFailed,
+    required this.onRefreshCart,
+    required this.onContinueShopping,
+  });
+
+  final BuyerPlacedOrder order;
+  final bool isRefreshingCart;
+  final bool cartRefreshFailed;
+  final Future<void> Function() onRefreshCart;
+  final Future<void> Function() onContinueShopping;
+
+  @override
+  Widget build(BuildContext context) => PopScope(
+    canPop: false,
+    child: Scaffold(
+      appBar: AppBar(
+        automaticallyImplyLeading: false,
+        title: const Text('Order Confirmation'),
+      ),
+      body: SafeArea(
+        child: ListView(
+          key: const ValueKey('buyer-order-confirmation-list'),
+          padding: const EdgeInsets.fromLTRB(18, 18, 18, 24),
+          children: [
+            const Icon(
+              Icons.check_circle_outline_rounded,
+              key: ValueKey('buyer-order-confirmed-icon'),
+              size: 62,
+              color: BearlyColors.success,
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'Order placed',
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.headlineSmall,
+            ),
+            const SizedBox(height: 4),
+            const Text(
+              'Bearly confirmed your order. Keep this reference for your records.',
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 18),
+            _confirmationCard(
+              context,
+              title: 'Order details',
+              children: [
+                _detailRow('Order reference', order.reference),
+                _detailRow('Created', _createdAt(context, order.createdAt)),
+                _detailRow('Payment method', 'Cash on Delivery (COD)'),
+                _detailRow(
+                  'Payment status',
+                  '${_readableStatus(order.paymentStatus)} · ${_readableStatus(order.initialPaymentState)}',
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'The order is not marked paid by placement. COD collection follows the existing delivery process.',
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            _confirmationCard(
+              context,
+              title: 'Seller orders',
+              children: order.sellerOrders.isEmpty
+                  ? const [Text('No Seller order summary was returned.')]
+                  : [
+                      for (final sellerOrder in order.sellerOrders) ...[
+                        if (sellerOrder != order.sellerOrders.first)
+                          const Divider(height: 20),
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Icon(Icons.storefront_outlined, size: 20),
+                            const SizedBox(width: 9),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    sellerOrder.storeName.trim().isEmpty
+                                        ? 'Seller order'
+                                        : sellerOrder.storeName,
+                                    style: Theme.of(
+                                      context,
+                                    ).textTheme.titleSmall,
+                                  ),
+                                  Text(
+                                    sellerOrder.reference,
+                                    key: ValueKey(
+                                      'buyer-order-seller-reference-${sellerOrder.id}',
+                                    ),
+                                  ),
+                                  Text(
+                                    '${sellerOrder.itemCount} ${sellerOrder.itemCount == 1 ? 'item' : 'items'}',
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ],
+            ),
+            const SizedBox(height: 12),
+            _confirmationCard(
+              context,
+              title: 'Amount payable',
+              children: [
+                Row(
+                  children: [
+                    const Expanded(child: Text('COD total payable')),
+                    Text(
+                      formatPriceMinorUnits(
+                        order.totalMinor,
+                        currency: order.currency,
+                      ),
+                      key: const ValueKey('buyer-order-confirmation-total'),
+                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                        color: BearlyColors.brown700,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+            if (cartRefreshFailed) ...[
+              const SizedBox(height: 12),
+              Container(
+                key: const ValueKey('buyer-order-cart-refresh-warning'),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: BearlyColors.cream100,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: BearlyColors.cream300),
+                ),
+                child: const Text(
+                  'Your order is confirmed, but the Cart could not be refreshed. Refresh it before shopping again.',
+                ),
+              ),
+              const SizedBox(height: 6),
+              OutlinedButton.icon(
+                key: const ValueKey('buyer-order-refresh-cart'),
+                onPressed: isRefreshingCart ? null : onRefreshCart,
+                icon: isRefreshingCart
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.refresh_rounded),
+                label: const Text('Refresh Cart'),
+              ),
+            ],
+          ],
+        ),
+      ),
+      bottomNavigationBar: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+          child: FilledButton.icon(
+            key: const ValueKey('buyer-order-continue-shopping'),
+            onPressed: onContinueShopping,
+            icon: const Icon(Icons.storefront_outlined),
+            label: const Text('Continue Shopping'),
+          ),
+        ),
+      ),
+    ),
+  );
+
+  static Widget _confirmationCard(
+    BuildContext context, {
+    required String title,
+    required List<Widget> children,
+  }) => Card(
+    color: Colors.white,
+    margin: EdgeInsets.zero,
+    child: Padding(
+      padding: const EdgeInsets.all(14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(title, style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 10),
+          ...children,
+        ],
+      ),
+    ),
+  );
+
+  static Widget _detailRow(String label, String value) => Padding(
+    padding: const EdgeInsets.symmetric(vertical: 3),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(flex: 2, child: Text(label)),
+        const SizedBox(width: 10),
+        Expanded(flex: 3, child: Text(value, textAlign: TextAlign.end)),
+      ],
+    ),
+  );
+
+  static String _createdAt(BuildContext context, DateTime? value) {
+    if (value == null) return 'Not provided';
+    final local = value.toLocal();
+    final localizations = MaterialLocalizations.of(context);
+    final time = TimeOfDay.fromDateTime(local);
+    return '${localizations.formatMediumDate(local)} · ${localizations.formatTimeOfDay(time)}';
+  }
+
+  static String _readableStatus(String value) => value
+      .split(RegExp(r'[_\s]+'))
+      .where((part) => part.isNotEmpty)
+      .map((part) => '${part[0].toUpperCase()}${part.substring(1)}')
+      .join(' ');
+}
+
+extension<T> on Iterable<T> {
+  T? get firstOrNull {
+    final iterator = this.iterator;
+    return iterator.moveNext() ? iterator.current : null;
+  }
 }

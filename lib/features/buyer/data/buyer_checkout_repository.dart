@@ -315,6 +315,33 @@ class BuyerCheckoutRepository {
     }
   }
 
+  /// Clears only an attempt whose persisted state proves no placement POST
+  /// began. A `ready` attempt is written before the repository transitions it
+  /// to `submitting`, and the latter write completes before HTTP is dispatched.
+  Future<void> clearUnsubmittedPlacementAttempt() async {
+    final buyer = _requireBuyer();
+    _enterAttemptOperation(buyer.accountId);
+    try {
+      final attempt = await _readAttempt(buyer.accountId);
+      if (attempt == null) return;
+      if (attempt.status != BuyerCheckoutAttemptStatus.ready) {
+        throw const BuyerCheckoutException(
+          BuyerCheckoutFailureCategory.unresolvedAttempt,
+        );
+      }
+      await _attemptStore.clear(buyer.accountId);
+      _cachedAttempts.remove(buyer.accountId);
+    } on BuyerCheckoutException {
+      rethrow;
+    } on BuyerCheckoutAttemptStorageException {
+      throw const BuyerCheckoutException(
+        BuyerCheckoutFailureCategory.secureStorage,
+      );
+    } finally {
+      _leaveAttemptOperation(buyer.accountId);
+    }
+  }
+
   Future<BuyerOrderHistoryPage> fetchOrderHistory({
     int page = 1,
     int perPage = 20,

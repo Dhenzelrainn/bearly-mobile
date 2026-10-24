@@ -1,4 +1,5 @@
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:flutter/foundation.dart';
 
 import '../../../core/network/api_client.dart';
 import '../models/account_role.dart';
@@ -106,7 +107,7 @@ class AuthSessionChangedException extends AuthException {
 enum AuthenticatedRequestMethod { get, post, put, patch, delete }
 
 /// Laravel mobile authentication and secure local session lifecycle.
-class AuthService {
+class AuthService extends ChangeNotifier {
   AuthService({ApiClient? apiClient, SessionTokenStore? tokenStore})
     : _apiClient = apiClient ?? ApiClient(),
       _tokenStore = tokenStore ?? SecureSessionTokenStore();
@@ -114,7 +115,16 @@ class AuthService {
   final ApiClient _apiClient;
   final SessionTokenStore _tokenStore;
 
-  AuthSession? currentSession;
+  AuthSession? _currentSession;
+
+  AuthSession? get currentSession => _currentSession;
+
+  set currentSession(AuthSession? session) {
+    if (identical(_currentSession, session)) return;
+    _currentSession = session;
+    notifyListeners();
+  }
+
   String? _ephemeralToken;
   int _sessionEpoch = 0;
 
@@ -334,8 +344,8 @@ class AuthService {
 
   Future<void> _clearLocalSession() async {
     _ephemeralToken = null;
-    currentSession = null;
     _sessionEpoch++;
+    currentSession = null;
     await _tokenStore.clear();
   }
 

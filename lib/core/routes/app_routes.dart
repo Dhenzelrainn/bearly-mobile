@@ -13,6 +13,7 @@ import '../../features/buyer/data/buyer_catalog_repository.dart';
 import '../../features/buyer/data/buyer_cart_controller.dart';
 import '../../features/buyer/data/buyer_address_controller.dart';
 import '../../features/buyer/data/buyer_checkout_repository.dart';
+import '../../features/buyer/data/buyer_checkout_placement_controller.dart';
 import '../../features/buyer/data/buyer_checkout_review_controller.dart';
 import '../../features/buyer/data/buyer_location_repository.dart';
 import '../../features/buyer/data/buyer_wishlist_controller.dart';
@@ -142,16 +143,25 @@ class AppRoutes {
         );
       case AppRouteNames.buyerCheckoutReview:
         return MaterialPageRoute(
-          builder: (_) => BuyerCheckoutReviewPage(
-            addressController: resolveAddressController(),
-            locationRepository: resolveLocationRepository(),
-            reviewController: BuyerCheckoutReviewController(
-              authService: authService,
-              cartController: cartController,
-              addressController: resolveAddressController(),
-              checkoutRepository: resolveCheckoutRepository(),
-            ),
-          ),
+          builder: (_) {
+            final resolvedAddressController = resolveAddressController();
+            final resolvedCheckoutRepository = resolveCheckoutRepository();
+            return BuyerCheckoutReviewPage(
+              addressController: resolvedAddressController,
+              locationRepository: resolveLocationRepository(),
+              reviewController: BuyerCheckoutReviewController(
+                authService: authService,
+                cartController: cartController,
+                addressController: resolvedAddressController,
+                checkoutRepository: resolvedCheckoutRepository,
+              ),
+              placementController: BuyerCheckoutPlacementController(
+                authService: authService,
+                checkoutRepository: resolvedCheckoutRepository,
+                cartController: cartController,
+              ),
+            );
+          },
           settings: settings,
         );
       case AppRouteNames.buyerProduct:

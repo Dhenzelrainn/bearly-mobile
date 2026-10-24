@@ -92,6 +92,32 @@ class BuyerCheckoutReviewController extends ChangeNotifier {
         selectedAddress != null;
   }
 
+  /// True only while the current, unexpired server quote still matches the
+  /// selected Laravel Cart lines, address, and COD payment choice.
+  bool get canPlaceOrder {
+    final currentQuote = quote;
+    final selection = currentQuote?.sourceRequest;
+    final selected = cartController.selectedItems;
+    final address = selectedAddress;
+    return hasBuyerSession &&
+        _isInitialized &&
+        !_isQuoting &&
+        !_isQuoteExpired &&
+        currentQuote != null &&
+        currentQuote.paymentMethod == 'cod' &&
+        currentQuote.availablePaymentMethods.contains('cod') &&
+        selection != null &&
+        selected.isNotEmpty &&
+        selected.length <= 100 &&
+        selected.every((item) => item.id > 0 && item.isAvailable) &&
+        address != null &&
+        selection.addressId == address.id &&
+        listEquals(
+          selection.cartItemIds,
+          selected.map((item) => item.id).toList(growable: false),
+        );
+  }
+
   /// Refreshes the server Cart and saved addresses in sequence, then obtains
   /// an initial quote only when the current selection and address are valid.
   Future<void> initialize() async {

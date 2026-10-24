@@ -9,11 +9,14 @@ import 'package:bearly_mobile/features/buyer/data/buyer_address_controller.dart'
 import 'package:bearly_mobile/features/buyer/data/buyer_cart_controller.dart';
 import 'package:bearly_mobile/features/buyer/data/buyer_checkout_attempt_store.dart';
 import 'package:bearly_mobile/features/buyer/data/buyer_checkout_repository.dart';
+import 'package:bearly_mobile/features/buyer/data/buyer_checkout_placement_controller.dart';
 import 'package:bearly_mobile/features/buyer/data/buyer_checkout_review_controller.dart';
 import 'package:bearly_mobile/features/buyer/data/buyer_location_repository.dart';
 import 'package:bearly_mobile/features/buyer/data/buyer_wishlist_controller.dart';
 import 'package:bearly_mobile/features/buyer/models/buyer_catalog_models.dart';
 import 'package:bearly_mobile/features/buyer/models/buyer_checkout_attempt.dart';
+import 'package:bearly_mobile/features/buyer/models/buyer_checkout_models.dart';
+import 'package:bearly_mobile/features/buyer/models/buyer_order_models.dart';
 import 'package:bearly_mobile/features/buyer/models/buyer_shopping_models.dart';
 import 'package:bearly_mobile/features/buyer/presentation/buyer_cart_page.dart';
 import 'package:bearly_mobile/features/buyer/presentation/buyer_checkout_review_page.dart';
@@ -59,7 +62,7 @@ void main() {
         ),
         isFalse,
       );
-      expect(h.attemptStore.readCount, 0);
+      expect(h.attemptStore.readCount, 1);
       expect(h.attemptStore.writeCount, 0);
       expect(h.attemptStore.clearCount, 0);
       expect(find.byType(BuyerCheckoutReviewPage), findsOneWidget);
@@ -77,7 +80,10 @@ void main() {
         find.text(formatPriceMinorUnits(32000, currency: 'PHP')),
         findsNWidgets(2),
       );
-      expect(find.text('Place Order'), findsNothing);
+      expect(
+        find.byKey(const ValueKey('buyer-checkout-place-order')),
+        findsOneWidget,
+      );
     });
 
     testWidgets('no address blocks quotation and offers Add Address', (
@@ -91,6 +97,7 @@ void main() {
         MaterialApp(
           home: BuyerCheckoutReviewPage(
             reviewController: review,
+            placementController: h.placementController(),
             addressController: h.addresses,
             locationRepository: h.locations,
           ),
@@ -117,7 +124,8 @@ void main() {
         ),
         isFalse,
       );
-      expect(h.attemptStore.readCount + h.attemptStore.writeCount, 0);
+      expect(h.attemptStore.readCount, 1);
+      expect(h.attemptStore.writeCount, 0);
     });
 
     test('changing address clears the prior quote', () async {
@@ -289,12 +297,712 @@ void main() {
         review.dispose();
       },
     );
+
+    testWidgets(
+      'persists before POST and confirms the authoritative COD order',
+      (tester) async {
+        final h = _Harness();
+        await _enterReview(tester, h, selectedIds: [501]);
+
+        expect(
+          find.byKey(const ValueKey('buyer-checkout-place-order')),
+          findsOneWidget,
+        );
+        expect(
+          h.requests.any(
+            (request) => request.url.path.endsWith('/checkout/place'),
+          ),
+          isFalse,
+        );
+        await tester.tap(
+          find.byKey(const ValueKey('buyer-checkout-place-order')),
+        );
+        await tester.pumpAndSettle();
+        expect(find.text('Place this COD order?'), findsOneWidget);
+        expect(
+          h.requests.any(
+            (request) => request.url.path.endsWith('/checkout/place'),
+          ),
+          isFalse,
+        );
+
+        await tester.tap(
+          find.byKey(const ValueKey('buyer-checkout-confirm-placement')),
+        );
+        await tester.pumpAndSettle();
+
+        final placeRequest = h.requests.singleWhere(
+          (request) => request.url.path.endsWith('/checkout/place'),
+        );
+        final payload = jsonDecode(placeRequest.body) as Map<String, dynamic>;
+        expect(payload['cart_item_ids'], [501]);
+        expect(payload['address_id'], 31);
+        expect(payload['payment_method'], 'cod');
+        expect(payload['quote_token'], 'mock-quote-token');
+        expect(
+          payload['checkout_request_key'],
+          matches(RegExp(r'^[0-9a-f-]{36}$')),
+        );
+        expect(
+          h.attemptStore.events.indexOf('write-ready'),
+          lessThan(h.attemptStore.events.indexOf('post')),
+        );
+        expect(
+          h.attemptStore.events.indexOf('write-submitting'),
+          lessThan(h.attemptStore.events.indexOf('post')),
+        );
+        expect(find.byType(BuyerOrderConfirmationPage), findsOneWidget);
+        expect(find.text('BRL-ORDER-812'), findsOneWidget);
+        expect(find.text('Alpha Shop'), findsOneWidget);
+        expect(find.text('SO-1'), findsOneWidget);
+        expect(find.text('Cash on Delivery (COD)'), findsOneWidget);
+        expect(find.textContaining('Unpaid'), findsOneWidget);
+        expect(
+          find.byKey(const ValueKey('buyer-order-confirmation-total')),
+          findsOneWidget,
+        );
+        expect(h.cart.cart?.items.map((item) => item.id), [502]);
+        expect(h.cart.selectedItems, isEmpty);
+        expect(
+          h.requests.where(
+            (request) =>
+                request.method == 'GET' &&
+                request.url.path == '/api/mobile/buyer/cart',
+          ),
+          hasLength(3),
+        );
+        expect(
+          h.attemptStore.saved[8]?.status,
+          BuyerCheckoutAttemptStatus.succeeded,
+        );
+      },
+    );
+
+    testWidgets(
+      'final confirmation can be cancelled without creating an order',
+      (tester) async {
+        final h = _Harness();
+        await _enterReview(tester, h, selectedIds: [501]);
+        await tester.tap(
+          find.byKey(const ValueKey('buyer-checkout-place-order')),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const ValueKey('buyer-checkout-cancel-placement')),
+        );
+        await tester.pumpAndSettle();
+
+        expect(
+          h.requests.any(
+            (request) => request.url.path.endsWith('/checkout/place'),
+          ),
+          isFalse,
+        );
+        expect(h.attemptStore.writeCount, 0);
+      },
+    );
+
+    testWidgets('ambiguous timeout offers exact explicit retry', (
+      tester,
+    ) async {
+      final bodies = <String>[];
+      var placeCount = 0;
+      late _Harness h;
+      h = _Harness(
+        placeHandler: (request) async {
+          placeCount++;
+          bodies.add(request.body);
+          if (placeCount == 1) throw http.ClientException('connection lost');
+          final body = jsonDecode(request.body) as Map<String, dynamic>;
+          final ids = (body['cart_item_ids'] as List).cast<int>();
+          final items = h._cartItems
+              .where((item) => ids.contains(item['id']))
+              .toList(growable: false);
+          h._cartItems.removeWhere((item) => ids.contains(item['id']));
+          return _json(_placedOrderResponse(items));
+        },
+      );
+      await _enterReview(tester, h, selectedIds: [501]);
+      await tester.tap(
+        find.byKey(const ValueKey('buyer-checkout-place-order')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('buyer-checkout-confirm-placement')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Order status needs verification'), findsOneWidget);
+      expect(
+        find.textContaining('could not confirm whether the order was created'),
+        findsOneWidget,
+      );
+      expect(
+        h.attemptStore.saved[8]?.status,
+        BuyerCheckoutAttemptStatus.indeterminate,
+      );
+      expect(
+        find.byKey(const ValueKey('buyer-checkout-retry-original')),
+        findsOneWidget,
+      );
+      expect(placeCount, 1);
+
+      await tester.tap(
+        find.byKey(const ValueKey('buyer-checkout-retry-original')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(placeCount, 2);
+      expect(bodies, hasLength(2));
+      expect(bodies[1], bodies[0]);
+      expect(
+        h.requests.where(
+          (request) => request.url.path.endsWith('/checkout/quote'),
+        ),
+        hasLength(1),
+      );
+      expect(find.text('BRL-ORDER-812'), findsOneWidget);
+    });
+
+    testWidgets(
+      'restart recovery waits for explicit retry and keeps expired token',
+      (tester) async {
+        final h = _Harness();
+        final original = BuyerCheckoutPlacementRequest(
+          checkoutRequestKey: '7f87cae0-9999-4b31-8d11-123456789abc',
+          quoteToken: 'original-expired-quote-token',
+          addressId: 31,
+          cartItemIds: [501],
+        );
+        await h.attemptStore.write(
+          BuyerCheckoutAttempt(
+            buyerAccountId: 8,
+            request: original,
+            status: BuyerCheckoutAttemptStatus.indeterminate,
+            updatedAt: DateTime.utc(2026, 10, 1),
+            failureCategory: BuyerCheckoutFailureCategory.timeout.name,
+          ),
+        );
+        await _pumpReview(tester, h);
+
+        expect(find.text('Order status needs verification'), findsOneWidget);
+        expect(
+          h.requests.any(
+            (request) => request.url.path.endsWith('/checkout/place'),
+          ),
+          isFalse,
+        );
+        expect(
+          h.requests.any(
+            (request) => request.url.path.endsWith('/checkout/quote'),
+          ),
+          isFalse,
+        );
+
+        await tester.tap(
+          find.byKey(const ValueKey('buyer-checkout-retry-original')),
+        );
+        await tester.pumpAndSettle();
+        final place = h.requests.singleWhere(
+          (request) => request.url.path.endsWith('/checkout/place'),
+        );
+        expect(jsonDecode(place.body), original.toJson());
+        expect(find.text('BRL-ORDER-812'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'restored unsubmitted attempt needs a fresh quote before placement',
+      (tester) async {
+        final h = _Harness();
+        await h.attemptStore.write(
+          BuyerCheckoutAttempt(
+            buyerAccountId: 8,
+            request: BuyerCheckoutPlacementRequest(
+              checkoutRequestKey: '8f87cae0-9999-4b31-8d11-123456789abc',
+              quoteToken: 'expired-unsubmitted-token',
+              addressId: 31,
+              cartItemIds: [501],
+            ),
+            status: BuyerCheckoutAttemptStatus.ready,
+            updatedAt: DateTime.utc(2026, 10, 1),
+          ),
+        );
+        await _pumpReview(tester, h);
+
+        expect(find.text('A fresh quote is needed'), findsOneWidget);
+        expect(
+          h.requests.any(
+            (request) => request.url.path.endsWith('/checkout/quote'),
+          ),
+          isFalse,
+        );
+        expect(
+          h.requests.any(
+            (request) => request.url.path.endsWith('/checkout/place'),
+          ),
+          isFalse,
+        );
+
+        await tester.tap(
+          find.byKey(const ValueKey('buyer-checkout-refresh-unsubmitted')),
+        );
+        await tester.pumpAndSettle();
+
+        final quoteRequest = h.requests.singleWhere(
+          (request) => request.url.path.endsWith('/checkout/quote'),
+        );
+        expect(jsonDecode(quoteRequest.body)['cart_item_ids'], [501]);
+        expect(h.attemptStore.saved[8], isNull);
+        expect(h.attemptStore.clearCount, 1);
+        expect(
+          h.requests.any(
+            (request) => request.url.path.endsWith('/checkout/place'),
+          ),
+          isFalse,
+        );
+        expect(
+          find.byKey(const ValueKey('buyer-checkout-place-order')),
+          findsOneWidget,
+        );
+      },
+    );
+
+    testWidgets(
+      'succeeded attempt without a result can recover by exact retry',
+      (tester) async {
+        final h = _Harness();
+        final original = BuyerCheckoutPlacementRequest(
+          checkoutRequestKey: '7f87cae0-9999-4b31-8d11-123456789abc',
+          quoteToken: 'original-quote-token',
+          addressId: 31,
+          cartItemIds: [501],
+        );
+        await h.attemptStore.write(
+          BuyerCheckoutAttempt(
+            buyerAccountId: 8,
+            request: original,
+            status: BuyerCheckoutAttemptStatus.succeeded,
+            updatedAt: DateTime.utc(2026, 10, 1),
+          ),
+        );
+
+        await _pumpReview(tester, h);
+
+        expect(find.text('Order status needs verification'), findsOneWidget);
+        expect(
+          h.requests.any(
+            (request) => request.url.path.endsWith('/checkout/place'),
+          ),
+          isFalse,
+        );
+        expect(
+          find.byKey(const ValueKey('buyer-checkout-retry-original')),
+          findsOneWidget,
+        );
+
+        await tester.tap(
+          find.byKey(const ValueKey('buyer-checkout-retry-original')),
+        );
+        await tester.pumpAndSettle();
+
+        final placement = h.requests.singleWhere(
+          (request) => request.url.path.endsWith('/checkout/place'),
+        );
+        expect(jsonDecode(placement.body), original.toJson());
+        expect(find.text('BRL-ORDER-812'), findsOneWidget);
+      },
+    );
+
+    testWidgets('saved success restores confirmation without another POST', (
+      tester,
+    ) async {
+      final h = _Harness();
+      final request = BuyerCheckoutPlacementRequest(
+        checkoutRequestKey: '9f87cae0-9999-4b31-8d11-123456789abc',
+        quoteToken: 'committed-quote-token',
+        addressId: 31,
+        cartItemIds: [501],
+      );
+      final result = BuyerPlacedOrder.fromResponse(
+        _placedOrderResponse([h._cartItems.first]),
+      );
+      await h.attemptStore.write(
+        BuyerCheckoutAttempt(
+          buyerAccountId: 8,
+          request: request,
+          status: BuyerCheckoutAttemptStatus.succeeded,
+          result: result,
+          updatedAt: DateTime.utc(2026, 10, 24),
+        ),
+      );
+      h._cartItems.removeWhere((item) => item['id'] == 501);
+      await _pumpReview(tester, h);
+
+      expect(find.byType(BuyerOrderConfirmationPage), findsOneWidget);
+      expect(find.text('BRL-ORDER-812'), findsOneWidget);
+      expect(
+        h.requests.any(
+          (request) => request.url.path.endsWith('/checkout/place'),
+        ),
+        isFalse,
+      );
+      expect(
+        h.requests.any(
+          (request) => request.url.path.endsWith('/checkout/quote'),
+        ),
+        isFalse,
+      );
+      expect(
+        h.attemptStore.saved[8]?.status,
+        BuyerCheckoutAttemptStatus.succeeded,
+      );
+    });
+
+    testWidgets(
+      'expired current quote disables placement until explicit refresh',
+      (tester) async {
+        final h = _Harness(quoteLifetime: const Duration(seconds: 1));
+        await _enterReview(tester, h, selectedIds: [501]);
+        expect(
+          find.byKey(const ValueKey('buyer-checkout-place-order')),
+          findsOneWidget,
+        );
+
+        await tester.pump(const Duration(milliseconds: 1100));
+        await tester.pumpAndSettle();
+
+        expect(
+          find.byKey(const ValueKey('buyer-checkout-place-order')),
+          findsNothing,
+        );
+        expect(
+          find.byKey(const ValueKey('buyer-checkout-quote-expired')),
+          findsOneWidget,
+        );
+        expect(
+          h.requests.any(
+            (request) => request.url.path.endsWith('/checkout/place'),
+          ),
+          isFalse,
+        );
+        await tester.tap(
+          find.byKey(const ValueKey('buyer-checkout-request-quote')),
+        );
+        await tester.pumpAndSettle();
+        expect(
+          h.requests.where(
+            (request) => request.url.path.endsWith('/checkout/quote'),
+          ),
+          hasLength(2),
+        );
+      },
+    );
+
+    testWidgets('409 conflict is never success and keeps the attempt locked', (
+      tester,
+    ) async {
+      final h = _Harness(
+        placeHandler: (_) async => _json({
+          'message': 'Conflict.',
+          'error': {'code': 'checkout_request_conflict'},
+        }, status: 409),
+      );
+      await _enterReview(tester, h, selectedIds: [501]);
+      await tester.tap(
+        find.byKey(const ValueKey('buyer-checkout-place-order')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('buyer-checkout-confirm-placement')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Checkout request conflict'), findsOneWidget);
+      expect(find.textContaining('checkout_request_conflict'), findsOneWidget);
+      expect(find.byType(BuyerOrderConfirmationPage), findsNothing);
+      expect(
+        find.byKey(const ValueKey('buyer-checkout-requote-after-rejection')),
+        findsNothing,
+      );
+      expect(h.attemptStore.clearCount, 0);
+      expect(
+        h.attemptStore.saved[8]?.status,
+        BuyerCheckoutAttemptStatus.rejected,
+      );
+      expect(
+        h.requests.where(
+          (request) =>
+              request.method == 'GET' &&
+              request.url.path == '/api/mobile/buyer/cart',
+        ),
+        hasLength(2),
+      );
+    });
+
+    testWidgets('definitive 422 requires a deliberate fresh quote', (
+      tester,
+    ) async {
+      var quoteCount = 0;
+      late _Harness h;
+      h = _Harness(
+        quoteHandler: (request) async {
+          quoteCount++;
+          return _json(h._quoteFromRequest(request));
+        },
+        placeHandler: (_) async => _json({
+          'message': 'The quote has expired.',
+          'errors': {
+            'quote_token': ['The checkout quote expired.'],
+          },
+        }, status: 422),
+      );
+      await _enterReview(tester, h, selectedIds: [501]);
+      await tester.tap(
+        find.byKey(const ValueKey('buyer-checkout-place-order')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('buyer-checkout-confirm-placement')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('This placement was rejected'), findsOneWidget);
+      expect(find.text('The checkout quote expired.'), findsOneWidget);
+      expect(quoteCount, 1);
+      expect(
+        h.attemptStore.saved[8]?.status,
+        BuyerCheckoutAttemptStatus.rejected,
+      );
+      expect(
+        h.requests.where(
+          (request) =>
+              request.method == 'GET' &&
+              request.url.path == '/api/mobile/buyer/cart',
+        ),
+        hasLength(2),
+      );
+
+      await tester.tap(
+        find.byKey(const ValueKey('buyer-checkout-requote-after-rejection')),
+      );
+      await tester.pumpAndSettle();
+      expect(quoteCount, 2);
+      expect(h.attemptStore.clearCount, 1);
+      expect(
+        find.byKey(const ValueKey('buyer-checkout-place-order')),
+        findsOneWidget,
+      );
+      expect(
+        h.requests.where(
+          (request) => request.url.path.endsWith('/checkout/place'),
+        ),
+        hasLength(1),
+      );
+    });
+
+    testWidgets('secure persistence failure prevents any placement POST', (
+      tester,
+    ) async {
+      final h = _Harness(failAttemptWrites: true);
+      await _enterReview(tester, h, selectedIds: [501]);
+      await tester.tap(
+        find.byKey(const ValueKey('buyer-checkout-place-order')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('buyer-checkout-confirm-placement')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const ValueKey('buyer-checkout-placement-error')),
+        findsOneWidget,
+      );
+      expect(
+        find.textContaining('Secure checkout recovery is unavailable'),
+        findsOneWidget,
+      );
+      expect(
+        h.requests.any(
+          (request) => request.url.path.endsWith('/checkout/place'),
+        ),
+        isFalse,
+      );
+    });
+
+    testWidgets('429 placement rejection stays definitive and offers review', (
+      tester,
+    ) async {
+      final h = _Harness(
+        placeHandler: (_) async =>
+            _json({'message': 'Too many requests.'}, status: 429),
+      );
+      await _enterReview(tester, h, selectedIds: [501]);
+      await tester.tap(
+        find.byKey(const ValueKey('buyer-checkout-place-order')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('buyer-checkout-confirm-placement')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('This placement was rejected'), findsOneWidget);
+      expect(find.textContaining('too many checkout requests'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('buyer-checkout-requote-after-rejection')),
+        findsOneWidget,
+      );
+      expect(
+        h.attemptStore.saved[8]?.status,
+        BuyerCheckoutAttemptStatus.rejected,
+      );
+      expect(h.cart.cart?.items.map((item) => item.id), [501, 502]);
+      expect(h.cart.selectedCartItemIds, [501]);
+    });
+
+    testWidgets('server and malformed placement responses stay ambiguous', (
+      tester,
+    ) async {
+      for (final response in [
+        _json({'message': 'Server error.'}, status: 500),
+        _json({
+          'data': {'id': 812},
+        }),
+      ]) {
+        final h = _Harness(placeHandler: (_) async => response);
+        await _enterReview(tester, h, selectedIds: [501]);
+        await tester.tap(
+          find.byKey(const ValueKey('buyer-checkout-place-order')),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const ValueKey('buyer-checkout-confirm-placement')),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.text('Order status needs verification'), findsOneWidget);
+        expect(
+          find.byKey(const ValueKey('buyer-checkout-retry-original')),
+          findsOneWidget,
+        );
+        expect(
+          h.attemptStore.saved[8]?.status,
+          BuyerCheckoutAttemptStatus.indeterminate,
+        );
+        expect(find.byType(BuyerOrderConfirmationPage), findsNothing);
+        expect(h.cart.cart?.items.map((item) => item.id), [501, 502]);
+        await tester.pumpWidget(const SizedBox.shrink());
+      }
+    });
+
+    testWidgets(
+      'account-switched late placement response cannot show prior order',
+      (tester) async {
+        final response = Completer<http.Response>();
+        final started = Completer<void>();
+        final h = _Harness(
+          placeHandler: (_) {
+            if (!started.isCompleted) started.complete();
+            return response.future;
+          },
+        );
+        await _enterReview(tester, h, selectedIds: [501]);
+        await tester.tap(
+          find.byKey(const ValueKey('buyer-checkout-place-order')),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const ValueKey('buyer-checkout-confirm-placement')),
+        );
+        await tester.pump();
+        await started.future;
+
+        h.auth.currentSession = _session(9);
+        response.complete(_json(_placedOrderResponse([h._cartItems.first])));
+        await tester.pumpAndSettle();
+
+        expect(find.text('BRL-ORDER-812'), findsNothing);
+        expect(find.byType(BuyerOrderConfirmationPage), findsNothing);
+        expect(
+          h.attemptStore.saved[8]?.status,
+          BuyerCheckoutAttemptStatus.indeterminate,
+        );
+        expect(h.attemptStore.saved[9], isNull);
+      },
+    );
+
+    testWidgets('rapid repeated placement taps send one request', (
+      tester,
+    ) async {
+      final response = Completer<http.Response>();
+      var placementCount = 0;
+      final h = _Harness(
+        placeHandler: (_) {
+          placementCount++;
+          return response.future;
+        },
+      );
+      await _enterReview(tester, h, selectedIds: [501]);
+      await tester.tap(
+        find.byKey(const ValueKey('buyer-checkout-place-order')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('buyer-checkout-confirm-placement')),
+      );
+      await tester.pump();
+      await tester.tap(
+        find.byKey(const ValueKey('buyer-checkout-place-order')),
+      );
+      await tester.pump();
+      expect(placementCount, 1);
+
+      response.complete(_json(_placedOrderResponse([h._cartItems.first])));
+      await tester.pumpAndSettle();
+      expect(placementCount, 1);
+    });
   });
 }
 
 Future<void> _loadInputs(_Harness h) async {
   await h.cart.refresh(force: true);
   await h.addresses.refresh(force: true);
+}
+
+Future<void> _enterReview(
+  WidgetTester tester,
+  _Harness h, {
+  required List<int> selectedIds,
+}) async {
+  await _pumpCart(tester, h);
+  for (final id in selectedIds) {
+    await tester.tap(find.byKey(ValueKey('buyer-cart-select-$id')));
+  }
+  await tester.pump();
+  await tester.ensureVisible(
+    find.byKey(const ValueKey('buyer-cart-continue-checkout')),
+  );
+  await tester.tap(find.byKey(const ValueKey('buyer-cart-continue-checkout')));
+  await tester.pumpAndSettle();
+}
+
+Future<void> _pumpReview(WidgetTester tester, _Harness h) async {
+  tester.view.devicePixelRatio = 1;
+  tester.view.physicalSize = const Size(430, 1200);
+  addTearDown(tester.view.resetPhysicalSize);
+  await tester.pumpWidget(
+    MaterialApp(
+      home: BuyerCheckoutReviewPage(
+        reviewController: h.reviewController(),
+        placementController: h.placementController(),
+        addressController: h.addresses,
+        locationRepository: h.locations,
+      ),
+    ),
+  );
+  await tester.pumpAndSettle();
 }
 
 Future<void> _pumpCart(WidgetTester tester, _Harness h) async {
@@ -323,6 +1031,8 @@ class _Harness {
   _Harness({
     List<Map<String, Object?>>? addresses,
     Future<http.Response> Function(http.Request)? quoteHandler,
+    Future<http.Response> Function(http.Request)? placeHandler,
+    this.failAttemptWrites = false,
     this.quoteLifetime = const Duration(minutes: 5),
   }) : _addresses = List.of(
          addresses ?? [_address(32), _address(31, isDefault: true)],
@@ -363,6 +1073,18 @@ class _Harness {
             ? _json(_quoteFromRequest(request))
             : quoteHandler(request);
       }
+      if (request.method == 'POST' &&
+          request.url.path == '/api/mobile/buyer/checkout/place') {
+        attemptStore.events.add('post');
+        if (placeHandler != null) return placeHandler(request);
+        final body = jsonDecode(request.body) as Map<String, dynamic>;
+        final ids = (body['cart_item_ids'] as List).cast<int>();
+        final purchased = _cartItems
+            .where((item) => ids.contains(item['id']))
+            .toList(growable: false);
+        _cartItems.removeWhere((item) => ids.contains(item['id']));
+        return _json(_placedOrderResponse(purchased));
+      }
       return _json({'message': 'Not found.'}, status: 404);
     });
     apiClient = ApiClient(
@@ -385,6 +1107,7 @@ class _Harness {
 
   final List<http.Request> requests = [];
   final List<Map<String, Object?>> _addresses;
+  final bool failAttemptWrites;
   final Duration quoteLifetime;
   final List<Map<String, Object?>> _cartItems = [
     _cartItem(
@@ -403,7 +1126,9 @@ class _Harness {
       price: 20000,
     ),
   ];
-  final _RecordingAttemptStore attemptStore = _RecordingAttemptStore();
+  late final _RecordingAttemptStore attemptStore = _RecordingAttemptStore(
+    failWrites: failAttemptWrites,
+  );
   late final MockClient client;
   late final ApiClient apiClient;
   late final AuthService auth;
@@ -425,6 +1150,13 @@ class _Harness {
         cartController: cart,
         addressController: addresses,
         checkoutRepository: checkout,
+      );
+
+  BuyerCheckoutPlacementController placementController() =>
+      BuyerCheckoutPlacementController(
+        authService: auth,
+        checkoutRepository: checkout,
+        cartController: cart,
       );
 
   Map<String, Object?> _quoteFromRequest(http.Request request) {
@@ -618,6 +1350,11 @@ class _MemoryTokenStore implements SessionTokenStore {
 }
 
 class _RecordingAttemptStore implements BuyerCheckoutAttemptStore {
+  _RecordingAttemptStore({this.failWrites = false});
+
+  final bool failWrites;
+  final Map<int, BuyerCheckoutAttempt> saved = {};
+  final List<String> events = [];
   int readCount = 0;
   int writeCount = 0;
   int clearCount = 0;
@@ -625,16 +1362,72 @@ class _RecordingAttemptStore implements BuyerCheckoutAttemptStore {
   @override
   Future<BuyerCheckoutAttempt?> read(int buyerAccountId) async {
     readCount++;
-    return null;
+    final attempt = saved[buyerAccountId];
+    return attempt == null
+        ? null
+        : BuyerCheckoutAttempt.fromJson(attempt.toJson());
   }
 
   @override
   Future<void> write(BuyerCheckoutAttempt attempt) async {
     writeCount++;
+    events.add('write-${attempt.status.name}');
+    if (failWrites) throw const BuyerCheckoutAttemptStorageException();
+    saved[attempt.buyerAccountId] = BuyerCheckoutAttempt.fromJson(
+      attempt.toJson(),
+    );
   }
 
   @override
   Future<void> clear(int buyerAccountId) async {
     clearCount++;
+    saved.remove(buyerAccountId);
   }
+}
+
+Map<String, Object?> _placedOrderResponse(List<Map<String, Object?>> items) {
+  final groups = <int, List<Map<String, Object?>>>{};
+  for (final item in items) {
+    groups.putIfAbsent(item['store_id']! as int, () => []).add(item);
+  }
+  final subtotal = items.fold<int>(
+    0,
+    (total, item) =>
+        total + (item['unit_price_minor']! as int) * (item['quantity']! as int),
+  );
+  final shipping = groups.length * 1000;
+  return {
+    'data': {
+      'id': 812,
+      'order_reference': 'BRL-ORDER-812',
+      'status': 'processing',
+      'payment_method': 'cod',
+      'payment_status': 'unpaid',
+      'initial_payment_state': 'pending',
+      'currency': 'PHP',
+      'subtotal_minor': subtotal,
+      'shipping_fee_minor': shipping,
+      'discount_minor': 0,
+      'platform_discount_minor': 0,
+      'campaign_platform_discount_minor': 0,
+      'shipping_discount_minor': 0,
+      'total_minor': subtotal + shipping,
+      'created_at': '2026-10-24T12:00:00Z',
+      'placed_at': '2026-10-24T12:00:00Z',
+      'seller_orders': [
+        for (final entry in groups.entries)
+          {
+            'id': 900 + entry.key,
+            'seller_order_reference': 'SO-${entry.key}',
+            'store_id': entry.key,
+            'store_name': entry.value.first['store_name'],
+            'status': 'pending',
+            'item_count': entry.value.fold<int>(
+              0,
+              (sum, item) => sum + (item['quantity']! as int),
+            ),
+          },
+      ],
+    },
+  };
 }
