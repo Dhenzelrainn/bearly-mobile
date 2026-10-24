@@ -81,6 +81,8 @@ class _BuyerCartPageState extends State<BuyerCartPage> {
           if (cart.items.isEmpty)
             _emptyState()
           else ...[
+            _selectionControls(),
+            const SizedBox(height: 8),
             for (final item in cart.items) _itemCard(item, cart.currency),
             const SizedBox(height: 4),
             _subtotal(cart),
@@ -92,11 +94,22 @@ class _BuyerCartPageState extends State<BuyerCartPage> {
               ).textTheme.bodySmall?.copyWith(color: BearlyColors.muted),
             ),
             const SizedBox(height: 14),
+            _selectedSubtotal(cart.currency),
+            const SizedBox(height: 12),
             FilledButton.icon(
-              key: const ValueKey('buyer-cart-checkout-unavailable'),
-              onPressed: null,
-              icon: const Icon(Icons.lock_outline_rounded),
-              label: const Text('Checkout available later'),
+              key: const ValueKey('buyer-cart-continue-checkout'),
+              onPressed: controller.selectedCount == 0
+                  ? null
+                  : () => Navigator.pushNamed(
+                      context,
+                      AppRouteNames.buyerCheckoutReview,
+                    ),
+              icon: const Icon(Icons.receipt_long_outlined),
+              label: Text(
+                controller.selectedCount == 0
+                    ? 'Select items to continue'
+                    : 'Continue to checkout (${controller.selectedCount})',
+              ),
             ),
             OutlinedButton.icon(
               onPressed: _continueShopping,
@@ -104,6 +117,98 @@ class _BuyerCartPageState extends State<BuyerCartPage> {
               label: const Text('Continue shopping'),
             ),
           ],
+        ],
+      ),
+    );
+  }
+
+  Widget _selectionControls() {
+    final controller = widget.cartController;
+    final availableCount =
+        controller.cart?.items.where((item) => item.isAvailable).length ?? 0;
+    final allSelected = controller.areAllAvailableItemsSelected;
+    return Card(
+      color: BearlyColors.cream100,
+      margin: EdgeInsets.zero,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        child: Row(
+          children: [
+            Checkbox(
+              key: const ValueKey('buyer-cart-select-all-checkbox'),
+              value: allSelected,
+              onChanged: availableCount == 0
+                  ? null
+                  : (_) => allSelected
+                        ? controller.deselectAllItems()
+                        : _selectAll(),
+            ),
+            Expanded(
+              child: Text(
+                '${controller.selectedCount} of ${controller.cart?.items.length ?? 0} selected',
+                key: const ValueKey('buyer-cart-selection-count'),
+                style: Theme.of(context).textTheme.titleSmall,
+              ),
+            ),
+            TextButton(
+              key: const ValueKey('buyer-cart-select-all'),
+              onPressed: availableCount == 0
+                  ? null
+                  : allSelected
+                  ? controller.deselectAllItems
+                  : _selectAll,
+              child: Text(allSelected ? 'Deselect all' : 'Select all'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _selectAll() {
+    if (!widget.cartController.selectAllAvailableItems()) {
+      _showMessage('Select up to 100 available Cart items for checkout.');
+    }
+  }
+
+  Widget _selectedSubtotal(String currency) {
+    final controller = widget.cartController;
+    return Container(
+      key: const ValueKey('buyer-cart-selected-subtotal-panel'),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: BearlyColors.cream100,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Selected item subtotal',
+                  style: Theme.of(context).textTheme.titleSmall,
+                ),
+                Text(
+                  'Before shipping and checkout discounts',
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodySmall?.copyWith(color: BearlyColors.muted),
+                ),
+              ],
+            ),
+          ),
+          Text(
+            formatPriceMinorUnits(
+              controller.selectedSubtotalMinor,
+              currency: currency,
+            ),
+            key: const ValueKey('buyer-cart-selected-subtotal'),
+            style: Theme.of(
+              context,
+            ).textTheme.titleMedium?.copyWith(color: BearlyColors.brown700),
+          ),
         ],
       ),
     );
@@ -135,6 +240,26 @@ class _BuyerCartPageState extends State<BuyerCartPage> {
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                Semantics(
+                  label: 'Select ${item.name}',
+                  child: Checkbox(
+                    key: ValueKey('buyer-cart-select-${item.id}'),
+                    value: controller.selectedCartItemIds.contains(item.id),
+                    onChanged: item.isAvailable && !isDisabled
+                        ? (selected) {
+                            final changed = controller.setItemSelected(
+                              item.id,
+                              selected ?? false,
+                            );
+                            if (!changed && selected == true) {
+                              _showMessage(
+                                'Checkout supports up to 100 selected Cart items.',
+                              );
+                            }
+                          }
+                        : null,
+                  ),
+                ),
                 ClipRRect(
                   borderRadius: BorderRadius.circular(12),
                   child: _itemImage(item),

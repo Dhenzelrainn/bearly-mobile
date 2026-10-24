@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'app_route_names.dart';
+import '../network/api_client.dart';
 import '../../features/auth/data/auth_service.dart';
 import '../../features/auth/models/account_role.dart';
 import '../../features/auth/presentation/forgot_password_page.dart';
@@ -10,9 +11,14 @@ import '../../features/auth/presentation/pending_page.dart';
 import '../../features/auth/presentation/register_page.dart';
 import '../../features/buyer/data/buyer_catalog_repository.dart';
 import '../../features/buyer/data/buyer_cart_controller.dart';
+import '../../features/buyer/data/buyer_address_controller.dart';
+import '../../features/buyer/data/buyer_checkout_repository.dart';
+import '../../features/buyer/data/buyer_checkout_review_controller.dart';
+import '../../features/buyer/data/buyer_location_repository.dart';
 import '../../features/buyer/data/buyer_wishlist_controller.dart';
 import '../../features/buyer/presentation/buyer_home_page.dart';
 import '../../features/buyer/presentation/buyer_cart_page.dart';
+import '../../features/buyer/presentation/buyer_checkout_review_page.dart';
 import '../../features/buyer/presentation/buyer_product_detail_page.dart';
 import '../../features/rider/presentation/rider_home_page.dart';
 import '../../features/rider/presentation/rider_module_page.dart';
@@ -27,7 +33,28 @@ class AppRoutes {
     required AuthService authService,
     required BuyerCartController cartController,
     required BuyerWishlistController wishlistController,
+    BuyerAddressController? addressController,
+    BuyerLocationRepository? locationRepository,
+    BuyerCheckoutRepository? checkoutRepository,
   }) {
+    BuyerAddressController? fallbackAddressController;
+    BuyerLocationRepository? fallbackLocationRepository;
+    BuyerCheckoutRepository? fallbackCheckoutRepository;
+    BuyerAddressController resolveAddressController() =>
+        addressController ??
+        (fallbackAddressController ??= BuyerAddressController(
+          authService: authService,
+        ));
+    BuyerLocationRepository resolveLocationRepository() =>
+        locationRepository ??
+        (fallbackLocationRepository ??= BuyerLocationRepository(
+          apiClient: ApiClient(),
+        ));
+    BuyerCheckoutRepository resolveCheckoutRepository() =>
+        checkoutRepository ??
+        (fallbackCheckoutRepository ??= BuyerCheckoutRepository(
+          authService: authService,
+        ));
     final requiredRole = _requiredRole(settings.name);
     final sessionRole = authService.currentSession?.role;
     if (requiredRole != null && sessionRole != requiredRole) {
@@ -47,6 +74,8 @@ class AppRoutes {
                 authService: authService,
                 cartController: cartController,
                 wishlistController: wishlistController,
+                addressController: addressController,
+                locationRepository: locationRepository,
               )
             : const RiderHomePage(),
         settings: RouteSettings(name: route),
@@ -90,6 +119,8 @@ class AppRoutes {
             authService: authService,
             cartController: cartController,
             wishlistController: wishlistController,
+            addressController: addressController,
+            locationRepository: locationRepository,
           ),
           settings: settings,
         );
@@ -99,12 +130,28 @@ class AppRoutes {
             authService: authService,
             cartController: cartController,
             wishlistController: wishlistController,
+            addressController: addressController,
+            locationRepository: locationRepository,
           ),
           settings: settings,
         );
       case AppRouteNames.buyerCart:
         return MaterialPageRoute(
           builder: (_) => BuyerCartPage(cartController: cartController),
+          settings: settings,
+        );
+      case AppRouteNames.buyerCheckoutReview:
+        return MaterialPageRoute(
+          builder: (_) => BuyerCheckoutReviewPage(
+            addressController: resolveAddressController(),
+            locationRepository: resolveLocationRepository(),
+            reviewController: BuyerCheckoutReviewController(
+              authService: authService,
+              cartController: cartController,
+              addressController: resolveAddressController(),
+              checkoutRepository: resolveCheckoutRepository(),
+            ),
+          ),
           settings: settings,
         );
       case AppRouteNames.buyerProduct:
@@ -125,6 +172,8 @@ class AppRoutes {
             authService: authService,
             cartController: cartController,
             wishlistController: wishlistController,
+            addressController: addressController,
+            locationRepository: locationRepository,
           ),
           settings: settings,
         );
@@ -187,6 +236,7 @@ class AppRoutes {
       AppRouteNames.buyer,
       AppRouteNames.buyerHome,
       AppRouteNames.buyerCart,
+      AppRouteNames.buyerCheckoutReview,
       AppRouteNames.buyerProduct,
     }.contains(name)) {
       return AccountRole.buyer;

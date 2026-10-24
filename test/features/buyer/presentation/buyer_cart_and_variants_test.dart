@@ -632,7 +632,7 @@ void main() {
       expect(find.text('Buyer Nine Item'), findsOneWidget);
     });
 
-    testWidgets('Checkout remains unavailable and no order API is called', (
+    testWidgets('empty selection cannot continue or call checkout APIs', (
       tester,
     ) async {
       final requests = <http.Request>[];
@@ -645,7 +645,7 @@ void main() {
       expect(
         tester
             .widget<FilledButton>(
-              find.byKey(const ValueKey('buyer-cart-checkout-unavailable')),
+              find.byKey(const ValueKey('buyer-cart-continue-checkout')),
             )
             .onPressed,
         isNull,

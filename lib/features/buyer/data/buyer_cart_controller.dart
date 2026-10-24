@@ -22,6 +22,7 @@ class BuyerCartController extends ChangeNotifier {
   final BuyerCartRepository _repository;
 
   BuyerCart? _cart;
+  final Set<int> _selectedCartItemIds = <int>{};
   Object? _loadError;
   Object? _mutationError;
   int? _ownerAccountId;
@@ -32,6 +33,21 @@ class BuyerCartController extends ChangeNotifier {
   bool _isLoading = false;
 
   BuyerCart? get cart => _cart;
+  List<int> get selectedCartItemIds => [
+    for (final item in _cart?.items ?? const <BuyerCartItem>[])
+      if (_selectedCartItemIds.contains(item.id)) item.id,
+  ];
+  List<BuyerCartItem> get selectedItems => [
+    for (final item in _cart?.items ?? const <BuyerCartItem>[])
+      if (_selectedCartItemIds.contains(item.id)) item,
+  ];
+  int get selectedCount => selectedCartItemIds.length;
+  int get selectedQuantityCount =>
+      selectedItems.fold<int>(0, (total, item) => total + item.quantity);
+  int get selectedSubtotalMinor => selectedItems.fold<int>(
+    0,
+    (total, item) => total + item.lineSubtotalMinor,
+  );
   Object? get loadError => _loadError;
   Object? get mutationError => _mutationError;
   int? get pendingCartItemId => _pendingCartItemId;
@@ -51,6 +67,7 @@ class BuyerCartController extends ChangeNotifier {
 
     _ownerAccountId = nextOwner;
     _cart = null;
+    _selectedCartItemIds.clear();
     _loadError = null;
     _mutationError = null;
     _isLoading = false;
@@ -65,6 +82,7 @@ class BuyerCartController extends ChangeNotifier {
   void clear() {
     _ownerAccountId = null;
     _cart = null;
+    _selectedCartItemIds.clear();
     _loadError = null;
     _mutationError = null;
     _isLoading = false;
@@ -102,6 +120,7 @@ class BuyerCartController extends ChangeNotifier {
         return;
       }
       _cart = result;
+      _reconcileSelection(result);
       _loadError = null;
     } catch (error) {
       if (sequence != _loadSequence) return;
@@ -141,6 +160,75 @@ class BuyerCartController extends ChangeNotifier {
     request: () => _repository.removeItem(cartItemId),
   );
 
+  /// Selects a server Cart line by its Laravel cart_items.id. Returns false
+  /// when the line is missing, unavailable, invalid, or would exceed Laravel's
+  /// 100 distinct line quote limit.
+  bool setItemSelected(int cartItemId, bool selected) {
+    final item = _findItem(cartItemId);
+    if (item == null || cartItemId < 1) return false;
+    if (!selected) {
+      if (_selectedCartItemIds.remove(cartItemId)) notifyListeners();
+      return true;
+    }
+    if (!item.isAvailable) return false;
+    if (_selectedCartItemIds.contains(cartItemId)) return true;
+    if (_selectedCartItemIds.length >= 100) return false;
+    _selectedCartItemIds.add(cartItemId);
+    notifyListeners();
+    return true;
+  }
+
+  bool toggleItemSelected(int cartItemId) {
+    return setItemSelected(
+      cartItemId,
+      !_selectedCartItemIds.contains(cartItemId),
+    );
+  }
+
+  /// Selects every available Cart line when the selection fits the quote
+  /// contract. Returns false rather than silently selecting only a subset.
+  bool selectAllAvailableItems() {
+    final available = [
+      for (final item in _cart?.items ?? const <BuyerCartItem>[])
+        if (item.id > 0 && item.isAvailable) item.id,
+    ];
+    if (available.length > 100) return false;
+    _selectedCartItemIds
+      ..clear()
+      ..addAll(available);
+    notifyListeners();
+    return true;
+  }
+
+  void deselectAllItems() {
+    if (_selectedCartItemIds.isEmpty) return;
+    _selectedCartItemIds.clear();
+    notifyListeners();
+  }
+
+  bool get areAllAvailableItemsSelected {
+    final available =
+        _cart?.items.where((item) => item.isAvailable) ??
+        const Iterable<BuyerCartItem>.empty();
+    return available.isNotEmpty &&
+        available.every((item) => _selectedCartItemIds.contains(item.id));
+  }
+
+  BuyerCartItem? _findItem(int id) {
+    for (final item in _cart?.items ?? const <BuyerCartItem>[]) {
+      if (item.id == id) return item;
+    }
+    return null;
+  }
+
+  void _reconcileSelection(BuyerCart cart) {
+    final validIds = <int>{
+      for (final item in cart.items)
+        if (item.id > 0 && item.isAvailable) item.id,
+    };
+    _selectedCartItemIds.removeWhere((id) => !validIds.contains(id));
+  }
+
   Future<BuyerCart> _mutate({
     required int? pendingItemId,
     required Future<BuyerCart> Function() request,
@@ -167,6 +255,7 @@ class BuyerCartController extends ChangeNotifier {
       final result = await request();
       if (_isCurrent(owner) && _activeMutation == operation) {
         _cart = result;
+        _reconcileSelection(result);
         _loadError = null;
         _mutationError = null;
       }
