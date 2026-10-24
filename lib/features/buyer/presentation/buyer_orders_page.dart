@@ -241,11 +241,7 @@ class _BuyerOrdersPageState extends State<BuyerOrdersPage> {
     margin: const EdgeInsets.only(top: 12),
     clipBehavior: Clip.antiAlias,
     child: InkWell(
-      onTap: () => Navigator.pushNamed(
-        context,
-        AppRouteNames.buyerOrderDetails,
-        arguments: order.id,
-      ),
+      onTap: () => _openOrderDetails(context, order.id),
       child: Padding(
         padding: const EdgeInsets.all(14),
         child: Column(
@@ -365,6 +361,16 @@ class _BuyerOrdersPageState extends State<BuyerOrdersPage> {
       ),
     ),
   );
+
+  Future<void> _openOrderDetails(BuildContext context, int orderId) async {
+    await Navigator.of(
+      context,
+    ).pushNamed<Object?>(AppRouteNames.buyerOrderDetails, arguments: orderId);
+    if (!mounted) return;
+    // Re-fetch page one whenever Order Details returns. Receipt confirmation
+    // changes the parent status shown in Buyer history.
+    await _controller.refresh();
+  }
 
   Widget _statusChip(String label) => Chip(
     label: Text(label),

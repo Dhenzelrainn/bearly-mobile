@@ -329,7 +329,7 @@ void main() {
       tester,
     ) async {
       final detail = _detailResponse(
-        canConfirmReceipt: true,
+        canConfirmReceipt: false,
         paymentStatus: 'unpaid',
         sellers: [
           _sellerDetailJson(
@@ -382,11 +382,11 @@ void main() {
       expect(find.text('Delivery Confirmed'), findsNothing);
       await _scrollTo(
         tester,
-        find.text('Bearly reports that receipt confirmation is available.'),
+        find.byKey(const ValueKey('buyer-order-receipt-ineligible')),
       );
       expect(
-        find.text('Bearly reports that receipt confirmation is available.'),
-        findsOneWidget,
+        find.byKey(const ValueKey('buyer-order-complete-order')),
+        findsNothing,
       );
       expect(find.text('Confirm receipt'), findsNothing);
       expect(h.requests.every((item) => item.method == 'GET'), isTrue);
@@ -628,8 +628,7 @@ void main() {
       'history and detail screens never send placement or receipt POSTs',
       (tester) async {
         final h = _Harness(
-          detailHandler: (_) async =>
-              _json(_detailResponse(canConfirmReceipt: true)),
+          detailHandler: (_) async => _json(_eligibleDetailResponse()),
         );
         await _mountOrders(tester, h);
         await tester.tap(find.text('BRL-812'));
@@ -644,6 +643,821 @@ void main() {
             (request) => request.url.path.contains('/confirm-receipt'),
           ),
           isFalse,
+        );
+      },
+    );
+  });
+
+  group('Buyer receipt confirmation UI', () {
+    testWidgets('eligible state offers action without posting on page load', (
+      tester,
+    ) async {
+      final h = _Harness(
+        detailHandler: (_) async => _json(
+          _detailResponse(
+            canConfirmReceipt: true,
+            paymentStatus: 'paid',
+            sellers: [
+              _sellerDetailJson(
+                id: 991,
+                reference: 'SELL-991',
+                store: 'Bearly Studio',
+                status: 'handed_to_logistics',
+                shipments: [_deliveredShipmentDetailJson()],
+                item: _itemJson(),
+              ),
+            ],
+          ),
+        ),
+      );
+      await _mountOrders(tester, h);
+      await tester.tap(find.text('BRL-812'));
+      await tester.pumpAndSettle();
+      await _scrollTo(
+        tester,
+        find.byKey(const ValueKey('buyer-order-complete-order')),
+      );
+
+      expect(
+        find.byKey(const ValueKey('buyer-order-receipt-action')),
+        findsOneWidget,
+      );
+      expect(find.text('Bearly Studio · Handed To Logistics'), findsOneWidget);
+      expect(h.requests.where((request) => request.method == 'POST'), isEmpty);
+    });
+
+    testWidgets(
+      'backend-ineligible and pending COD orders have no submit path',
+      (tester) async {
+        final h = _Harness(
+          detailHandler: (_) async => _json(
+            _detailResponse(canConfirmReceipt: false, paymentStatus: 'unpaid'),
+          ),
+        );
+        await _mountOrders(tester, h);
+        await tester.tap(find.text('BRL-812'));
+        await tester.pumpAndSettle();
+        await _scrollTo(
+          tester,
+          find.byKey(const ValueKey('buyer-order-receipt-ineligible')),
+        );
+
+        expect(
+          find.byKey(const ValueKey('buyer-order-complete-order')),
+          findsNothing,
+        );
+        expect(find.textContaining('not currently eligible'), findsOneWidget);
+        expect(find.text('COD payment status · Pending'), findsOneWidget);
+        expect(
+          h.requests.where((request) => request.method == 'POST'),
+          isEmpty,
+        );
+      },
+    );
+
+    testWidgets(
+      'undelivered multi-Seller order does not get partial confirmation',
+      (tester) async {
+        final h = _Harness(
+          detailHandler: (_) async => _json(
+            _detailResponse(
+              canConfirmReceipt: false,
+              sellers: [
+                _sellerDetailJson(
+                  id: 991,
+                  reference: 'SELL-991',
+                  store: 'Bearly Studio',
+                  status: 'completed',
+                  shipments: const [],
+                  item: _itemJson(),
+                ),
+                _sellerDetailJson(
+                  id: 992,
+                  reference: 'SELL-992',
+                  store: 'Laguna Makers',
+                  status: 'ready_for_pickup',
+                  shipments: const [],
+                  item: _itemJson(name: 'Canvas Pouch'),
+                ),
+              ],
+            ),
+          ),
+        );
+        await _mountOrders(tester, h);
+        await tester.tap(find.text('BRL-812'));
+        await tester.pumpAndSettle();
+        await _scrollTo(
+          tester,
+          find.byKey(const ValueKey('buyer-order-receipt-ineligible')),
+        );
+
+        expect(
+          find.byKey(const ValueKey('buyer-order-complete-order')),
+          findsNothing,
+        );
+        expect(find.text('Bearly Studio'), findsWidgets);
+        expect(find.text('Laguna Makers'), findsWidgets);
+        expect(
+          h.requests.where((request) => request.method == 'POST'),
+          isEmpty,
+        );
+      },
+    );
+
+    testWidgets(
+      'already-completed order shows recorded state and no new action',
+      (tester) async {
+        final h = _Harness(
+          detailHandler: (_) async => _json(
+            _detailResponse(
+              confirmedReceipt: true,
+              orderStatus: 'fulfilled',
+              paymentStatus: 'paid',
+              receiptConfirmedAt: '2026-10-24T08:45:00Z',
+              sellers: [
+                _sellerDetailJson(
+                  id: 991,
+                  reference: 'SELL-991',
+                  store: 'Bearly Studio',
+                  status: 'completed',
+                  shipments: const [],
+                  item: _itemJson(),
+                ),
+              ],
+            ),
+          ),
+        );
+        await _mountOrders(tester, h);
+        await tester.tap(find.text('BRL-812'));
+        await tester.pumpAndSettle();
+        await _scrollTo(
+          tester,
+          find.byKey(const ValueKey('buyer-order-receipt-complete')),
+        );
+
+        expect(find.text('Receipt confirmed'), findsOneWidget);
+        expect(find.textContaining('Philippine Time, UTC+8'), findsOneWidget);
+        expect(find.text('SELL-991 · Completed'), findsOneWidget);
+        expect(
+          find.byKey(const ValueKey('buyer-order-complete-order')),
+          findsNothing,
+        );
+        expect(
+          h.requests.where((request) => request.method == 'POST'),
+          isEmpty,
+        );
+      },
+    );
+
+    testWidgets(
+      'dialog requires explicit confirmation and Cancel sends no POST',
+      (tester) async {
+        final h = _Harness(
+          detailHandler: (_) async => _json(_eligibleDetailResponse()),
+        );
+        await _mountOrders(tester, h);
+        await tester.tap(find.text('BRL-812'));
+        await tester.pumpAndSettle();
+        await _scrollTo(
+          tester,
+          find.byKey(const ValueKey('buyer-order-complete-order')),
+        );
+        await tester.tap(
+          find.byKey(const ValueKey('buyer-order-complete-order')),
+        );
+        await tester.pumpAndSettle();
+
+        expect(
+          find.byKey(const ValueKey('buyer-order-receipt-confirmation-dialog')),
+          findsOneWidget,
+        );
+        expect(
+          find.text(
+            'This confirms the parent Order for all applicable Seller orders together. There is no per-Seller partial confirmation.',
+          ),
+          findsOneWidget,
+        );
+        expect(
+          find.textContaining('only after the actual delivery is complete'),
+          findsOneWidget,
+        );
+        expect(
+          find.textContaining('does not release Seller payouts'),
+          findsNWidgets(2),
+        );
+        await tester.tap(
+          find.byKey(const ValueKey('buyer-order-receipt-cancel')),
+        );
+        await tester.pumpAndSettle();
+
+        expect(
+          find.byKey(const ValueKey('buyer-order-receipt-confirmation-dialog')),
+          findsNothing,
+        );
+        expect(
+          h.requests.where((request) => request.method == 'POST'),
+          isEmpty,
+        );
+      },
+    );
+
+    testWidgets(
+      'confirmation posts the parent ID bodylessly and refreshes details',
+      (tester) async {
+        var detailCalls = 0;
+        http.Request? receiptRequest;
+        final h = _Harness(
+          detailHandler: (_) async {
+            detailCalls++;
+            final completed = detailCalls >= 3;
+            return _json(
+              _eligibleDetailResponse(
+                canConfirmReceipt: !completed,
+                confirmedReceipt: completed,
+                orderStatus: completed ? 'fulfilled' : 'processing',
+                sellers: [
+                  _sellerDetailJson(
+                    id: 991,
+                    reference: 'SELL-991',
+                    store: 'Bearly Studio',
+                    status: completed ? 'completed' : 'handed_to_logistics',
+                    shipments: [_deliveredShipmentDetailJson()],
+                    item: _itemJson(),
+                  ),
+                ],
+              ),
+            );
+          },
+          receiptHandler: (request) async {
+            receiptRequest = request;
+            return _json(_receiptResponse());
+          },
+        );
+        await _mountOrders(tester, h);
+        await tester.tap(find.text('BRL-812'));
+        await tester.pumpAndSettle();
+        await _scrollTo(
+          tester,
+          find.byKey(const ValueKey('buyer-order-complete-order')),
+        );
+        await tester.tap(
+          find.byKey(const ValueKey('buyer-order-complete-order')),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const ValueKey('buyer-order-receipt-confirm')),
+        );
+        await tester.pumpAndSettle();
+        await _scrollTo(
+          tester,
+          find.byKey(const ValueKey('buyer-order-receipt-complete')),
+        );
+
+        expect(receiptRequest, isNotNull);
+        expect(receiptRequest!.method, 'POST');
+        expect(
+          receiptRequest!.url.path,
+          '/api/mobile/buyer/orders/812/confirm-receipt',
+        );
+        expect(receiptRequest!.body, isEmpty);
+        expect(
+          receiptRequest!.headers['authorization'],
+          'Bearer test-session-token',
+        );
+        expect(
+          detailCalls,
+          3,
+          reason: 'initial, pre-submit, and post-success GETs',
+        );
+        expect(find.text('Order status · Fulfilled'), findsWidgets);
+        expect(find.text('SELL-991 · Completed'), findsOneWidget);
+        expect(find.textContaining('Philippine Time, UTC+8'), findsOneWidget);
+        expect(
+          h.requests.where((request) => request.method == 'POST'),
+          hasLength(1),
+        );
+        expect(
+          h.requests
+              .where((request) => request.method == 'POST')
+              .single
+              .url
+              .path,
+          '/api/mobile/buyer/orders/812/confirm-receipt',
+        );
+      },
+    );
+
+    testWidgets('already-confirmed replay preserves the returned timestamp', (
+      tester,
+    ) async {
+      final h = _Harness(
+        detailHandler: (_) async => _json(_eligibleDetailResponse()),
+        receiptHandler: (_) async => _json(
+          _receiptResponse(
+            alreadyConfirmed: true,
+            completedAt: '2026-10-20T01:02:03Z',
+          ),
+        ),
+      );
+      await _mountOrders(tester, h);
+      await tester.tap(find.text('BRL-812'));
+      await tester.pumpAndSettle();
+      await _scrollTo(
+        tester,
+        find.byKey(const ValueKey('buyer-order-complete-order')),
+      );
+      await tester.tap(
+        find.byKey(const ValueKey('buyer-order-complete-order')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('buyer-order-receipt-confirm')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Receipt was already confirmed'), findsOneWidget);
+      expect(find.text('Order status · Fulfilled'), findsWidgets);
+      expect(find.textContaining('Philippine Time, UTC+8'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('buyer-order-complete-order')),
+        findsNothing,
+      );
+      expect(
+        h.requests.where((request) => request.method == 'POST'),
+        hasLength(1),
+      );
+    });
+
+    testWidgets('rapid taps keep one receipt POST in flight', (tester) async {
+      final response = Completer<http.Response>();
+      final postStarted = Completer<void>();
+      final h = _Harness(
+        detailHandler: (_) async => _json(_eligibleDetailResponse()),
+        receiptHandler: (_) {
+          if (!postStarted.isCompleted) postStarted.complete();
+          return response.future;
+        },
+      );
+      await _mountOrders(tester, h);
+      await tester.tap(find.text('BRL-812'));
+      await tester.pumpAndSettle();
+      await _scrollTo(
+        tester,
+        find.byKey(const ValueKey('buyer-order-complete-order')),
+      );
+      await tester.tap(
+        find.byKey(const ValueKey('buyer-order-complete-order')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('buyer-order-receipt-confirm')),
+      );
+      await tester.pump();
+      await postStarted.future;
+      await tester.pump();
+      await tester.tap(
+        find.byKey(const ValueKey('buyer-order-complete-order')),
+      );
+      await tester.pump();
+
+      expect(
+        h.requests.where((request) => request.method == 'POST'),
+        hasLength(1),
+      );
+      response.complete(_json(_receiptResponse()));
+      await tester.pumpAndSettle();
+    });
+
+    testWidgets('409 conflict is shown and server eligibility is refreshed', (
+      tester,
+    ) async {
+      var detailCalls = 0;
+      final h = _Harness(
+        detailHandler: (_) async {
+          detailCalls++;
+          return _json(
+            _eligibleDetailResponse(canConfirmReceipt: detailCalls < 3),
+          );
+        },
+        receiptHandler: (_) async => _json({
+          'message': 'Not fully delivered.',
+          'error': {'code': 'order_not_fully_delivered'},
+        }, 409),
+      );
+      await _mountOrders(tester, h);
+      await tester.tap(find.text('BRL-812'));
+      await tester.pumpAndSettle();
+      await _scrollTo(
+        tester,
+        find.byKey(const ValueKey('buyer-order-complete-order')),
+      );
+      await tester.tap(
+        find.byKey(const ValueKey('buyer-order-complete-order')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('buyer-order-receipt-confirm')),
+      );
+      await tester.pumpAndSettle();
+      await _scrollTo(
+        tester,
+        find.byKey(const ValueKey('buyer-order-receipt-ineligible')),
+      );
+
+      expect(
+        find.byKey(const ValueKey('buyer-order-complete-order')),
+        findsNothing,
+      );
+      expect(
+        find.textContaining('not every applicable parcel has been delivered'),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('buyer-order-receipt-complete')),
+        findsNothing,
+      );
+      expect(detailCalls, 3);
+      expect(
+        h.requests.where((request) => request.method == 'POST'),
+        hasLength(1),
+      );
+    });
+
+    testWidgets('403 clears private order state and offers sign-in again', (
+      tester,
+    ) async {
+      final h = _Harness(
+        detailHandler: (_) async => _json(_eligibleDetailResponse()),
+        receiptHandler: (_) async => _json({'message': 'Forbidden.'}, 403),
+      );
+      await _mountOrders(tester, h);
+      await tester.tap(find.text('BRL-812'));
+      await tester.pumpAndSettle();
+      await _scrollTo(
+        tester,
+        find.byKey(const ValueKey('buyer-order-complete-order')),
+      );
+      await tester.tap(
+        find.byKey(const ValueKey('buyer-order-complete-order')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('buyer-order-receipt-confirm')),
+      );
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Your account changed.'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('buyer-order-details-session-sign-in')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('buyer-order-detail-reference')),
+        findsNothing,
+      );
+      expect(
+        find.byKey(const ValueKey('buyer-order-receipt-complete')),
+        findsNothing,
+      );
+      expect(
+        h.requests.where((request) => request.method == 'POST'),
+        hasLength(1),
+      );
+    });
+
+    testWidgets('401 clears private order state and offers sign-in again', (
+      tester,
+    ) async {
+      for (final status in [401, 403]) {
+        final h = _Harness(
+          detailHandler: (_) async => _json(_eligibleDetailResponse()),
+          receiptHandler: (_) async =>
+              _json({'message': 'Request rejected.'}, status),
+        );
+        await _mountOrders(tester, h);
+        await tester.tap(find.text('BRL-812'));
+        await tester.pumpAndSettle();
+        await _scrollTo(
+          tester,
+          find.byKey(const ValueKey('buyer-order-complete-order')),
+        );
+        await tester.tap(
+          find.byKey(const ValueKey('buyer-order-complete-order')),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const ValueKey('buyer-order-receipt-confirm')),
+        );
+        await tester.pumpAndSettle();
+
+        expect(
+          find.textContaining('Your account changed.'),
+          findsOneWidget,
+          reason: 'HTTP $status',
+        );
+        expect(
+          find.byKey(const ValueKey('buyer-order-details-session-sign-in')),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(const ValueKey('buyer-order-detail-reference')),
+          findsNothing,
+        );
+        expect(
+          h.requests.where((request) => request.method == 'POST'),
+          hasLength(1),
+        );
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pumpAndSettle();
+      }
+    });
+
+    testWidgets('404, 422, and 429 show safe actionable messages', (
+      tester,
+    ) async {
+      const scenarios = <(int, String)>[
+        (404, 'unavailable for the signed-in Buyer'),
+        (422, 'could not validate the receipt confirmation'),
+        (429, 'Wait a little before checking this order again'),
+      ];
+      for (final (status, expectedMessage) in scenarios) {
+        final h = _Harness(
+          detailHandler: (_) async => _json(_eligibleDetailResponse()),
+          receiptHandler: (_) async =>
+              _json({'message': 'Request rejected.'}, status),
+        );
+        await _mountOrders(tester, h);
+        await tester.tap(find.text('BRL-812'));
+        await tester.pumpAndSettle();
+        await _scrollTo(
+          tester,
+          find.byKey(const ValueKey('buyer-order-complete-order')),
+        );
+        await tester.tap(
+          find.byKey(const ValueKey('buyer-order-complete-order')),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const ValueKey('buyer-order-receipt-confirm')),
+        );
+        await tester.pumpAndSettle();
+        await _scrollTo(
+          tester,
+          find.byKey(const ValueKey('buyer-order-receipt-action')),
+        );
+
+        expect(
+          find.textContaining(expectedMessage),
+          findsOneWidget,
+          reason: 'HTTP $status',
+        );
+        expect(
+          find.byKey(const ValueKey('buyer-order-receipt-complete')),
+          findsNothing,
+        );
+        expect(
+          h.requests.where((request) => request.method == 'POST'),
+          hasLength(1),
+        );
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pumpAndSettle();
+      }
+    });
+
+    testWidgets(
+      'transport interruption is uncertain and does not auto-POST again',
+      (tester) async {
+        final h = _Harness(
+          detailHandler: (_) async => _json(_eligibleDetailResponse()),
+          receiptHandler: (_) async =>
+              throw http.ClientException('Connection dropped.'),
+        );
+        await _mountOrders(tester, h);
+        await tester.tap(find.text('BRL-812'));
+        await tester.pumpAndSettle();
+        await _scrollTo(
+          tester,
+          find.byKey(const ValueKey('buyer-order-complete-order')),
+        );
+        await tester.tap(
+          find.byKey(const ValueKey('buyer-order-complete-order')),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const ValueKey('buyer-order-receipt-confirm')),
+        );
+        await tester.pumpAndSettle();
+        await _scrollTo(
+          tester,
+          find.byKey(const ValueKey('buyer-order-receipt-uncertain')),
+        );
+
+        expect(
+          find.textContaining(
+            'latest order read does not show receipt confirmation',
+          ),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(const ValueKey('buyer-order-receipt-complete')),
+          findsNothing,
+        );
+        expect(
+          h.requests.where((request) => request.method == 'POST'),
+          hasLength(1),
+        );
+        expect(
+          h.requests.where((request) => request.method == 'GET').length,
+          greaterThanOrEqualTo(5),
+          reason: 'a read-only status check follows the ambiguous response',
+        );
+      },
+    );
+
+    testWidgets(
+      'read-only recovery discovers a completed Order after timeout',
+      (tester) async {
+        var detailCalls = 0;
+        final h = _Harness(
+          detailHandler: (_) async {
+            detailCalls++;
+            final completed = detailCalls >= 3;
+            return _json(
+              _eligibleDetailResponse(
+                canConfirmReceipt: !completed,
+                confirmedReceipt: completed,
+                orderStatus: completed ? 'fulfilled' : 'processing',
+              ),
+            );
+          },
+          receiptHandler: (_) async =>
+              throw http.ClientException('Connection dropped.'),
+        );
+        await _mountOrders(tester, h);
+        await tester.tap(find.text('BRL-812'));
+        await tester.pumpAndSettle();
+        await _scrollTo(
+          tester,
+          find.byKey(const ValueKey('buyer-order-complete-order')),
+        );
+        await tester.tap(
+          find.byKey(const ValueKey('buyer-order-complete-order')),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const ValueKey('buyer-order-receipt-confirm')),
+        );
+        await tester.pumpAndSettle();
+
+        expect(
+          find.byKey(const ValueKey('buyer-order-receipt-complete')),
+          findsOneWidget,
+        );
+        expect(find.text('Order status · Fulfilled'), findsWidgets);
+        expect(find.textContaining('Philippine Time, UTC+8'), findsOneWidget);
+        expect(
+          find.byKey(const ValueKey('buyer-order-receipt-uncertain')),
+          findsNothing,
+        );
+        expect(
+          h.requests.where((request) => request.method == 'POST'),
+          hasLength(1),
+        );
+      },
+    );
+
+    testWidgets('late confirmation response after Buyer switch is discarded', (
+      tester,
+    ) async {
+      final response = Completer<http.Response>();
+      final h = _Harness(
+        detailHandler: (_) async => _json(_eligibleDetailResponse()),
+        receiptHandler: (_) => response.future,
+      );
+      await _mountOrders(tester, h);
+      await tester.tap(find.text('BRL-812'));
+      await tester.pumpAndSettle();
+      await _scrollTo(
+        tester,
+        find.byKey(const ValueKey('buyer-order-complete-order')),
+      );
+      await tester.tap(
+        find.byKey(const ValueKey('buyer-order-complete-order')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('buyer-order-receipt-confirm')),
+      );
+      await tester.pump();
+      h.auth.currentSession = _session(9);
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('Your account changed.'), findsOneWidget);
+      response.complete(_json(_receiptResponse()));
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('buyer-order-receipt-complete')),
+        findsNothing,
+      );
+      expect(find.textContaining('Philippine Time, UTC+8'), findsNothing);
+      expect(
+        h.requests.where((request) => request.method == 'POST'),
+        hasLength(1),
+      );
+    });
+
+    testWidgets('account change clears an authoritative receipt UI state', (
+      tester,
+    ) async {
+      final h = _Harness(
+        detailHandler: (_) async => _json(_eligibleDetailResponse()),
+        receiptHandler: (_) async => _json(_receiptResponse()),
+      );
+      await _mountOrders(tester, h);
+      await tester.tap(find.text('BRL-812'));
+      await tester.pumpAndSettle();
+      await _scrollTo(
+        tester,
+        find.byKey(const ValueKey('buyer-order-complete-order')),
+      );
+      await tester.tap(
+        find.byKey(const ValueKey('buyer-order-complete-order')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('buyer-order-receipt-confirm')),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('buyer-order-receipt-complete')),
+        findsOneWidget,
+      );
+
+      h.auth.currentSession = _session(9);
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('Your account changed.'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('buyer-order-receipt-complete')),
+        findsNothing,
+      );
+      expect(find.textContaining('Philippine Time, UTC+8'), findsNothing);
+    });
+
+    testWidgets(
+      'history refreshes after returning from successful confirmation',
+      (tester) async {
+        var historyCalls = 0;
+        var detailCalls = 0;
+        final h = _Harness(
+          historyHandler: (_) async {
+            historyCalls++;
+            return _json(
+              _historyPage([
+                _summaryJson(
+                  status: historyCalls > 1 ? 'fulfilled' : 'processing',
+                  paymentStatus: historyCalls > 1 ? 'paid' : 'unpaid',
+                ),
+              ]),
+            );
+          },
+          detailHandler: (_) async {
+            detailCalls++;
+            final completed = detailCalls >= 3;
+            return _json(
+              _eligibleDetailResponse(
+                canConfirmReceipt: !completed,
+                confirmedReceipt: completed,
+                orderStatus: completed ? 'fulfilled' : 'processing',
+              ),
+            );
+          },
+          receiptHandler: (_) async => _json(_receiptResponse()),
+        );
+        await _mountOrders(tester, h);
+        await tester.tap(find.text('BRL-812'));
+        await tester.pumpAndSettle();
+        await _scrollTo(
+          tester,
+          find.byKey(const ValueKey('buyer-order-complete-order')),
+        );
+        await tester.tap(
+          find.byKey(const ValueKey('buyer-order-complete-order')),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const ValueKey('buyer-order-receipt-confirm')),
+        );
+        await tester.pumpAndSettle();
+        Navigator.of(tester.element(find.byType(BuyerOrderDetailsPage))).pop();
+        await tester.pumpAndSettle();
+
+        expect(historyCalls, 2);
+        expect(find.textContaining('Order · Fulfilled'), findsOneWidget);
+        expect(
+          h.requests.where(
+            (request) => request.url.path.contains('/confirm-receipt'),
+          ),
+          hasLength(1),
         );
       },
     );
@@ -714,7 +1528,12 @@ Future<void> _scrollTo(WidgetTester tester, Finder target) async {
 }
 
 class _Harness {
-  _Harness({this.historyHandler, this.detailHandler, this.trackingHandler}) {
+  _Harness({
+    this.historyHandler,
+    this.detailHandler,
+    this.trackingHandler,
+    this.receiptHandler,
+  }) {
     apiClient = ApiClient(
       httpClient: client,
       baseUri: Uri.parse('https://api.example.test'),
@@ -736,6 +1555,7 @@ class _Harness {
   final Future<http.Response> Function(http.Request)? historyHandler;
   final Future<http.Response> Function(http.Request)? detailHandler;
   final Future<http.Response> Function(http.Request)? trackingHandler;
+  final Future<http.Response> Function(http.Request)? receiptHandler;
   final List<http.Request> requests = [];
 
   late final MockClient client = MockClient(_respond);
@@ -749,6 +1569,12 @@ class _Harness {
 
   Future<http.Response> _respond(http.Request request) async {
     requests.add(request);
+    if (request.method == 'POST' &&
+        request.url.path.endsWith('/confirm-receipt')) {
+      return receiptHandler == null
+          ? _json({'message': 'Unexpected receipt confirmation.'}, 405)
+          : receiptHandler!(request);
+    }
     if (request.method != 'GET') {
       return _json({'message': 'Unexpected method.'}, 405);
     }
@@ -873,7 +1699,11 @@ Map<String, Object?> _summaryJson({
   'preview_image_url': null,
   'cod_payment': noPayment
       ? null
-      : {'status': 'pending', 'amount_minor': total, 'paid_at': null},
+      : {
+          'status': paymentStatus == 'paid' ? 'paid' : 'pending',
+          'amount_minor': total,
+          'paid_at': paymentStatus == 'paid' ? '2026-10-24T08:45:00Z' : null,
+        },
   'seller_orders': sellers ?? [_sellerSummaryJson()],
 };
 
@@ -980,6 +1810,8 @@ Map<String, Object?> _detailResponse({
   List<Map<String, Object?>>? sellers,
   bool canConfirmReceipt = false,
   bool confirmedReceipt = false,
+  String orderStatus = 'processing',
+  String? receiptConfirmedAt,
   String paymentStatus = 'unpaid',
   bool nullDates = false,
   bool noPayment = false,
@@ -1000,6 +1832,7 @@ Map<String, Object?> _detailResponse({
   final summaries = detailSellers.map(_summaryFromDetail).toList();
   final summary = _summaryJson(
     sellers: summaries,
+    status: orderStatus,
     paymentStatus: paymentStatus,
     total: 13300,
     nullDates: nullDates,
@@ -1035,9 +1868,11 @@ Map<String, Object?> _detailResponse({
           : [
               {
                 'method': 'cod',
-                'status': 'pending',
+                'status': paymentStatus == 'paid' ? 'paid' : 'pending',
                 'amount_minor': 13300,
-                'paid_at': null,
+                'paid_at': paymentStatus == 'paid'
+                    ? '2026-10-24T08:45:00Z'
+                    : null,
               },
             ],
       'promotions': <Object?>[],
@@ -1046,12 +1881,79 @@ Map<String, Object?> _detailResponse({
         'can_confirm_receipt': canConfirmReceipt,
         'receipt_confirmed': confirmedReceipt,
         'receipt_confirmed_at': confirmedReceipt
-            ? '2026-10-25T12:00:00Z'
+            ? (receiptConfirmedAt ?? '2026-10-25T12:00:00Z')
             : null,
       },
     },
   };
 }
+
+Map<String, Object?> _eligibleDetailResponse({
+  bool canConfirmReceipt = true,
+  bool confirmedReceipt = false,
+  String orderStatus = 'processing',
+  List<Map<String, Object?>>? sellers,
+}) => _detailResponse(
+  canConfirmReceipt: canConfirmReceipt,
+  confirmedReceipt: confirmedReceipt,
+  orderStatus: orderStatus,
+  paymentStatus: 'paid',
+  sellers:
+      sellers ??
+      [
+        _sellerDetailJson(
+          id: 991,
+          reference: 'SELL-991',
+          store: 'Bearly Studio',
+          status: confirmedReceipt ? 'completed' : 'handed_to_logistics',
+          shipments: [_deliveredShipmentDetailJson()],
+          item: _itemJson(),
+        ),
+      ],
+);
+
+Map<String, Object?> _deliveredShipmentDetailJson() => {
+  'id': 451,
+  'shipment_reference': 'SHIP-451',
+  'status': 'delivered',
+  'waybill_reference': 'WAY-451',
+  'estimated_delivery_at': '2026-10-24T08:45:00Z',
+  'delivered_at': '2026-10-24T08:45:00Z',
+};
+
+Map<String, Object?> _receiptResponse({
+  bool alreadyConfirmed = false,
+  String completedAt = '2026-10-24T08:45:00Z',
+}) => {
+  'data': {
+    'order_id': 812,
+    'order_reference': 'BRL-812',
+    'status': 'fulfilled',
+    'payment_status': 'paid',
+    'currency': 'PHP',
+    'total_minor': 13300,
+    'completed_at': completedAt,
+    'receipt_confirmed': true,
+    'already_confirmed': alreadyConfirmed,
+    'seller_orders': [
+      {
+        'id': 991,
+        'order_reference': 'SELL-991',
+        'status': 'completed',
+        'completed_at': completedAt,
+      },
+      {
+        'id': 992,
+        'order_reference': 'SELL-992',
+        'status': 'cancelled',
+        'completed_at': null,
+      },
+    ],
+  },
+  'message': alreadyConfirmed
+      ? 'Order receipt was already confirmed.'
+      : 'Order receipt confirmed.',
+};
 
 Map<String, Object?> _trackingResponse({
   List<Map<String, Object?>> sellers = const [],

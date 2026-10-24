@@ -33,8 +33,15 @@ class BuyerOrderDetailController extends ChangeNotifier {
   bool _isLoading = false;
   bool _hasLoaded = false;
   Object? _error;
+  Object? _refreshError;
   BuyerOrderDetail? _detail;
   BuyerOrderTracking? _tracking;
+  BuyerReceiptConfirmation? _receiptConfirmation;
+  Object? _receiptError;
+  bool _isCheckingReceiptEligibility = false;
+  bool _isConfirmingReceipt = false;
+  bool _confirmationOutcomeUnknown = false;
+  bool _disposed = false;
 
   int? get _activeBuyerId {
     final session = _authService.currentSession;
@@ -44,22 +51,35 @@ class BuyerOrderDetailController extends ChangeNotifier {
   BuyerOrderDetail? get detail => _detail;
   BuyerOrderTracking? get tracking => _tracking;
   Object? get error => _error;
+  Object? get refreshError => _refreshError;
+  Object? get receiptError => _receiptError;
   bool get isLoading => _isLoading;
   bool get hasLoaded => _hasLoaded;
   bool get hasBuyerSession => _activeBuyerId != null;
   bool get accountChanged => _accountChanged;
+  bool get isCheckingReceiptEligibility => _isCheckingReceiptEligibility;
+  bool get isConfirmingReceipt => _isConfirmingReceipt;
+  bool get confirmationOutcomeUnknown => _confirmationOutcomeUnknown;
+  BuyerReceiptConfirmation? get receiptConfirmation => _receiptConfirmation;
+  bool get receiptConfirmed =>
+      _receiptConfirmation?.receiptConfirmed == true ||
+      _detail?.buyerActions.receiptConfirmed == true;
+  DateTime? get receiptCompletedAt =>
+      _receiptConfirmation?.completedAt ??
+      _detail?.buyerActions.receiptConfirmedAt;
 
   Future<void> load() async {
-    if (_isLoading || _accountChanged) return;
+    if (_disposed || _isLoading || _accountChanged) return;
     final buyerId = _activeBuyerId;
     if (buyerId == null) {
       _detail = null;
       _tracking = null;
+      _receiptConfirmation = null;
       _error = const BuyerCheckoutException(
         BuyerCheckoutFailureCategory.noBuyerSession,
       );
       _hasLoaded = true;
-      notifyListeners();
+      _notifyListeners();
       return;
     }
     if (orderId < 1) {
@@ -67,15 +87,17 @@ class BuyerOrderDetailController extends ChangeNotifier {
         BuyerCheckoutFailureCategory.invalidRequest,
       );
       _hasLoaded = true;
-      notifyListeners();
+      _notifyListeners();
       return;
     }
 
     final epoch = _authService.sessionEpoch;
     final generation = ++_generation;
+    final hadData = _detail != null && _tracking != null;
     _isLoading = true;
     _error = null;
-    notifyListeners();
+    _refreshError = null;
+    _notifyListeners();
 
     try {
       final values = await Future.wait<Object>([
@@ -92,21 +114,149 @@ class BuyerOrderDetailController extends ChangeNotifier {
       }
       _detail = detail;
       _tracking = tracking;
+      if (detail.buyerActions.receiptConfirmed) {
+        _confirmationOutcomeUnknown = false;
+      }
       _hasLoaded = true;
     } on Object catch (error) {
       if (_isCurrent(buyerId, epoch, generation)) {
-        _detail = null;
-        _tracking = null;
-        _error = error;
+        final mustDiscardPrivateData =
+            error is BuyerCheckoutException &&
+            (error.category == BuyerCheckoutFailureCategory.noBuyerSession ||
+                error.category == BuyerCheckoutFailureCategory.sessionChanged ||
+                error.category == BuyerCheckoutFailureCategory.notFound ||
+                (error.category == BuyerCheckoutFailureCategory.client &&
+                    error.statusCode == 403));
+        if (mustDiscardPrivateData || !hadData) {
+          _detail = null;
+          _tracking = null;
+          _error = error;
+          _refreshError = null;
+        } else {
+          // Keep the last server snapshot visible on a transient refresh
+          // failure. No order state is changed optimistically in this client.
+          _refreshError = error;
+        }
         _hasLoaded = true;
       }
     } finally {
       if (_isCurrent(buyerId, epoch, generation)) {
         _isLoading = false;
-        notifyListeners();
+        _notifyListeners();
       }
     }
   }
+
+  /// Re-fetches Buyer-owned order and tracking data immediately before the
+  /// confirmation dialog. A stale or failed read can never enable the POST.
+  Future<bool> refreshReceiptEligibility() async {
+    if (_disposed ||
+        _accountChanged ||
+        _isLoading ||
+        _isCheckingReceiptEligibility ||
+        _isConfirmingReceipt ||
+        !hasBuyerSession) {
+      return false;
+    }
+
+    _isCheckingReceiptEligibility = true;
+    _receiptError = null;
+    _refreshError = null;
+    _notifyListeners();
+    try {
+      await load();
+      return !_disposed &&
+          !_accountChanged &&
+          !_isLoading &&
+          _refreshError == null &&
+          !receiptConfirmed &&
+          _detail?.buyerActions.canConfirmReceipt == true;
+    } finally {
+      if (!_disposed) {
+        _isCheckingReceiptEligibility = false;
+        _notifyListeners();
+      }
+    }
+  }
+
+  /// Sends exactly one bodyless receipt-confirmation request for this order.
+  /// On an ambiguous result, it performs only a read-only refresh.
+  Future<BuyerReceiptConfirmation?> confirmReceipt() async {
+    final buyerId = _activeBuyerId;
+    if (_disposed ||
+        buyerId == null ||
+        _accountChanged ||
+        _isLoading ||
+        _isCheckingReceiptEligibility ||
+        _isConfirmingReceipt ||
+        receiptConfirmed ||
+        _detail?.buyerActions.canConfirmReceipt != true) {
+      return null;
+    }
+
+    final epoch = _authService.sessionEpoch;
+    _isConfirmingReceipt = true;
+    _receiptError = null;
+    _confirmationOutcomeUnknown = false;
+    _notifyListeners();
+
+    BuyerReceiptConfirmation? result;
+    var refreshAfterRequest = false;
+    try {
+      final response = await _checkoutRepository.confirmReceipt(orderId);
+      if (!_isSessionCurrent(buyerId, epoch)) return null;
+      if (!response.receiptConfirmed) {
+        throw const BuyerCheckoutException(
+          BuyerCheckoutFailureCategory.malformedResponse,
+          requestMayHaveReachedServer: true,
+        );
+      }
+      // The POST response is authoritative. Keep its statuses and original
+      // completed_at visible even if the follow-up GET is temporarily stale.
+      _receiptConfirmation = response;
+      _receiptError = null;
+      _confirmationOutcomeUnknown = false;
+      result = response;
+      refreshAfterRequest = true;
+    } on BuyerCheckoutException catch (error) {
+      if (!_isSessionCurrent(buyerId, epoch)) return null;
+      _receiptError = error;
+      if (_mayHaveReachedServer(error)) {
+        _confirmationOutcomeUnknown = true;
+        refreshAfterRequest = true;
+      } else {
+        refreshAfterRequest =
+            error.category != BuyerCheckoutFailureCategory.rateLimited;
+      }
+    } on Object catch (_) {
+      if (!_isSessionCurrent(buyerId, epoch)) return null;
+      _receiptError = const BuyerCheckoutException(
+        BuyerCheckoutFailureCategory.malformedResponse,
+        requestMayHaveReachedServer: true,
+      );
+      _confirmationOutcomeUnknown = true;
+      refreshAfterRequest = true;
+    } finally {
+      if (_isSessionCurrent(buyerId, epoch)) {
+        _isConfirmingReceipt = false;
+        _notifyListeners();
+        if (refreshAfterRequest) await load();
+      }
+    }
+    return result;
+  }
+
+  bool _mayHaveReachedServer(BuyerCheckoutException error) =>
+      error.requestMayHaveReachedServer ||
+      error.category == BuyerCheckoutFailureCategory.timeout ||
+      error.category == BuyerCheckoutFailureCategory.connectivity ||
+      error.category == BuyerCheckoutFailureCategory.malformedResponse;
+
+  bool _isSessionCurrent(int buyerId, int epoch) =>
+      !_disposed &&
+      !_accountChanged &&
+      _activeBuyerId == buyerId &&
+      _authService.sessionEpoch == epoch;
 
   bool _isCurrent(int buyerId, int epoch, int generation) =>
       generation == _generation &&
@@ -125,13 +275,25 @@ class BuyerOrderDetailController extends ChangeNotifier {
     _detail = null;
     _tracking = null;
     _error = null;
+    _refreshError = null;
+    _receiptConfirmation = null;
+    _receiptError = null;
+    _isCheckingReceiptEligibility = false;
+    _isConfirmingReceipt = false;
+    _confirmationOutcomeUnknown = false;
     _isLoading = false;
     _hasLoaded = true;
-    notifyListeners();
+    _notifyListeners();
+  }
+
+  void _notifyListeners() {
+    if (!_disposed) notifyListeners();
   }
 
   @override
   void dispose() {
+    _disposed = true;
+    _generation++;
     _authService.removeListener(_onAuthChanged);
     super.dispose();
   }

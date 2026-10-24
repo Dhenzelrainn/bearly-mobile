@@ -29,6 +29,9 @@ class BuyerOrderDetailsPage extends StatefulWidget {
 }
 
 class _BuyerOrderDetailsPageState extends State<BuyerOrderDetailsPage> {
+  bool _confirmationDialogOpen = false;
+  bool _dialogConfirmSent = false;
+
   late final BuyerOrderDetailController _controller =
       BuyerOrderDetailController(
         authService: widget.authService,
@@ -73,72 +76,82 @@ class _BuyerOrderDetailsPageState extends State<BuyerOrderDetailsPage> {
         return _errorPage(context, StateError('Order data is unavailable.'));
       }
       final localizations = MaterialLocalizations.of(context);
-      return Scaffold(
-        appBar: AppBar(
-          title: const Text('Order details'),
-          actions: [
-            IconButton(
-              tooltip: 'Refresh order details',
-              onPressed: _controller.isLoading ? null : _controller.load,
-              icon: const Icon(Icons.refresh_rounded),
-            ),
-          ],
-        ),
-        body: RefreshIndicator(
-          key: const ValueKey('buyer-order-details-refresh'),
-          onRefresh: _controller.load,
-          child: SingleChildScrollView(
-            key: const ValueKey('buyer-order-details-list'),
-            physics: const AlwaysScrollableScrollPhysics(),
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                if (_controller.isLoading)
-                  const LinearProgressIndicator(
-                    key: ValueKey('buyer-order-details-refresh-progress'),
+      return PopScope<Object?>(
+        canPop: !_controller.isConfirmingReceipt,
+        onPopInvokedWithResult: (didPop, _) {
+          if (!didPop && _controller.isConfirmingReceipt) {
+            ScaffoldMessenger.of(context)
+              ..hideCurrentSnackBar()
+              ..showSnackBar(
+                const SnackBar(
+                  content: Text(
+                    'Please wait for receipt confirmation to finish.',
                   ),
-                _orderHeader(context, detail, localizations),
-                const SizedBox(height: 14),
-                _orderTotals(context, detail),
-                const SizedBox(height: 14),
-                _deliveryAddress(context, detail.deliveryAddress),
-                const SizedBox(height: 14),
-                _paymentSummary(context, detail),
-                const SizedBox(height: 14),
-                _sectionHeading(context, 'Seller orders'),
-                const SizedBox(height: 8),
-                for (final seller in detail.sellerOrders) ...[
-                  _sellerOrderCard(context, detail, seller, localizations),
-                  const SizedBox(height: 10),
-                ],
-                if (detail.sellerOrders.isEmpty)
-                  _notice(
-                    'No Seller order records were returned for this order.',
-                  ),
-                const SizedBox(height: 12),
-                _sectionHeading(context, 'Shipment tracking'),
-                const SizedBox(height: 4),
-                Text(
-                  'Shipment and Seller order histories are shown separately using saved Bearly records.',
-                  style: Theme.of(context).textTheme.bodySmall,
                 ),
-                const SizedBox(height: 8),
-                _trackingSection(context, detail, tracking, localizations),
-                if (detail.buyerActions.receiptConfirmed) ...[
-                  const SizedBox(height: 14),
-                  _readOnlyReceiptState(
+              );
+          }
+        },
+        child: Scaffold(
+          appBar: AppBar(
+            title: const Text('Order details'),
+            actions: [
+              IconButton(
+                tooltip: 'Refresh order details',
+                onPressed: _controller.isLoading ? null : _controller.load,
+                icon: const Icon(Icons.refresh_rounded),
+              ),
+            ],
+          ),
+          body: RefreshIndicator(
+            key: const ValueKey('buyer-order-details-refresh'),
+            onRefresh: _controller.load,
+            child: SingleChildScrollView(
+              key: const ValueKey('buyer-order-details-list'),
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  if (_controller.isLoading)
+                    const LinearProgressIndicator(
+                      key: ValueKey('buyer-order-details-refresh-progress'),
+                    ),
+                  _orderHeader(
                     context,
-                    detail.buyerActions.receiptConfirmedAt,
+                    detail,
                     localizations,
+                    statusOverride: _controller.receiptConfirmation?.status,
                   ),
-                ] else if (detail.buyerActions.canConfirmReceipt) ...[
                   const SizedBox(height: 14),
-                  _notice(
-                    'Bearly reports that receipt confirmation is available.',
+                  _orderTotals(context, detail),
+                  const SizedBox(height: 14),
+                  _deliveryAddress(context, detail.deliveryAddress),
+                  const SizedBox(height: 14),
+                  _paymentSummary(context, detail),
+                  const SizedBox(height: 14),
+                  _sectionHeading(context, 'Seller orders'),
+                  const SizedBox(height: 8),
+                  for (final seller in detail.sellerOrders) ...[
+                    _sellerOrderCard(context, detail, seller, localizations),
+                    const SizedBox(height: 10),
+                  ],
+                  if (detail.sellerOrders.isEmpty)
+                    _notice(
+                      'No Seller order records were returned for this order.',
+                    ),
+                  const SizedBox(height: 12),
+                  _sectionHeading(context, 'Shipment tracking'),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Shipment and Seller order histories are shown separately using saved Bearly records.',
+                    style: Theme.of(context).textTheme.bodySmall,
                   ),
+                  const SizedBox(height: 8),
+                  _trackingSection(context, detail, tracking, localizations),
+                  const SizedBox(height: 14),
+                  _receiptActionSection(context, detail, localizations),
                 ],
-              ],
+              ),
             ),
           ),
         ),
@@ -170,12 +183,24 @@ class _BuyerOrderDetailsPageState extends State<BuyerOrderDetailsPage> {
 
   Widget _accountChangedPage(BuildContext context) => Scaffold(
     appBar: AppBar(title: const Text('Order details')),
-    body: const Center(
+    body: Center(
       child: Padding(
-        padding: EdgeInsets.all(24),
-        child: Text(
-          'Your account changed. This order view was cleared. Return to Orders and open an order for the current Buyer account.',
-          textAlign: TextAlign.center,
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              'Your account changed. Your session may also have ended. This order view was cleared. Sign in again, then open an order for the current Buyer account.',
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 16),
+            FilledButton.icon(
+              key: const ValueKey('buyer-order-details-session-sign-in'),
+              onPressed: widget.onSignInAgain,
+              icon: const Icon(Icons.login_rounded),
+              label: const Text('Sign in again'),
+            ),
+          ],
         ),
       ),
     ),
@@ -200,23 +225,38 @@ class _BuyerOrderDetailsPageState extends State<BuyerOrderDetailsPage> {
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 16),
-            FilledButton.icon(
-              key: const ValueKey('buyer-order-details-retry'),
-              onPressed: _controller.isLoading ? null : _controller.load,
-              icon: const Icon(Icons.refresh_rounded),
-              label: const Text('Retry'),
-            ),
+            if (_requiresSignIn(error))
+              FilledButton.icon(
+                key: const ValueKey('buyer-order-details-sign-in-again'),
+                onPressed: widget.onSignInAgain,
+                icon: const Icon(Icons.login_rounded),
+                label: const Text('Sign in again'),
+              )
+            else
+              FilledButton.icon(
+                key: const ValueKey('buyer-order-details-retry'),
+                onPressed: _controller.isLoading ? null : _controller.load,
+                icon: const Icon(Icons.refresh_rounded),
+                label: const Text('Retry'),
+              ),
           ],
         ),
       ),
     ),
   );
 
+  bool _requiresSignIn(Object error) =>
+      error is BuyerCheckoutException &&
+      (error.category == BuyerCheckoutFailureCategory.noBuyerSession ||
+          (error.category == BuyerCheckoutFailureCategory.client &&
+              error.statusCode == 403));
+
   Widget _orderHeader(
     BuildContext context,
     BuyerOrderDetail detail,
-    MaterialLocalizations localizations,
-  ) => Card(
+    MaterialLocalizations localizations, {
+    String? statusOverride,
+  }) => Card(
     color: Colors.white,
     child: Padding(
       padding: const EdgeInsets.all(16),
@@ -230,7 +270,7 @@ class _BuyerOrderDetailsPageState extends State<BuyerOrderDetailsPage> {
           ),
           const SizedBox(height: 8),
           Text(
-            'Order status · ${buyerOrderStatusLabel(detail.status)}',
+            'Order status · ${buyerOrderStatusLabel(statusOverride ?? detail.status)}',
             key: const ValueKey('buyer-order-parent-status'),
           ),
           const SizedBox(height: 4),
@@ -897,15 +937,344 @@ class _BuyerOrderDetailsPageState extends State<BuyerOrderDetailsPage> {
     ),
   );
 
-  Widget _readOnlyReceiptState(
+  Widget _receiptActionSection(
     BuildContext context,
-    DateTime? confirmedAt,
+    BuyerOrderDetail detail,
     MaterialLocalizations localizations,
-  ) => _notice(
-    confirmedAt == null
-        ? 'Bearly reports that receipt was confirmed.'
-        : 'Receipt confirmed · ${buyerOrderDateTime(confirmedAt, localizations)}',
-    key: const ValueKey('buyer-order-receipt-state'),
+  ) {
+    final confirmation = _controller.receiptConfirmation;
+    if (_controller.receiptConfirmed) {
+      final sellerOrders = confirmation?.sellerOrders;
+      return Card(
+        key: const ValueKey('buyer-order-receipt-complete'),
+        color: BearlyColors.cream100,
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                confirmation?.alreadyConfirmed == true
+                    ? 'Receipt was already confirmed'
+                    : 'Receipt confirmed',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+              const SizedBox(height: 6),
+              Text(
+                confirmation == null
+                    ? 'Bearly reports that receipt was confirmed for this order.'
+                    : 'Bearly confirmed receipt for parent order ${confirmation.orderReference}.',
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Order status · ${buyerOrderStatusLabel(confirmation?.status ?? detail.status)}',
+              ),
+              Text(
+                _controller.receiptCompletedAt == null
+                    ? 'The original completion time is unavailable.'
+                    : 'Recorded completion · ${buyerOrderPhilippineDateTime(_controller.receiptCompletedAt, localizations)}',
+                key: const ValueKey('buyer-order-receipt-completed-at'),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'Receipt confirmation does not collect COD cash or release Seller payouts.',
+              ),
+              if (_controller.refreshError != null) ...[
+                const SizedBox(height: 8),
+                _notice(
+                  'The confirmation response is authoritative, but the follow-up order refresh failed. Other order details may still show the last loaded snapshot.',
+                  key: const ValueKey('buyer-order-receipt-post-refresh-error'),
+                ),
+              ],
+              const SizedBox(height: 8),
+              Text(
+                'Seller orders returned by Bearly',
+                style: Theme.of(context).textTheme.labelLarge,
+              ),
+              const SizedBox(height: 4),
+              if (sellerOrders != null && sellerOrders.isNotEmpty)
+                for (final seller in sellerOrders)
+                  Text(
+                    '${seller.reference} · ${buyerOrderStatusLabel(seller.status)}',
+                  )
+              else if (detail.sellerOrders.isNotEmpty)
+                for (final seller in detail.sellerOrders)
+                  Text(
+                    '${seller.summary.reference} · ${buyerOrderStatusLabel(seller.summary.status)}',
+                  )
+              else
+                const Text('No Seller order grouping was returned.'),
+            ],
+          ),
+        ),
+      );
+    }
+
+    if (detail.buyerActions.canConfirmReceipt) {
+      final checking =
+          _controller.isCheckingReceiptEligibility || _controller.isLoading;
+      return Card(
+        key: const ValueKey('buyer-order-receipt-action'),
+        color: Colors.white,
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                'Complete Order',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+              const SizedBox(height: 6),
+              const Text(
+                'Confirm that you have received the purchased items. This action applies to the parent order and all applicable Seller orders together.',
+              ),
+              const SizedBox(height: 6),
+              const Text(
+                'Use this only after delivery is complete. This is not a payment step, does not collect COD cash, and does not release Seller payouts.',
+              ),
+              if (detail.sellerOrders.isNotEmpty) ...[
+                const SizedBox(height: 10),
+                Text(
+                  'Seller orders included in this parent order',
+                  style: Theme.of(context).textTheme.labelLarge,
+                ),
+                const SizedBox(height: 4),
+                for (final seller in detail.sellerOrders)
+                  Text(
+                    '${seller.summary.storeName?.trim().isNotEmpty == true ? seller.summary.storeName : seller.summary.reference} · ${buyerOrderStatusLabel(seller.summary.status)}',
+                  ),
+              ],
+              if (_controller.confirmationOutcomeUnknown) ...[
+                const SizedBox(height: 10),
+                _notice(
+                  _controller.isLoading
+                      ? 'Checking confirmation status with Bearly…'
+                      : 'The latest order read does not show receipt confirmation. Refresh before retrying. If confirmation is still available, you may explicitly try again; Bearly handles repeated confirmation safely.',
+                  key: const ValueKey('buyer-order-receipt-uncertain'),
+                ),
+                TextButton.icon(
+                  key: const ValueKey('buyer-order-receipt-refresh-status'),
+                  onPressed: _controller.isLoading
+                      ? null
+                      : () => _controller.load(),
+                  icon: const Icon(Icons.refresh_rounded),
+                  label: const Text('Refresh confirmation status'),
+                ),
+              ],
+              if (_controller.receiptError != null &&
+                  !_controller.confirmationOutcomeUnknown) ...[
+                const SizedBox(height: 8),
+                _receiptErrorNotice(context, _controller.receiptError!),
+              ],
+              if (_controller.refreshError != null) ...[
+                const SizedBox(height: 8),
+                _notice(
+                  'The latest order status could not be loaded. The displayed eligibility may be out of date; retry the refresh before confirming.',
+                  key: const ValueKey('buyer-order-receipt-refresh-error'),
+                ),
+              ],
+              const SizedBox(height: 12),
+              SizedBox(
+                height: 52,
+                child: FilledButton.icon(
+                  key: const ValueKey('buyer-order-complete-order'),
+                  onPressed:
+                      checking ||
+                          _controller.isConfirmingReceipt ||
+                          _controller.refreshError != null
+                      ? null
+                      : () => _beginReceiptConfirmation(),
+                  icon: checking
+                      ? const SizedBox.square(
+                          dimension: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.check_circle_outline_rounded),
+                  label: Text(
+                    checking ? 'Checking order status…' : 'Complete Order',
+                  ),
+                ),
+              ),
+              if (_controller.isConfirmingReceipt) ...[
+                const SizedBox(height: 12),
+                const LinearProgressIndicator(
+                  key: ValueKey('buyer-order-receipt-submitting'),
+                ),
+                const SizedBox(height: 6),
+                const Text('Sending receipt confirmation to Bearly…'),
+              ],
+            ],
+          ),
+        ),
+      );
+    }
+
+    return Card(
+      key: const ValueKey('buyer-order-receipt-ineligible'),
+      color: BearlyColors.cream100,
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Receipt confirmation not available',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: 6),
+            const Text(
+              'Bearly reports that this order is not currently eligible for receipt confirmation. Review the Seller orders, delivery, and payment information above, then refresh for the latest status.',
+            ),
+            if (_controller.confirmationOutcomeUnknown) ...[
+              const SizedBox(height: 8),
+              _notice(
+                _controller.isLoading
+                    ? 'Checking confirmation status with Bearly…'
+                    : 'The latest order details do not report receipt confirmation and do not currently allow another confirmation. The prior request outcome is still uncertain; refresh or contact Bearly before taking further action.',
+                key: const ValueKey('buyer-order-receipt-uncertain'),
+              ),
+              TextButton.icon(
+                key: const ValueKey('buyer-order-receipt-refresh-status'),
+                onPressed: _controller.isLoading
+                    ? null
+                    : () => _controller.load(),
+                icon: const Icon(Icons.refresh_rounded),
+                label: const Text('Refresh confirmation status'),
+              ),
+            ],
+            if (_controller.receiptError != null) ...[
+              const SizedBox(height: 8),
+              _receiptErrorNotice(context, _controller.receiptError!),
+            ],
+            if (_controller.refreshError != null) ...[
+              const SizedBox(height: 8),
+              _notice(
+                'The latest order status could not be loaded. Pull down or use Refresh order details to try again.',
+                key: const ValueKey('buyer-order-receipt-refresh-error'),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _receiptErrorNotice(BuildContext context, Object error) => Card(
+    key: const ValueKey('buyer-order-receipt-error'),
+    color: BearlyColors.cream100,
+    child: Padding(
+      padding: const EdgeInsets.all(10),
+      child: Text(buyerOrderReceiptErrorMessage(error)),
+    ),
+  );
+
+  Future<void> _beginReceiptConfirmation() async {
+    if (_confirmationDialogOpen || _controller.isConfirmingReceipt) return;
+    _confirmationDialogOpen = true;
+    _dialogConfirmSent = false;
+    var confirmed = false;
+    try {
+      final eligible = await _controller.refreshReceiptEligibility();
+      if (!mounted || !eligible) return;
+      final detail = _controller.detail;
+      if (detail == null) return;
+
+      var dialogRouteOpen = true;
+      final result = await showDialog<bool>(
+        context: context,
+        barrierDismissible: false,
+        builder: (dialogContext) => ListenableBuilder(
+          listenable: _controller,
+          builder: (context, _) {
+            if (_controller.accountChanged) {
+              if (dialogRouteOpen) {
+                dialogRouteOpen = false;
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (dialogContext.mounted) {
+                    Navigator.of(dialogContext).pop(false);
+                  }
+                });
+              }
+              return const SizedBox.shrink();
+            }
+            return _receiptConfirmationDialog(
+              context,
+              detail,
+              onCancel: () {
+                if (!dialogRouteOpen) return;
+                dialogRouteOpen = false;
+                Navigator.of(dialogContext).pop(false);
+              },
+              onConfirm: () {
+                if (_dialogConfirmSent || !dialogRouteOpen) return;
+                _dialogConfirmSent = true;
+                dialogRouteOpen = false;
+                Navigator.of(dialogContext).pop(true);
+              },
+            );
+          },
+        ),
+      );
+      confirmed = result == true;
+    } finally {
+      _confirmationDialogOpen = false;
+    }
+
+    if (confirmed && mounted && !_controller.accountChanged) {
+      await _controller.confirmReceipt();
+    }
+  }
+
+  Widget _receiptConfirmationDialog(
+    BuildContext context,
+    BuyerOrderDetail detail, {
+    required VoidCallback onCancel,
+    required VoidCallback onConfirm,
+  }) => AlertDialog(
+    key: const ValueKey('buyer-order-receipt-confirmation-dialog'),
+    scrollable: true,
+    title: const Text('Confirm receipt?'),
+    content: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'You are acknowledging that you received Order ${detail.reference}.',
+        ),
+        const SizedBox(height: 10),
+        const Text(
+          'This confirms the parent Order for all applicable Seller orders together. There is no per-Seller partial confirmation.',
+        ),
+        const SizedBox(height: 10),
+        const Text(
+          'Confirm only after the actual delivery is complete. This does not collect payment or COD cash, and it does not release Seller payouts.',
+        ),
+        if (detail.sellerOrders.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          Text(
+            'Seller orders in this Order',
+            style: Theme.of(context).textTheme.labelLarge,
+          ),
+          const SizedBox(height: 4),
+          for (final seller in detail.sellerOrders)
+            Text(
+              '${seller.summary.storeName?.trim().isNotEmpty == true ? seller.summary.storeName : seller.summary.reference} · ${buyerOrderStatusLabel(seller.summary.status)}',
+            ),
+        ],
+      ],
+    ),
+    actions: [
+      TextButton(
+        key: const ValueKey('buyer-order-receipt-cancel'),
+        onPressed: onCancel,
+        child: const Text('Cancel'),
+      ),
+      FilledButton(
+        key: const ValueKey('buyer-order-receipt-confirm'),
+        onPressed: onConfirm,
+        child: const Text('Confirm receipt'),
+      ),
+    ],
   );
 
   Widget _notice(String text, {Key? key}) => Card(

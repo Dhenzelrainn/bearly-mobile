@@ -550,6 +550,9 @@ class BuyerCheckoutRepository {
       return null;
     }
     Object? code = value['code'];
+    if (code == null && value['error'] is Map) {
+      code = (value['error'] as Map)['code'];
+    }
     if (code == null && value['data'] is Map) {
       code = (value['data'] as Map)['code'];
     }
