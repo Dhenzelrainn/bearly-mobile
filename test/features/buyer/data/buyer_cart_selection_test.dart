@@ -136,10 +136,7 @@ http.Response _json(Object value) => http.Response(jsonEncode(value), 200);
 Map<String, Object?> _cart(List<Map<String, Object?>> items) => {
   'data': {
     'items': items,
-    'cart_count': items.fold<int>(
-      0,
-      (count, item) => count + (item['quantity'] as int),
-    ),
+    'cart_count': items.length,
     'subtotal_minor': items.fold<int>(
       0,
       (total, item) => total + (item['line_subtotal_minor'] as int),

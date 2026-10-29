@@ -848,9 +848,7 @@ Map<String, Object?> _cart(
 }) => {
   'data': {
     'items': items,
-    'cart_count':
-        count ??
-        items.fold<int>(0, (sum, item) => sum + (item['quantity'] as int)),
+    'cart_count': count ?? items.length,
     'subtotal_minor':
         subtotal ??
         items.fold<int>(

@@ -54,7 +54,7 @@ void main() {
         expect(item.isAvailable, isTrue);
         expect(item.storeName, 'Bearly Studio');
         expect(item.imageUrl, 'https://cdn.example.test/products/bear.jpg');
-        expect(cart.cartCount, 2);
+        expect(cart.cartCount, 1);
         expect(cart.subtotalMinor, 25000);
         expect(cart.mutationItem, isNull);
       },
@@ -88,10 +88,46 @@ void main() {
         expect(cart.items.map((item) => item.id), [71, 72]);
         expect(cart.items.map((item) => item.productId), [41, 42]);
         expect(cart.items.map((item) => item.productVariantId), [9, 10]);
-        expect(cart.cartCount, 3);
+        expect(cart.cartCount, 2);
         expect(cart.subtotalMinor, 28500);
       },
     );
+
+    test('counts cart entries separately from each entry quantity', () async {
+      final first = _item()
+        ..['quantity'] = 10
+        ..['line_subtotal_minor'] = 125000;
+      final second = _item()
+        ..['id'] = 72
+        ..['product_id'] = 42
+        ..['product_variant_id'] = 10
+        ..['product'] = {'id': 42, 'name': 'Small Bear'}
+        ..['variant'] = {
+          'id': 10,
+          'name': 'Cream / Small',
+          'options': {'Color': 'Cream', 'Size': 'Small'},
+        }
+        ..['quantity'] = 10
+        ..['price_minor'] = 3500
+        ..['unit_price_minor'] = 3500
+        ..['line_subtotal_minor'] = 35000
+        ..['regular_price_minor'] = 3500;
+      final singleRepository = _repository(
+        (_) async => _jsonResponse(_cartResponse(items: [first])),
+      );
+      final repository = _repository(
+        (_) async => _jsonResponse(_cartResponse(items: [first, second])),
+      );
+
+      final singleCart = await singleRepository.fetchCart();
+      final cart = await repository.fetchCart();
+
+      expect(singleCart.cartCount, 1);
+      expect(singleCart.items.single.quantity, 10);
+      expect(cart.cartCount, 2);
+      expect(cart.items.map((item) => item.quantity), [10, 10]);
+      expect(cart.subtotalMinor, 160000);
+    });
 
     test(
       'adds a variant and exposes returned item with authoritative cart',
@@ -150,7 +186,7 @@ void main() {
         expect(jsonDecode(updateRequest.body), {'quantity': 3});
         expect(updated.mutationItem?.id, 71);
         expect(updated.mutationItem?.quantity, 3);
-        expect(updated.cartCount, 3);
+        expect(updated.cartCount, 1);
       },
     );
 
@@ -245,10 +281,7 @@ Map<String, Object?> _cartResponse({
 }) => {
   'data': {
     'items': items,
-    'cart_count': items.fold<int>(
-      0,
-      (sum, item) => sum + (item['quantity'] as int),
-    ),
+    'cart_count': items.length,
     'subtotal_minor': items.fold<int>(
       0,
       (sum, item) => sum + (item['line_subtotal_minor'] as int),

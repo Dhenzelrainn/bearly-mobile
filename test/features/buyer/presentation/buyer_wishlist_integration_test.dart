@@ -172,6 +172,27 @@ void main() {
       expect(harness.controller.isSaved(41), isFalse);
     });
 
+    testWidgets('Saved page displays an approved local HTTP thumbnail', (
+      tester,
+    ) async {
+      const imageUrl =
+          'http://127.0.0.1:8000/storage/products/saved-bear.jpg?size=small';
+      final harness = _WishlistHarness(savedIds: {41}, savedImageUrl: imageUrl);
+      await _pumpHome(tester, harness);
+      await tester.tap(find.text('Saved').last);
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byWidgetPredicate(
+          (widget) =>
+              widget is Image &&
+              widget.image is NetworkImage &&
+              (widget.image as NetworkImage).url == imageUrl,
+        ),
+        findsOneWidget,
+      );
+    });
+
     testWidgets('an empty Laravel wishlist has a distinct empty state', (
       tester,
     ) async {
@@ -345,6 +366,7 @@ Future<void> _pumpHome(WidgetTester tester, _WishlistHarness harness) async {
 class _WishlistHarness {
   _WishlistHarness({
     Set<int> savedIds = const {},
+    this.savedImageUrl,
     this.duplicateFirstOnSecondPage = false,
   }) : savedIds = {...savedIds} {
     auth = AuthService(
@@ -360,6 +382,7 @@ class _WishlistHarness {
   }
 
   final Set<int> savedIds;
+  final String? savedImageUrl;
   final bool duplicateFirstOnSecondPage;
   final requests = <http.Request>[];
   final store = _MemoryTokenStore()..token = 'mock-session-token';
@@ -405,7 +428,9 @@ class _WishlistHarness {
       }
       final lastPage = allIds.isEmpty ? 1 : ((allIds.length - 1) ~/ 12) + 1;
       return _json({
-        'data': entries.map(_wishlistEntry).toList(),
+        'data': entries
+            .map((id) => _wishlistEntry(id, imageUrl: savedImageUrl))
+            .toList(),
         'meta': {
           'current_page': page,
           'per_page': 12,
@@ -478,13 +503,17 @@ Map<String, Object?> _catalog(List<Map<String, Object?>> products) => {
   'filters': {'search': '', 'category': null, 'sort': 'featured'},
 };
 
-Map<String, Object?> _wishlistEntry(int id) => {
+Map<String, Object?> _wishlistEntry(int id, {String? imageUrl}) => {
   'wishlist_id': 1000 + id,
   'saved_at': '2026-10-20T08:15:30.000000Z',
-  'product': _productJson(id),
+  'product': _productJson(id, imageUrl: imageUrl),
 };
 
-Map<String, Object?> _productJson(int id, {bool detail = false}) => {
+Map<String, Object?> _productJson(
+  int id, {
+  bool detail = false,
+  String? imageUrl,
+}) => {
   'id': id,
   'slug': 'handmade-bear-$id',
   'name': id == 41 ? 'Handmade Bear' : 'Handmade Bear $id',
@@ -496,7 +525,7 @@ Map<String, Object?> _productJson(int id, {bool detail = false}) => {
   'regular_price_minor': 15000,
   'discount_percent': 17,
   'currency': 'PHP',
-  'image_url': null,
+  'image_url': imageUrl,
   'in_stock': true,
   'variants': detail
       ? [

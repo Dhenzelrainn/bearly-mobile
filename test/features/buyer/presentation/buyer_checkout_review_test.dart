@@ -1260,10 +1260,7 @@ class _Harness {
 Map<String, Object?> _cart(List<Map<String, Object?>> items) => {
   'data': {
     'items': items,
-    'cart_count': items.fold<int>(
-      0,
-      (sum, item) => sum + (item['quantity']! as int),
-    ),
+    'cart_count': items.length,
     'subtotal_minor': items.fold<int>(
       0,
       (sum, item) =>

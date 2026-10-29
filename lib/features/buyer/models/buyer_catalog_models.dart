@@ -1,3 +1,9 @@
+import 'package:flutter/foundation.dart';
+
+import 'buyer_image_url_policy.dart';
+
+const _buyerImageUrlPolicy = BuyerImageUrlPolicy(allowLocalHttp: kDebugMode);
+
 /// Sort values accepted by Laravel's mobile Buyer catalog endpoint.
 enum BuyerCatalogSort {
   featured('featured'),
@@ -212,7 +218,7 @@ class BuyerCatalogProduct {
       regularPriceMinor: regularPriceMinor,
       discountPercent: discountPercent,
       currency: _requiredString(json, 'currency', 'product'),
-      imageUrl: _publicHttpsUrl(json['image_url']),
+      imageUrl: _buyerImageUrlPolicy.normalize(json['image_url']),
       inStock: _requiredBool(json, 'in_stock', 'product'),
       variants: rawVariants
           .map(BuyerCatalogVariant.fromJson)
@@ -358,7 +364,7 @@ class BuyerProductImage {
   static BuyerProductImage? tryFromJson(Object? value) {
     if (value is! Map) return null;
     final json = _stringKeyMap(value, 'product.images[]');
-    final url = _publicHttpsUrl(json['url']);
+    final url = _buyerImageUrlPolicy.normalize(json['url']);
     final isPrimary = json['is_primary'];
     final rawVariantId = json['variant_id'];
     if (url == null ||
@@ -446,17 +452,4 @@ bool _requiredBool(Map<String, Object?> json, String key, String parent) {
   final value = json[key];
   if (value is! bool) throw BuyerCatalogFormatException('$parent.$key');
   return value;
-}
-
-String? _publicHttpsUrl(Object? value) {
-  if (value is! String || value.trim().isEmpty) return null;
-  final candidate = value.trim();
-  final uri = Uri.tryParse(candidate);
-  if (uri == null ||
-      uri.scheme.toLowerCase() != 'https' ||
-      uri.host.isEmpty ||
-      uri.userInfo.isNotEmpty) {
-    return null;
-  }
-  return candidate;
 }

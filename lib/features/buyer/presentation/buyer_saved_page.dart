@@ -232,7 +232,7 @@ class _BuyerSavedPageState extends State<BuyerSavedPage> {
       child: SizedBox(
         width: 76,
         height: 76,
-        child: url == null || Uri.tryParse(url)?.scheme != 'https'
+        child: url == null
             ? _imageFallback()
             : Image.network(
                 url,
