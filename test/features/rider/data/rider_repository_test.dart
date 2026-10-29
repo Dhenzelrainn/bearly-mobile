@@ -96,6 +96,7 @@ void main() {
       final deliveries = await repository.deliveryJobs();
 
       expect(dashboard.name, 'Ria Rider');
+      expect(dashboard.logisticsProvider, 'North Logistics');
       expect(dashboard.assignedPickups, 1);
       expect(dashboard.outForDelivery, 1);
       expect(pickups.single.kind, RiderAssignmentKind.pickup);
@@ -200,6 +201,105 @@ void main() {
         '/api/mobile/rider/deliveries/SH-200',
       ]);
     });
+
+    test(
+      'loads authenticated account data on each request without caching',
+      () async {
+        var call = 0;
+        final service = _authService((request) async {
+          expect(request.url.path, '/api/mobile/rider/account');
+          call++;
+          return http.Response(
+            jsonEncode({
+              'data': {
+                'name': call == 1 ? 'Ria Rider' : 'Sam Rider',
+                'email': call == 1 ? 'ria@example.test' : 'sam@example.test',
+                'account_status': 'active',
+                'verification_status': 'approved',
+                'availability_status': 'available',
+                'vehicle': {
+                  'type': 'Motorcycle',
+                  'model': 'Click 160',
+                  'plate_number': 'TEST-1',
+                  'parcel_capacity': 18,
+                },
+                'logistics_provider': {'name': 'North Logistics'},
+                'sorting': {
+                  'home_center': null,
+                  'current_zone': null,
+                  'current_zone_center': null,
+                },
+                'addresses': [],
+                'documents': {
+                  'valid_id': 'not_provided',
+                  'or_cr': 'approved',
+                  'driver_license': 'approved',
+                },
+              },
+            }),
+            200,
+          );
+        });
+        final repository = RiderRepository(authService: service);
+
+        final first = await repository.account();
+        final second = await repository.account();
+
+        expect(first.name, 'Ria Rider');
+        expect(first.vehicleModel, 'Click 160');
+        expect(first.logisticsProvider, 'North Logistics');
+        expect(second.name, 'Sam Rider');
+        expect(call, 2);
+      },
+    );
+
+    test(
+      'loads read-only history with URL-encoded search and pagination',
+      () async {
+        final requests = <http.Request>[];
+        final service = _authService((request) async {
+          requests.add(request);
+          return http.Response(
+            jsonEncode({
+              'data': [
+                {
+                  'shipment_no': 'SHIP-1',
+                  'parcel_no': 'PARCEL-1',
+                  'date': 'Oct 29, 2026',
+                  'area': 'Lumban',
+                  'status': 'delivered',
+                  'status_label': 'Delivered',
+                  'earning': 'No ledger entry',
+                  'batch_no': 'BATCH-1',
+                  'attempt': 'Attempt 1',
+                },
+              ],
+              'meta': {
+                'current_page': 2,
+                'last_page': 3,
+                'per_page': 20,
+                'total': 45,
+              },
+              'summary': {'completed_this_month': 1},
+            }),
+            200,
+          );
+        });
+        final repository = RiderRepository(authService: service);
+
+        final history = await repository.history(search: 'SHIP 1', page: 2);
+
+        expect(history.total, 45);
+        expect(history.currentPage, 2);
+        expect(history.entries.single.shipmentNumber, 'SHIP-1');
+        expect(history.entries.single.status, 'delivered');
+        expect(requests.single.url.queryParameters, {
+          'search': 'SHIP 1',
+          'page': '2',
+        });
+        expect(requests.single.headers['authorization'], 'Bearer rider-token');
+      },
+    );
   });
 }
 

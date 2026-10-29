@@ -7,6 +7,10 @@ class RiderDashboard {
     required this.plateNumber,
     required this.availabilityStatus,
     required this.logisticsProvider,
+    this.vehicleModel = '',
+    this.homeSortingCenter = '',
+    this.currentZone = '',
+    this.currentZoneCenter = '',
     required this.assignedPickups,
     required this.pickupsInProgress,
     required this.assignedDeliveries,
@@ -18,6 +22,10 @@ class RiderDashboard {
   final String plateNumber;
   final String availabilityStatus;
   final String logisticsProvider;
+  final String vehicleModel;
+  final String homeSortingCenter;
+  final String currentZone;
+  final String currentZoneCenter;
   final int assignedPickups;
   final int pickupsInProgress;
   final int assignedDeliveries;
@@ -34,6 +42,10 @@ class RiderDashboard {
       plateNumber: _string(rider['plate_number']),
       availabilityStatus: _string(rider['availability_status']),
       logisticsProvider: _string(rider['logistics_provider']),
+      vehicleModel: _string(rider['vehicle_model']),
+      homeSortingCenter: _string(rider['home_sorting_center']),
+      currentZone: _string(rider['current_zone']),
+      currentZoneCenter: _string(rider['current_zone_center']),
       assignedPickups: _integer(metrics['assigned_pickups']),
       pickupsInProgress: _integer(metrics['pickup_in_progress']),
       assignedDeliveries: _integer(metrics['assigned_deliveries']),

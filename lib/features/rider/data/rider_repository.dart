@@ -1,5 +1,7 @@
 import '../../auth/data/auth_service.dart';
+import '../models/rider_account.dart';
 import '../models/rider_assignment.dart';
+import '../models/rider_history.dart';
 
 /// Read-only Rider mobile API calls for the first integration milestone.
 class RiderRepository {
@@ -11,6 +13,24 @@ class RiderRepository {
   Future<RiderDashboard> dashboard() async => RiderDashboard.fromJson(
     await _authService.getWithSession('/api/mobile/rider/dashboard'),
   );
+
+  Future<RiderAccount> account() async => RiderAccount.fromJson(
+    _data(await _authService.getWithSession('/api/mobile/rider/account')),
+  );
+
+  Future<RiderHistory> history({String? search, int page = 1}) async {
+    final parameters = <String, String>{};
+    if (search != null && search.trim().isNotEmpty) {
+      parameters['search'] = search.trim();
+    }
+    if (page > 1) parameters['page'] = '$page';
+    final query = parameters.isEmpty
+        ? ''
+        : '?${Uri(queryParameters: parameters).query}';
+    return RiderHistory.fromJson(
+      await _authService.getWithSession('/api/mobile/rider/history$query'),
+    );
+  }
 
   Future<List<RiderAssignment>> pickupJobs() async =>
       _jobs(await _authService.getWithSession('/api/mobile/rider/pickups'));

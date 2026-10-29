@@ -246,7 +246,7 @@ class AppRoutes {
           settings: settings,
         );
       case AppRouteNames.riderPickup:
-        return _riderModule(RiderModule.pickup, settings);
+        return _riderModule(RiderModule.pickup, settings, riderRepository);
       case AppRouteNames.riderTransit:
         return MaterialPageRoute(
           builder: (_) => RiderAssignmentListPage(
@@ -294,15 +294,15 @@ class AppRoutes {
           settings: settings,
         );
       case AppRouteNames.riderComplete:
-        return _riderModule(RiderModule.complete, settings);
+        return _riderModule(RiderModule.complete, settings, riderRepository);
       case AppRouteNames.riderEarnings:
-        return _riderModule(RiderModule.earnings, settings);
+        return _riderModule(RiderModule.earnings, settings, riderRepository);
       case AppRouteNames.riderHistory:
-        return _riderModule(RiderModule.history, settings);
+        return _riderModule(RiderModule.history, settings, riderRepository);
       case AppRouteNames.riderMessages:
-        return _riderModule(RiderModule.messages, settings);
+        return _riderModule(RiderModule.messages, settings, riderRepository);
       case AppRouteNames.riderAccount:
-        return _riderModule(RiderModule.account, settings);
+        return _riderModule(RiderModule.account, settings, riderRepository);
       default:
         return MaterialPageRoute(
           builder: (_) => LoginPage(authService: authService),
@@ -314,9 +314,10 @@ class AppRoutes {
   static Route<dynamic> _riderModule(
     RiderModule module,
     RouteSettings settings,
+    RiderRepository repository,
   ) {
     return MaterialPageRoute(
-      builder: (_) => RiderModulePage(module: module),
+      builder: (_) => RiderModulePage(module: module, repository: repository),
       settings: settings,
     );
   }

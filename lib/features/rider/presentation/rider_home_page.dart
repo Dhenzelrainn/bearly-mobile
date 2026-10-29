@@ -174,9 +174,7 @@ class _RiderHomePageState extends State<RiderHomePage> {
         ),
         const SizedBox(height: 5),
         Text(
-          dashboard.logisticsProvider.isEmpty
-              ? 'Your assigned Bearly work at a glance.'
-              : dashboard.logisticsProvider,
+          'Your assigned Bearly work at a glance.',
           style: Theme.of(
             context,
           ).textTheme.bodyMedium?.copyWith(color: BearlyColors.muted),
@@ -205,6 +203,7 @@ class _RiderHomePageState extends State<RiderHomePage> {
                     Text(
                       [
                         dashboard.vehicleType,
+                        dashboard.vehicleModel,
                         dashboard.plateNumber,
                       ].where((value) => value.isNotEmpty).join(' · '),
                       style: Theme.of(
@@ -212,6 +211,46 @@ class _RiderHomePageState extends State<RiderHomePage> {
                       ).textTheme.bodySmall?.copyWith(color: Colors.white70),
                     ),
                   ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 14),
+        Card(
+          color: Colors.white,
+          child: Column(
+            children: [
+              ListTile(
+                leading: const Icon(Icons.hub_outlined),
+                title: const Text('Logistics provider'),
+                subtitle: Text(
+                  dashboard.logisticsProvider.isEmpty
+                      ? 'Not assigned'
+                      : dashboard.logisticsProvider,
+                ),
+              ),
+              const Divider(height: 1),
+              ListTile(
+                leading: const Icon(Icons.warehouse_outlined),
+                title: const Text('Home sorting center'),
+                subtitle: Text(
+                  dashboard.homeSortingCenter.isEmpty
+                      ? 'Not assigned'
+                      : dashboard.homeSortingCenter,
+                ),
+              ),
+              const Divider(height: 1),
+              ListTile(
+                leading: const Icon(Icons.route_outlined),
+                title: const Text('Current zone'),
+                subtitle: Text(
+                  dashboard.currentZone.isEmpty
+                      ? 'Not assigned'
+                      : [
+                          dashboard.currentZone,
+                          dashboard.currentZoneCenter,
+                        ].where((value) => value.isNotEmpty).join(' Â· '),
                 ),
               ),
             ],
