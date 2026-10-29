@@ -123,6 +123,140 @@ void main() {
     expect(find.byType(FilledButton), findsNothing);
   });
 
+  testWidgets('pickup detail accepts and confirms using server responses', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(800, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    var status = 'assigned';
+    final requests = <http.Request>[];
+    await tester.pumpWidget(
+      MaterialApp(
+        home: RiderJobDetailPage(
+          repository: _repository((request) async {
+            requests.add(request);
+            if (request.method == 'GET') {
+              return http.Response(
+                jsonEncode({'data': _pickupPayload(status)}),
+                200,
+              );
+            }
+            if (request.url.path.endsWith('/accept')) {
+              status = 'accepted';
+              return http.Response(
+                jsonEncode({
+                  'message': 'Pickup assignment accepted.',
+                  'data': _pickupPayload(status),
+                }),
+                200,
+              );
+            }
+            status = 'picked_up';
+            return http.Response(
+              jsonEncode({
+                'message': 'Pickup confirmed.',
+                'data': _pickupPayload(status),
+              }),
+              200,
+            );
+          }),
+          kind: RiderAssignmentKind.pickup,
+          jobId: 'PU-10',
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Accept pickup'));
+    await tester.pumpAndSettle();
+    expect(find.byType(TextFormField), findsOneWidget);
+    expect(
+      find.text('The server confirmed that this pickup is accepted.'),
+      findsOneWidget,
+    );
+
+    await tester.enterText(find.byType(TextFormField), 'WB-10');
+    final confirmButton = find.text('Verify waybill and confirm pickup');
+    await tester.tap(confirmButton);
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text('The server confirmed collection of this pickup.'),
+      findsOneWidget,
+    );
+    expect(requests.map((request) => request.method), ['GET', 'POST', 'POST']);
+    expect(requests[1].url.path, '/api/mobile/rider/pickups/PU-10/accept');
+    expect(requests[2].url.path, '/api/mobile/rider/pickups/PU-10/confirm');
+    expect(jsonDecode(requests[2].body), {
+      'waybill_identifier': 'WB-10',
+      'scan_method': 'manual',
+    });
+  });
+
+  testWidgets('waybill rejection shows server error and allows correction', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(800, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    var rejected = true;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: RiderJobDetailPage(
+          repository: _repository((request) async {
+            if (request.method == 'GET') {
+              return http.Response(
+                jsonEncode({'data': _pickupPayload('accepted')}),
+                200,
+              );
+            }
+            if (rejected) {
+              rejected = false;
+              return http.Response(
+                jsonEncode({
+                  'message':
+                      'The scanned waybill does not belong to this pickup.',
+                }),
+                409,
+              );
+            }
+            return http.Response(
+              jsonEncode({
+                'message': 'Pickup confirmed.',
+                'data': _pickupPayload('picked_up'),
+              }),
+              200,
+            );
+          }),
+          kind: RiderAssignmentKind.pickup,
+          jobId: 'PU-10',
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byType(TextFormField), 'WRONG-WB');
+    final confirmButton = find.text('Verify waybill and confirm pickup');
+    await tester.tap(confirmButton);
+    await tester.pumpAndSettle();
+    expect(
+      find.text('The scanned waybill does not belong to this pickup.'),
+      findsOneWidget,
+    );
+    expect(find.byType(TextFormField), findsOneWidget);
+
+    await tester.enterText(find.byType(TextFormField), 'WB-10');
+    await tester.tap(confirmButton);
+    await tester.pumpAndSettle();
+    expect(
+      find.text('The server confirmed collection of this pickup.'),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('failed job list request provides retry state', (tester) async {
     await tester.pumpWidget(
       MaterialApp(
@@ -140,6 +274,26 @@ void main() {
     expect(find.text('Retry'), findsOneWidget);
   });
 }
+
+Map<String, Object?> _pickupPayload(String statusRaw) => {
+  'kind': 'pickup',
+  'id': 'PU-10',
+  'title': 'Store A',
+  'status': switch (statusRaw) {
+    'accepted' => 'Accepted',
+    'picked_up' => 'Picked Up',
+    _ => 'Assigned',
+  },
+  'status_raw': statusRaw,
+  'address': 'San Pablo',
+  'contact_name': 'Seller A',
+  'contact_phone': '09170000000',
+  'parcel_count': 1,
+  'window': 'Today',
+  'assigned_at': 'Now',
+  'instructions': '',
+  'manifest': [],
+};
 
 RiderRepository _repository(
   Future<http.Response> Function(http.Request) handler,

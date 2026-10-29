@@ -60,6 +60,7 @@ class RiderAssignment {
     required this.id,
     required this.title,
     required this.status,
+    this.statusRaw = '',
     required this.address,
     required this.parcelCount,
     this.contactName = '',
@@ -77,6 +78,7 @@ class RiderAssignment {
   final String id;
   final String title;
   final String status;
+  final String statusRaw;
   final String address;
   final int parcelCount;
   final String contactName;
@@ -129,11 +131,17 @@ class RiderAssignment {
       }
     }
 
+    final status = _string(map['status']);
+    final statusRaw = _string(map['status_raw']);
+
     return RiderAssignment(
       kind: kind,
       id: _string(map['id']),
       title: _string(map['title']),
-      status: _string(map['status']),
+      status: status,
+      statusRaw: statusRaw.isNotEmpty
+          ? statusRaw
+          : status.toLowerCase().replaceAll(RegExp(r'\s+'), '_'),
       address: _string(map['address']),
       parcelCount: _integer(map['parcel_count']),
       contactName: _string(map['contact_name']),

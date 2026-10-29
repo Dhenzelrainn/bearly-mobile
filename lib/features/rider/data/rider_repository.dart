@@ -3,7 +3,7 @@ import '../models/rider_account.dart';
 import '../models/rider_assignment.dart';
 import '../models/rider_history.dart';
 
-/// Read-only Rider mobile API calls for the first integration milestone.
+/// Rider mobile API calls for assignments, profile, and history.
 class RiderRepository {
   const RiderRepository({required AuthService authService})
     : _authService = authService;
@@ -43,6 +43,38 @@ class RiderRepository {
           ),
         ),
       );
+
+  Future<RiderAssignment> acceptPickup(
+    String pickupNo,
+  ) async => RiderAssignment.fromJson(
+    _data(
+      await _authService.requestWithSession<Object?>(
+        method: AuthenticatedRequestMethod.post,
+        path:
+            '/api/mobile/rider/pickups/${Uri.encodeComponent(pickupNo)}/accept',
+        parse: (response) => response,
+      ),
+    ),
+  );
+
+  Future<RiderAssignment> confirmPickup(
+    String pickupNo, {
+    required String waybillIdentifier,
+    String scanMethod = 'manual',
+  }) async => RiderAssignment.fromJson(
+    _data(
+      await _authService.requestWithSession<Object?>(
+        method: AuthenticatedRequestMethod.post,
+        path:
+            '/api/mobile/rider/pickups/${Uri.encodeComponent(pickupNo)}/confirm',
+        body: {
+          'waybill_identifier': waybillIdentifier.trim(),
+          'scan_method': scanMethod,
+        },
+        parse: (response) => response,
+      ),
+    ),
+  );
 
   Future<List<RiderAssignment>> deliveryJobs() async =>
       _jobs(await _authService.getWithSession('/api/mobile/rider/deliveries'));

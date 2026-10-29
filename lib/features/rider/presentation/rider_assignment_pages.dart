@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../core/network/api_client.dart';
 import '../../../core/routes/app_route_names.dart';
 import '../../../core/theme/bearly_theme.dart';
 import '../data/rider_repository.dart';
@@ -147,6 +148,11 @@ class RiderJobDetailPage extends StatefulWidget {
 
 class _RiderJobDetailPageState extends State<RiderJobDetailPage> {
   late Future<RiderAssignment> _job;
+  final _waybillFormKey = GlobalKey<FormState>();
+  final _waybillController = TextEditingController();
+  bool _actionPending = false;
+  String? _actionError;
+  String? _actionNotice;
 
   bool get _isPickup => widget.kind == RiderAssignmentKind.pickup;
 
@@ -161,6 +167,85 @@ class _RiderJobDetailPageState extends State<RiderJobDetailPage> {
       : widget.repository.deliveryDetail(widget.jobId);
 
   void _retry() => setState(() => _job = _load());
+
+  @override
+  void dispose() {
+    _waybillController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _acceptPickup() => _performPickupAction(
+    action: () => widget.repository.acceptPickup(widget.jobId),
+    isCommitted: (job) => const {
+      'accepted',
+      'arrived',
+      'picked_up',
+      'completed',
+    }.contains(job.statusRaw),
+    successMessage: 'The server confirmed that this pickup is accepted.',
+  );
+
+  Future<void> _confirmPickup() async {
+    if (_waybillFormKey.currentState?.validate() != true) return;
+    await _performPickupAction(
+      action: () => widget.repository.confirmPickup(
+        widget.jobId,
+        waybillIdentifier: _waybillController.text,
+      ),
+      isCommitted: (job) =>
+          const {'picked_up', 'completed'}.contains(job.statusRaw),
+      successMessage: 'The server confirmed collection of this pickup.',
+    );
+  }
+
+  Future<void> _performPickupAction({
+    required Future<RiderAssignment> Function() action,
+    required bool Function(RiderAssignment) isCommitted,
+    required String successMessage,
+  }) async {
+    if (_actionPending) return;
+    setState(() {
+      _actionPending = true;
+      _actionError = null;
+      _actionNotice = null;
+    });
+
+    try {
+      final updated = await action();
+      if (!mounted) return;
+      setState(() {
+        _job = Future.value(updated);
+        _actionNotice = successMessage;
+      });
+    } catch (error) {
+      RiderAssignment? latest;
+      try {
+        latest = await widget.repository.pickupDetail(widget.jobId);
+      } catch (_) {
+        // Keep the action error when a refresh cannot reach the server.
+      }
+      if (!mounted) return;
+      setState(() {
+        if (latest != null) _job = Future.value(latest);
+        if (latest != null && isCommitted(latest)) {
+          _actionNotice = successMessage;
+        } else {
+          _actionError = _actionErrorMessage(error);
+        }
+      });
+    } finally {
+      if (mounted) setState(() => _actionPending = false);
+    }
+  }
+
+  String _actionErrorMessage(Object error) {
+    if (error is ApiHttpException && error.responseData is Map) {
+      final message = (error.responseData as Map)['message'];
+      if (message is String && message.trim().isNotEmpty) return message.trim();
+    }
+    if (error is ApiException) return error.message;
+    return 'The pickup action could not be confirmed. Review the job state and retry.';
+  }
 
   @override
   Widget build(BuildContext context) => RiderPageScaffold(
@@ -301,9 +386,110 @@ class _RiderJobDetailPageState extends State<RiderJobDetailPage> {
                 ),
               ),
             ],
+            if (_isPickup) ...[const SizedBox(height: 12), _pickupActions(job)],
           ],
         );
       },
+    ),
+  );
+
+  Widget _pickupActions(RiderAssignment job) {
+    final status = job.statusRaw;
+    final showAccept = status == 'assigned';
+    final showWaybillEntry = status == 'accepted';
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (_actionNotice != null) ...[
+          _ActionMessage(message: _actionNotice!, isError: false),
+          const SizedBox(height: 10),
+        ],
+        if (_actionError != null) ...[
+          _ActionMessage(message: _actionError!, isError: true),
+          const SizedBox(height: 10),
+        ],
+        if (showAccept)
+          FilledButton.icon(
+            onPressed: _actionPending ? null : _acceptPickup,
+            icon: _actionPending
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.check_circle_outline_rounded),
+            label: Text(_actionPending ? 'Accepting…' : 'Accept pickup'),
+          )
+        else if (showWaybillEntry) ...[
+          Form(
+            key: _waybillFormKey,
+            child: TextFormField(
+              controller: _waybillController,
+              enabled: !_actionPending,
+              textInputAction: TextInputAction.done,
+              maxLength: 120,
+              decoration: const InputDecoration(
+                labelText: 'Waybill number or barcode value',
+                hintText: 'Enter the value printed on the parcel',
+                prefixIcon: Icon(Icons.qr_code_2_rounded),
+                border: OutlineInputBorder(),
+              ),
+              validator: (value) => value == null || value.trim().isEmpty
+                  ? 'Enter the waybill value to confirm collection.'
+                  : null,
+              onChanged: (_) => setState(() {
+                _actionError = null;
+                _actionNotice = null;
+              }),
+              onFieldSubmitted: (_) => _confirmPickup(),
+            ),
+          ),
+          const SizedBox(height: 8),
+          FilledButton.icon(
+            onPressed: _actionPending ? null : _confirmPickup,
+            icon: _actionPending
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.inventory_2_outlined),
+            label: Text(
+              _actionPending
+                  ? 'Confirming…'
+                  : 'Verify waybill and confirm pickup',
+            ),
+          ),
+        ] else if (status == 'picked_up' || status == 'completed')
+          const _ActionMessage(
+            message: 'Pickup collection is confirmed by the server.',
+            isError: false,
+          ),
+      ],
+    );
+  }
+}
+
+class _ActionMessage extends StatelessWidget {
+  const _ActionMessage({required this.message, required this.isError});
+
+  final String message;
+  final bool isError;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.all(12),
+    decoration: BoxDecoration(
+      color: isError ? Colors.red.shade50 : BearlyColors.cream100,
+      borderRadius: BorderRadius.circular(12),
+      border: Border.all(
+        color: isError ? Colors.red.shade200 : BearlyColors.cream300,
+      ),
+    ),
+    child: Text(
+      message,
+      style: TextStyle(color: isError ? Colors.red.shade900 : null),
     ),
   );
 }

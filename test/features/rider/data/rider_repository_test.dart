@@ -203,6 +203,49 @@ void main() {
     });
 
     test(
+      'posts pickup acceptance and waybill confirmation with session auth',
+      () async {
+        final requests = <http.Request>[];
+        final service = _authService((request) async {
+          requests.add(request);
+          final status = request.url.path.endsWith('/accept')
+              ? 'accepted'
+              : 'picked_up';
+          return http.Response(
+            jsonEncode({'message': 'ok', 'data': _pickupPayload(status)}),
+            200,
+          );
+        });
+        final repository = RiderRepository(authService: service);
+
+        final accepted = await repository.acceptPickup('PU-100');
+        final collected = await repository.confirmPickup(
+          'PU-100',
+          waybillIdentifier: '  WB-100  ',
+        );
+
+        expect(accepted.statusRaw, 'accepted');
+        expect(collected.statusRaw, 'picked_up');
+        expect(requests.map((request) => request.method), ['POST', 'POST']);
+        expect(requests.map((request) => request.url.path), [
+          '/api/mobile/rider/pickups/PU-100/accept',
+          '/api/mobile/rider/pickups/PU-100/confirm',
+        ]);
+        expect(
+          requests.every(
+            (request) =>
+                request.headers['authorization'] == 'Bearer rider-token',
+          ),
+          isTrue,
+        );
+        expect(jsonDecode(requests[1].body), {
+          'waybill_identifier': 'WB-100',
+          'scan_method': 'manual',
+        });
+      },
+    );
+
+    test(
       'loads authenticated account data on each request without caching',
       () async {
         var call = 0;
@@ -302,6 +345,26 @@ void main() {
     );
   });
 }
+
+Map<String, Object?> _pickupPayload(String statusRaw) => {
+  'kind': 'pickup',
+  'id': 'PU-100',
+  'title': 'Store A',
+  'status': switch (statusRaw) {
+    'accepted' => 'Accepted',
+    'picked_up' => 'Picked Up',
+    _ => 'Assigned',
+  },
+  'status_raw': statusRaw,
+  'address': 'Cubao',
+  'contact_name': 'Seller A',
+  'contact_phone': '09170000000',
+  'parcel_count': 1,
+  'window': 'Today',
+  'assigned_at': 'Now',
+  'instructions': '',
+  'manifest': [],
+};
 
 AuthService _authService(Future<http.Response> Function(http.Request) handler) {
   final service = AuthService(
