@@ -18,8 +18,10 @@ class AppRouteNames {
   static const riderRegister = '/rider/register';
   static const riderPending = '/rider/pending';
   static const riderRequests = '/rider/requests';
+  static const riderPickupDetail = '/rider/pickups/detail';
   static const riderPickup = '/rider/pickup';
   static const riderTransit = '/rider/transit';
+  static const riderDeliveryDetail = '/rider/deliveries/detail';
   static const riderComplete = '/rider/complete';
   static const riderEarnings = '/rider/earnings';
   static const riderHistory = '/rider/history';

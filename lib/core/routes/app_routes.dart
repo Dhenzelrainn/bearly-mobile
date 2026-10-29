@@ -23,6 +23,9 @@ import '../../features/buyer/presentation/buyer_checkout_review_page.dart';
 import '../../features/buyer/presentation/buyer_order_details_page.dart';
 import '../../features/buyer/presentation/buyer_product_detail_page.dart';
 import '../../features/rider/presentation/rider_home_page.dart';
+import '../../features/rider/presentation/rider_assignment_pages.dart';
+import '../../features/rider/data/rider_repository.dart';
+import '../../features/rider/models/rider_assignment.dart';
 import '../../features/rider/presentation/rider_module_page.dart';
 import '../../features/rider/presentation/rider_pending_page.dart';
 import '../../features/rider/presentation/rider_register_page.dart';
@@ -39,6 +42,7 @@ class AppRoutes {
     BuyerLocationRepository? locationRepository,
     BuyerCheckoutRepository? checkoutRepository,
   }) {
+    final riderRepository = RiderRepository(authService: authService);
     BuyerAddressController? fallbackAddressController;
     BuyerLocationRepository? fallbackLocationRepository;
     BuyerCheckoutRepository? fallbackCheckoutRepository;
@@ -80,7 +84,7 @@ class AppRoutes {
                 addressController: addressController,
                 locationRepository: locationRepository,
               )
-            : const RiderHomePage(),
+            : RiderHomePage(repository: riderRepository),
         settings: RouteSettings(name: route),
       );
     }
@@ -215,12 +219,12 @@ class AppRoutes {
         );
       case AppRouteNames.rider:
         return MaterialPageRoute(
-          builder: (_) => const RiderHomePage(),
+          builder: (_) => RiderHomePage(repository: riderRepository),
           settings: settings,
         );
       case AppRouteNames.riderDashboard:
         return MaterialPageRoute(
-          builder: (_) => const RiderHomePage(),
+          builder: (_) => RiderHomePage(repository: riderRepository),
           settings: settings,
         );
       case AppRouteNames.riderRegister:
@@ -234,11 +238,61 @@ class AppRoutes {
           settings: settings,
         );
       case AppRouteNames.riderRequests:
-        return _riderModule(RiderModule.requests, settings);
+        return MaterialPageRoute(
+          builder: (_) => RiderAssignmentListPage(
+            repository: riderRepository,
+            kind: RiderAssignmentKind.pickup,
+          ),
+          settings: settings,
+        );
       case AppRouteNames.riderPickup:
         return _riderModule(RiderModule.pickup, settings);
       case AppRouteNames.riderTransit:
-        return _riderModule(RiderModule.transit, settings);
+        return MaterialPageRoute(
+          builder: (_) => RiderAssignmentListPage(
+            repository: riderRepository,
+            kind: RiderAssignmentKind.delivery,
+          ),
+          settings: settings,
+        );
+      case AppRouteNames.riderPickupDetail:
+        final pickupNo = settings.arguments;
+        if (pickupNo is! String || pickupNo.trim().isEmpty) {
+          return MaterialPageRoute(
+            builder: (_) => RiderAssignmentListPage(
+              repository: riderRepository,
+              kind: RiderAssignmentKind.pickup,
+            ),
+            settings: settings,
+          );
+        }
+        return MaterialPageRoute(
+          builder: (_) => RiderJobDetailPage(
+            repository: riderRepository,
+            kind: RiderAssignmentKind.pickup,
+            jobId: pickupNo,
+          ),
+          settings: settings,
+        );
+      case AppRouteNames.riderDeliveryDetail:
+        final shipmentNo = settings.arguments;
+        if (shipmentNo is! String || shipmentNo.trim().isEmpty) {
+          return MaterialPageRoute(
+            builder: (_) => RiderAssignmentListPage(
+              repository: riderRepository,
+              kind: RiderAssignmentKind.delivery,
+            ),
+            settings: settings,
+          );
+        }
+        return MaterialPageRoute(
+          builder: (_) => RiderJobDetailPage(
+            repository: riderRepository,
+            kind: RiderAssignmentKind.delivery,
+            jobId: shipmentNo,
+          ),
+          settings: settings,
+        );
       case AppRouteNames.riderComplete:
         return _riderModule(RiderModule.complete, settings);
       case AppRouteNames.riderEarnings:
@@ -283,8 +337,10 @@ class AppRoutes {
       AppRouteNames.rider,
       AppRouteNames.riderDashboard,
       AppRouteNames.riderRequests,
+      AppRouteNames.riderPickupDetail,
       AppRouteNames.riderPickup,
       AppRouteNames.riderTransit,
+      AppRouteNames.riderDeliveryDetail,
       AppRouteNames.riderComplete,
       AppRouteNames.riderEarnings,
       AppRouteNames.riderHistory,
