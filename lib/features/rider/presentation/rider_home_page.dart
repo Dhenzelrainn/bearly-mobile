@@ -24,9 +24,17 @@ class _RiderHomePageState extends State<RiderHomePage> {
     _dashboard = widget.repository.dashboard();
   }
 
-  void _refresh() => setState(() => _dashboard = widget.repository.dashboard());
+  void _refresh() {
+    final dashboard = widget.repository.dashboard();
+    setState(() {
+      _dashboard = dashboard;
+    });
+  }
 
-  void _open(String route) => Navigator.pushNamed(context, route);
+  Future<void> _open(String route) async {
+    await Navigator.pushNamed(context, route);
+    if (mounted) _refresh();
+  }
 
   @override
   Widget build(BuildContext context) => Scaffold(
