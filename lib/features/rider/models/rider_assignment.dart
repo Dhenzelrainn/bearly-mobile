@@ -61,6 +61,7 @@ class RiderAssignment {
     required this.title,
     required this.status,
     this.statusRaw = '',
+    this.canStartDelivery = false,
     required this.address,
     required this.parcelCount,
     this.contactName = '',
@@ -79,6 +80,7 @@ class RiderAssignment {
   final String title;
   final String status;
   final String statusRaw;
+  final bool canStartDelivery;
   final String address;
   final int parcelCount;
   final String contactName;
@@ -142,6 +144,7 @@ class RiderAssignment {
       statusRaw: statusRaw.isNotEmpty
           ? statusRaw
           : status.toLowerCase().replaceAll(RegExp(r'\s+'), '_'),
+      canStartDelivery: map['can_start_delivery'] == true,
       address: _string(map['address']),
       parcelCount: _integer(map['parcel_count']),
       contactName: _string(map['contact_name']),

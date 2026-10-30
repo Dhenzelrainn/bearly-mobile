@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:bearly_mobile/core/network/api_client.dart';
@@ -123,6 +124,219 @@ void main() {
     expect(find.text('Delivery Details'), findsOneWidget);
     expect(find.byType(FilledButton), findsNothing);
   });
+
+  testWidgets('eligible delivery starts and refreshes server-confirmed state', (
+    tester,
+  ) async {
+    final requests = <http.Request>[];
+    var detailCalls = 0;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: RiderJobDetailPage(
+          repository: _repository((request) async {
+            requests.add(request);
+            if (request.method == 'POST') {
+              return http.Response(
+                jsonEncode({
+                  'message': 'Delivery started.',
+                  'data': _deliveryPayload('Out for Delivery', canStart: false),
+                }),
+                200,
+              );
+            }
+            detailCalls++;
+            final started = detailCalls > 1;
+            return http.Response(
+              jsonEncode({
+                'data': _deliveryPayload(
+                  started ? 'Out for Delivery' : 'Assigned',
+                  canStart: !started,
+                ),
+              }),
+              200,
+            );
+          }),
+          kind: RiderAssignmentKind.delivery,
+          jobId: 'SH-20',
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Start Delivery'), findsOneWidget);
+    await tester.tap(find.text('Start Delivery'));
+    await tester.pumpAndSettle();
+
+    expect(requests.map((request) => request.method), ['GET', 'POST', 'GET']);
+    expect(requests[1].url.path, '/api/mobile/rider/deliveries/SH-20/start');
+    expect(find.text('This delivery is out for delivery.'), findsOneWidget);
+    expect(find.text('Start Delivery'), findsNothing);
+  });
+
+  testWidgets(
+    'delivery start prevents repeated taps while the request is pending',
+    (tester) async {
+      final requests = <http.Request>[];
+      final pendingResponse = Completer<http.Response>();
+      var started = false;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: RiderJobDetailPage(
+            repository: _repository((request) async {
+              requests.add(request);
+              if (request.method == 'POST') {
+                started = true;
+                return pendingResponse.future;
+              }
+              return http.Response(
+                jsonEncode({
+                  'data': _deliveryPayload(
+                    started ? 'Out for Delivery' : 'Assigned',
+                    canStart: !started,
+                  ),
+                }),
+                200,
+              );
+            }),
+            kind: RiderAssignmentKind.delivery,
+            jobId: 'SH-20',
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Start Delivery'));
+      await tester.pump();
+
+      final button = tester.widget<ButtonStyleButton>(
+        find.ancestor(
+          of: find.text('Starting delivery…'),
+          matching: find.byWidgetPredicate(
+            (widget) => widget is ButtonStyleButton,
+          ),
+        ),
+      );
+      expect(button.onPressed, isNull);
+      expect(find.text('Starting delivery…'), findsOneWidget);
+      expect(
+        requests.where((request) => request.method == 'POST'),
+        hasLength(1),
+      );
+
+      pendingResponse.complete(
+        http.Response(
+          jsonEncode({
+            'message': 'Delivery started.',
+            'data': _deliveryPayload('Out for Delivery', canStart: false),
+          }),
+          200,
+        ),
+      );
+      await tester.pumpAndSettle();
+    },
+  );
+
+  testWidgets('already started delivery has no start action', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: RiderJobDetailPage(
+          repository: _repository(
+            (_) async => http.Response(
+              jsonEncode({
+                'data': _deliveryPayload('Out for Delivery', canStart: false),
+              }),
+              200,
+            ),
+          ),
+          kind: RiderAssignmentKind.delivery,
+          jobId: 'SH-20',
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('This delivery is out for delivery.'), findsOneWidget);
+    expect(find.text('Start Delivery'), findsNothing);
+  });
+
+  testWidgets(
+    'delivery request error refreshes before offering another start',
+    (tester) async {
+      final requests = <http.Request>[];
+      await tester.pumpWidget(
+        MaterialApp(
+          home: RiderJobDetailPage(
+            repository: _repository((request) async {
+              requests.add(request);
+              if (request.method == 'POST') {
+                return http.Response(
+                  jsonEncode({'message': 'Dispatch is no longer eligible.'}),
+                  409,
+                );
+              }
+              return http.Response(
+                jsonEncode({
+                  'data': _deliveryPayload('Assigned', canStart: true),
+                }),
+                200,
+              );
+            }),
+            kind: RiderAssignmentKind.delivery,
+            jobId: 'SH-20',
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Start Delivery'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Dispatch is no longer eligible.'), findsOneWidget);
+      expect(find.text('Start Delivery'), findsOneWidget);
+      expect(requests.map((request) => request.method), ['GET', 'POST', 'GET']);
+    },
+  );
+
+  testWidgets(
+    'delivery timeout refreshes and does not replay a committed start',
+    (tester) async {
+      final requests = <http.Request>[];
+      var detailCalls = 0;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: RiderJobDetailPage(
+            repository: _repository((request) async {
+              requests.add(request);
+              if (request.method == 'POST') {
+                return http.Response(
+                  jsonEncode({'message': 'Request timed out.'}),
+                  504,
+                );
+              }
+              detailCalls++;
+              final started = detailCalls > 1;
+              return http.Response(
+                jsonEncode({
+                  'data': _deliveryPayload(
+                    started ? 'Out for Delivery' : 'Assigned',
+                    canStart: !started,
+                  ),
+                }),
+                200,
+              );
+            }),
+            kind: RiderAssignmentKind.delivery,
+            jobId: 'SH-20',
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Start Delivery'));
+      await tester.pumpAndSettle();
+
+      expect(requests.map((request) => request.method), ['GET', 'POST', 'GET']);
+      expect(find.text('This delivery is out for delivery.'), findsOneWidget);
+      expect(find.text('Start Delivery'), findsNothing);
+    },
+  );
 
   testWidgets('pickup detail accepts and confirms using server responses', (
     tester,
@@ -538,6 +752,36 @@ Map<String, Object?> _pickupPayload(String statusRaw) => {
   'assigned_at': 'Now',
   'instructions': '',
   'manifest': [],
+};
+
+Map<String, Object?> _deliveryPayload(
+  String status, {
+  required bool canStart,
+}) => {
+  'kind': 'delivery',
+  'id': 'SH-20',
+  'title': 'Buyer Rae',
+  'status': status,
+  'can_start_delivery': canStart,
+  'address': 'Quezon City',
+  'contact_phone': '09170000000',
+  'waybill': 'WB-20',
+  'purpose': 'outbound',
+  'purpose_label': 'Buyer delivery',
+  'parcel_count': 1,
+  'zone': 'NCR',
+  'zone_name': 'North',
+  'batch_no': 'DB-20',
+  'parcels': [
+    {
+      'parcel_no': 'P-20',
+      'status': status == 'Out for Delivery'
+          ? 'out_for_delivery'
+          : 'dispatched',
+      'size_class': 'small',
+      'weight_kg': 1.0,
+    },
+  ],
 };
 
 Widget _fakeScannerPreview(

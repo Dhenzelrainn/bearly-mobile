@@ -88,6 +88,19 @@ class RiderRepository {
         ),
       );
 
+  Future<RiderAssignment> startDelivery(
+    String shipmentNo,
+  ) async => RiderAssignment.fromJson(
+    _data(
+      await _authService.requestWithSession<Object?>(
+        method: AuthenticatedRequestMethod.post,
+        path:
+            '/api/mobile/rider/deliveries/${Uri.encodeComponent(shipmentNo)}/start',
+        parse: (response) => response,
+      ),
+    ),
+  );
+
   Future<List<RiderAssignment>> _jobs(Object? value) async {
     final data = _data(value);
     if (data is! List) {

@@ -39,3 +39,19 @@ These observations are separate from the successful Phase 2A workflow and do not
 - Some separators render with a text-encoding artifact (`Ã‚Â·`).
 - A displayed timestamp may be inconsistent and needs comparison with its source event before correction.
 - Seller product thumbnails were broken during the reported test.
+
+## Phase 2B physical camera validation
+
+**Test date:** October 30, 2026<br>
+**Device:** Physical Samsung Android device.
+
+The operator reported that the Rider camera successfully decoded the printed Code 128 waybill on a new, legitimate Seller → Logistics Victoria → Rider Victoria pickup. The Rider submitted collection through the existing Mobile API. Flutter displayed the assignment and parcel as `Picked Up` and showed the server-confirmed collection result.
+
+A read-only query explicitly targeted `bearly_latest_dev_import_20261028`. It verified that this was a separate record from the Phase 2A manual pickup:
+
+- Phase 2B pickup request #10: `PU-LFIO22IUXPOA73P3UXXR`; assignment #9; shipment #11: `SHP-EGSUN0KUAYTKQEFIBFD6`; parcel #11; waybill `BRLY-0D2WODACCFYU3D08BG8C`.
+- The pickup request and shipment reference Logistics profile #3 (user #19); assignment #9 references Rider profile #4 (user #20), whose profile references Logistics profile #3.
+- At the time of the read-only query, the pickup request status was `scheduled`, assignment status was `picked_up`, and both shipment and parcel statuses were `picked_up`.
+- The earlier Phase 2A record was assignment #8 / pickup request #9 / shipment #10. The Phase 2B test used the distinct assignment, pickup request, shipment, parcel, and waybill above; the earlier completed job was not reused for the camera test.
+
+The camera decode and Flutter display are operator-reported physical-test results. The database check verifies only the record relationships and statuses listed above; it does not claim that either shipment has advanced through sorting or delivery.

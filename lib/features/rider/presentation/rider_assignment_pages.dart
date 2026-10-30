@@ -155,6 +155,7 @@ class _RiderJobDetailPageState extends State<RiderJobDetailPage> {
   final _waybillController = TextEditingController();
   String _waybillScanMethod = 'manual';
   bool _actionPending = false;
+  bool _deliveryRefreshRequired = false;
   String? _actionError;
   String? _actionNotice;
 
@@ -170,7 +171,11 @@ class _RiderJobDetailPageState extends State<RiderJobDetailPage> {
       ? widget.repository.pickupDetail(widget.jobId)
       : widget.repository.deliveryDetail(widget.jobId);
 
-  void _retry() => setState(() => _job = _load());
+  void _retry() => setState(() {
+    _job = _load();
+    _deliveryRefreshRequired = false;
+    _actionError = null;
+  });
 
   @override
   void dispose() {
@@ -201,6 +206,72 @@ class _RiderJobDetailPageState extends State<RiderJobDetailPage> {
           const {'picked_up', 'completed'}.contains(job.statusRaw),
       successMessage: 'The server confirmed collection of this pickup.',
     );
+  }
+
+  Future<void> _startDelivery() async {
+    if (_actionPending) return;
+    setState(() {
+      _actionPending = true;
+      _actionError = null;
+      _actionNotice = null;
+      _deliveryRefreshRequired = false;
+    });
+
+    try {
+      final response = await widget.repository.startDelivery(widget.jobId);
+      RiderAssignment latest;
+      try {
+        latest = await widget.repository.deliveryDetail(widget.jobId);
+      } catch (_) {
+        // The mutation response is server-confirmed; a later refresh remains available.
+        latest = response;
+      }
+      if (!mounted) return;
+      final confirmed = latest.statusRaw == 'out_for_delivery';
+      setState(() {
+        _job = Future.value(latest);
+        _actionNotice = confirmed
+            ? 'The server confirmed this delivery is out for delivery.'
+            : null;
+        if (!confirmed) {
+          _deliveryRefreshRequired = true;
+          _actionError =
+              'Refresh delivery status before trying this action again.';
+        }
+      });
+    } catch (error) {
+      RiderAssignment? latest;
+      try {
+        latest = await widget.repository.deliveryDetail(widget.jobId);
+      } catch (_) {
+        // Require an explicit successful refresh before another mutation attempt.
+      }
+      if (!mounted) return;
+      final confirmed = latest?.statusRaw == 'out_for_delivery';
+      setState(() {
+        if (latest != null) _job = Future.value(latest);
+        if (confirmed) {
+          _actionNotice =
+              'The server confirmed this delivery is out for delivery.';
+        } else {
+          _deliveryRefreshRequired = latest == null;
+          _actionError = latest == null
+              ? 'Could not verify the delivery state. Refresh before trying again.'
+              : _deliveryActionErrorMessage(error);
+        }
+      });
+    } finally {
+      if (mounted) setState(() => _actionPending = false);
+    }
+  }
+
+  String _deliveryActionErrorMessage(Object error) {
+    if (error is ApiHttpException && error.responseData is Map) {
+      final message = (error.responseData as Map)['message'];
+      if (message is String && message.trim().isNotEmpty) return message.trim();
+    }
+    if (error is ApiException) return error.message;
+    return 'Delivery could not be started. Review the job state and retry.';
   }
 
   Future<void> _scanWaybill() async {
@@ -412,7 +483,13 @@ class _RiderJobDetailPageState extends State<RiderJobDetailPage> {
                 ),
               ),
             ],
-            if (_isPickup) ...[const SizedBox(height: 12), _pickupActions(job)],
+            if (_isPickup) ...[
+              const SizedBox(height: 12),
+              _pickupActions(job),
+            ] else ...[
+              const SizedBox(height: 12),
+              _deliveryActions(job),
+            ],
           ],
         );
       },
@@ -497,6 +574,52 @@ class _RiderJobDetailPageState extends State<RiderJobDetailPage> {
         ] else if (status == 'picked_up' || status == 'completed')
           const _ActionMessage(
             message: 'Pickup collection is confirmed by the server.',
+            isError: false,
+          ),
+      ],
+    );
+  }
+
+  Widget _deliveryActions(RiderAssignment job) {
+    final showStart =
+        job.canStartDelivery &&
+        job.statusRaw == 'assigned' &&
+        !_deliveryRefreshRequired;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (_actionNotice != null) ...[
+          _ActionMessage(message: _actionNotice!, isError: false),
+          const SizedBox(height: 10),
+        ],
+        if (_actionError != null) ...[
+          _ActionMessage(message: _actionError!, isError: true),
+          const SizedBox(height: 10),
+        ],
+        if (_deliveryRefreshRequired)
+          OutlinedButton.icon(
+            onPressed: _actionPending ? null : _retry,
+            icon: const Icon(Icons.refresh_rounded),
+            label: const Text('Refresh delivery status'),
+          )
+        else if (showStart)
+          FilledButton.icon(
+            onPressed: _actionPending ? null : _startDelivery,
+            icon: _actionPending
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.local_shipping_outlined),
+            label: Text(
+              _actionPending ? 'Starting delivery…' : 'Start Delivery',
+            ),
+          )
+        else if (job.statusRaw == 'out_for_delivery')
+          const _ActionMessage(
+            message: 'This delivery is out for delivery.',
             isError: false,
           ),
       ],

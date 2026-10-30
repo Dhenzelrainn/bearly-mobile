@@ -245,6 +245,33 @@ void main() {
       },
     );
 
+    test('posts delivery start with the authenticated Rider session', () async {
+      final requests = <http.Request>[];
+      final service = _authService((request) async {
+        requests.add(request);
+        return http.Response(
+          jsonEncode({
+            'message': 'Delivery started.',
+            'data': _deliveryPayload('Out for Delivery', canStart: false),
+          }),
+          200,
+        );
+      });
+      final repository = RiderRepository(authService: service);
+
+      final started = await repository.startDelivery('SH-200');
+
+      expect(started.id, 'SH-200');
+      expect(started.statusRaw, 'out_for_delivery');
+      expect(started.canStartDelivery, isFalse);
+      expect(requests.single.method, 'POST');
+      expect(
+        requests.single.url.path,
+        '/api/mobile/rider/deliveries/SH-200/start',
+      );
+      expect(requests.single.headers['authorization'], 'Bearer rider-token');
+    });
+
     test(
       'loads authenticated account data on each request without caching',
       () async {
@@ -364,6 +391,36 @@ Map<String, Object?> _pickupPayload(String statusRaw) => {
   'assigned_at': 'Now',
   'instructions': '',
   'manifest': [],
+};
+
+Map<String, Object?> _deliveryPayload(
+  String status, {
+  required bool canStart,
+}) => {
+  'kind': 'delivery',
+  'id': 'SH-200',
+  'title': 'Buyer B',
+  'status': status,
+  'can_start_delivery': canStart,
+  'address': 'BGC, Taguig',
+  'contact_phone': '09171112222',
+  'waybill': 'WB-200',
+  'purpose': 'outbound',
+  'purpose_label': 'Buyer delivery',
+  'parcel_count': 1,
+  'zone': 'BGC',
+  'zone_name': 'Bonifacio Global City',
+  'batch_no': 'DB-1',
+  'parcels': [
+    {
+      'parcel_no': 'P-200',
+      'status': status == 'Out for Delivery'
+          ? 'out_for_delivery'
+          : 'dispatched',
+      'size_class': 'small',
+      'weight_kg': 1.2,
+    },
+  ],
 };
 
 AuthService _authService(Future<http.Response> Function(http.Request) handler) {
