@@ -161,9 +161,11 @@ class _RiderJobDetailPageState extends State<RiderJobDetailPage> {
   late Future<RiderAssignment> _job;
   final _waybillFormKey = GlobalKey<FormState>();
   final _deliveryCompletionFormKey = GlobalKey<FormState>();
+  final _deliveryFailureFormKey = GlobalKey<FormState>();
   final _waybillController = TextEditingController();
   final _recipientNameController = TextEditingController();
   final _codCollectedAmountController = TextEditingController();
+  final _failureReasonController = TextEditingController();
   XFile? _proofPhoto;
   Uint8List? _proofPhotoBytes;
   String _waybillScanMethod = 'manual';
@@ -171,6 +173,8 @@ class _RiderJobDetailPageState extends State<RiderJobDetailPage> {
   bool _deliveryRefreshRequired = false;
   bool _completionFormVisible = false;
   bool _completionRefreshRequired = false;
+  bool _failureFormVisible = false;
+  bool _failureRefreshRequired = false;
   String? _proofPhotoError;
   String? _actionError;
   String? _actionNotice;
@@ -190,6 +194,7 @@ class _RiderJobDetailPageState extends State<RiderJobDetailPage> {
   void _retry() => setState(() {
     _job = _load();
     _deliveryRefreshRequired = false;
+    _failureRefreshRequired = false;
     _actionError = null;
   });
 
@@ -198,6 +203,7 @@ class _RiderJobDetailPageState extends State<RiderJobDetailPage> {
     _waybillController.dispose();
     _recipientNameController.dispose();
     _codCollectedAmountController.dispose();
+    _failureReasonController.dispose();
     super.dispose();
   }
 
@@ -283,6 +289,148 @@ class _RiderJobDetailPageState extends State<RiderJobDetailPage> {
     }
   }
 
+  void _openDeliveryFailureForm() {
+    setState(() {
+      _failureFormVisible = true;
+      _failureRefreshRequired = false;
+      _failureReasonController.clear();
+      _actionError = null;
+      _actionNotice = null;
+    });
+  }
+
+  Future<void> _refreshFailureState() async {
+    if (_actionPending) return;
+    setState(() {
+      _actionPending = true;
+      _actionError = null;
+      _actionNotice = null;
+    });
+    try {
+      final latest = await widget.repository.deliveryDetail(widget.jobId);
+      if (!mounted) return;
+      final failed = latest.statusRaw == 'delivery_failed';
+      final stillOutForDelivery = latest.statusRaw == 'out_for_delivery';
+      setState(() {
+        _job = Future.value(latest);
+        _failureRefreshRequired = false;
+        _failureFormVisible = stillOutForDelivery;
+        _actionNotice = failed
+            ? 'The server confirmed this delivery attempt was recorded as failed.'
+            : null;
+        _actionError = failed
+            ? null
+            : stillOutForDelivery
+            ? 'The server confirms this delivery is still active. Review the failure reason before submitting.'
+            : 'This delivery is no longer eligible for failure reporting.';
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _failureRefreshRequired = true;
+        _actionError = _deliveryActionErrorMessage(error);
+      });
+    } finally {
+      if (mounted) setState(() => _actionPending = false);
+    }
+  }
+
+  Future<void> _reportDeliveryFailure(RiderAssignment job) async {
+    if (_actionPending ||
+        !_failureFormVisible ||
+        job.statusRaw != 'out_for_delivery') {
+      return;
+    }
+    if (_deliveryFailureFormKey.currentState?.validate() != true) return;
+
+    setState(() {
+      _actionPending = true;
+      _actionError = null;
+      _actionNotice = null;
+      _failureRefreshRequired = false;
+    });
+
+    try {
+      final submitted = await widget.repository.failDelivery(
+        widget.jobId,
+        failureReason: _failureReasonController.text,
+      );
+      RiderAssignment latest;
+      var refreshFailed = false;
+      try {
+        latest = await widget.repository.deliveryDetail(widget.jobId);
+      } catch (_) {
+        // The mutation response is server-confirmed; refresh remains available.
+        latest = submitted;
+        refreshFailed = true;
+      }
+      if (!mounted) return;
+
+      final failed = latest.statusRaw == 'delivery_failed';
+      final stillOutForDelivery = latest.statusRaw == 'out_for_delivery';
+      setState(() {
+        _job = Future.value(latest);
+        _failureFormVisible = false;
+        _failureRefreshRequired = refreshFailed || !failed;
+        _actionNotice = failed
+            ? 'The server confirmed this delivery attempt was recorded as failed.'
+            : null;
+        _actionError = failed
+            ? refreshFailed
+                  ? 'The failure was confirmed by the server. Refresh delivery state when the connection is available.'
+                  : null
+            : stillOutForDelivery
+            ? 'The server still reports this delivery as active. Refresh before submitting again.'
+            : 'The failure response and refreshed delivery state do not match. Refresh before continuing.';
+      });
+      if (failed) _failureReasonController.clear();
+    } catch (error) {
+      RiderAssignment? latest;
+      try {
+        latest = await widget.repository.deliveryDetail(widget.jobId);
+      } catch (_) {
+        // An explicit successful refresh is required before another submission.
+      }
+      if (!mounted) return;
+
+      final failed = latest?.statusRaw == 'delivery_failed';
+      final stillOutForDelivery = latest?.statusRaw == 'out_for_delivery';
+      final uncertain = _isUncertainDeliveryFailure(error);
+      setState(() {
+        if (latest != null) _job = Future.value(latest);
+        if (failed) {
+          _failureFormVisible = false;
+          _failureRefreshRequired = false;
+          _actionNotice =
+              'The server confirmed this delivery attempt was recorded as failed.';
+          _actionError = null;
+        } else if (stillOutForDelivery && !uncertain) {
+          _failureFormVisible = true;
+          _failureRefreshRequired = false;
+          _actionError = _deliveryActionErrorMessage(error);
+        } else {
+          _failureFormVisible = false;
+          _failureRefreshRequired = true;
+          _actionError = uncertain
+              ? 'The result is uncertain. Refresh server state before submitting another failure report.'
+              : latest == null
+              ? 'Could not verify the delivery state. Refresh before trying again.'
+              : 'This delivery is no longer eligible for failure reporting.';
+        }
+      });
+    } finally {
+      if (mounted) setState(() => _actionPending = false);
+    }
+  }
+
+  bool _isUncertainDeliveryFailure(Object error) =>
+      error is ApiTimeoutException ||
+      error is ApiTransportException ||
+      error is ApiFormatException ||
+      (error is ApiHttpException && error.statusCode >= 500) ||
+      (error is AuthSessionChangedException &&
+          error.requestMayHaveReachedServer);
+
   Future<void> _chooseProofPhoto(ImageSource source) async {
     if (_actionPending) return;
     try {
@@ -332,6 +480,8 @@ class _RiderJobDetailPageState extends State<RiderJobDetailPage> {
     setState(() {
       _completionFormVisible = true;
       _completionRefreshRequired = false;
+      _failureFormVisible = false;
+      _failureRefreshRequired = false;
       _proofPhoto = null;
       _proofPhotoBytes = null;
       _proofPhotoError = null;
@@ -841,8 +991,22 @@ class _RiderJobDetailPageState extends State<RiderJobDetailPage> {
             icon: const Icon(Icons.refresh_rounded),
             label: const Text('Refresh delivery status'),
           )
+        else if (_failureRefreshRequired)
+          OutlinedButton.icon(
+            onPressed: _actionPending ? null : _refreshFailureState,
+            icon: _actionPending
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.refresh_rounded),
+            label: const Text('Refresh delivery state'),
+          )
         else if (_completionFormVisible)
           _deliveryCompletionForm(job)
+        else if (_failureFormVisible)
+          _deliveryFailureForm(job)
         else if (showStart)
           FilledButton.icon(
             onPressed: _actionPending ? null : _startDelivery,
@@ -870,6 +1034,12 @@ class _RiderJobDetailPageState extends State<RiderJobDetailPage> {
                 onPressed: _actionPending ? null : _openDeliveryCompletionForm,
                 icon: const Icon(Icons.task_alt_rounded),
                 label: const Text('Complete Delivery'),
+              ),
+              const SizedBox(height: 8),
+              OutlinedButton.icon(
+                onPressed: _actionPending ? null : _openDeliveryFailureForm,
+                icon: const Icon(Icons.report_gmailerrorred_outlined),
+                label: const Text('Report Failed Delivery'),
               ),
             ],
           )
@@ -1006,6 +1176,76 @@ class _RiderJobDetailPageState extends State<RiderJobDetailPage> {
                 _actionPending
                     ? 'Uploading proof and confirming…'
                     : 'Confirm delivery',
+              ),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+
+  Widget _deliveryFailureForm(RiderAssignment job) => Form(
+    key: _deliveryFailureFormKey,
+    child: Card(
+      color: Colors.white,
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              'Report failed delivery',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: 8),
+            TextFormField(
+              controller: _failureReasonController,
+              enabled: !_actionPending,
+              maxLength: 500,
+              minLines: 2,
+              maxLines: 4,
+              textCapitalization: TextCapitalization.sentences,
+              decoration: const InputDecoration(
+                labelText: 'Failure reason',
+                hintText:
+                    'Explain why the recipient could not receive the parcel',
+                border: OutlineInputBorder(),
+              ),
+              validator: (value) {
+                final reason = value?.trim() ?? '';
+                if (reason.isEmpty) return 'Enter a failure reason.';
+                if (reason.length > 500) {
+                  return 'Failure reason must be 500 characters or fewer.';
+                }
+                return null;
+              },
+            ),
+            const SizedBox(height: 8),
+            OutlinedButton(
+              onPressed: _actionPending
+                  ? null
+                  : () => setState(() {
+                      _failureFormVisible = false;
+                      _failureReasonController.clear();
+                      _actionError = null;
+                      _actionNotice = null;
+                    }),
+              child: const Text('Cancel'),
+            ),
+            const SizedBox(height: 8),
+            FilledButton.icon(
+              onPressed: _actionPending
+                  ? null
+                  : () => _reportDeliveryFailure(job),
+              icon: _actionPending
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.report_outlined),
+              label: Text(
+                _actionPending ? 'Submitting report…' : 'Submit failure report',
               ),
             ),
           ],

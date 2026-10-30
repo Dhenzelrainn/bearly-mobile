@@ -101,6 +101,21 @@ class RiderRepository {
     ),
   );
 
+  Future<RiderAssignment> failDelivery(
+    String shipmentNo, {
+    required String failureReason,
+  }) async => RiderAssignment.fromJson(
+    _data(
+      await _authService.requestWithSession<Object?>(
+        method: AuthenticatedRequestMethod.post,
+        path:
+            '/api/mobile/rider/deliveries/${Uri.encodeComponent(shipmentNo)}/fail',
+        body: {'failure_reason': failureReason.trim()},
+        parse: (response) => response,
+      ),
+    ),
+  );
+
   Future<RiderDeliveryCompletion> deliveryCompletionStatus(
     String shipmentNo,
   ) async => RiderDeliveryCompletion.fromJson(

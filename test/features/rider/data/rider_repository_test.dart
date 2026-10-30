@@ -272,6 +272,48 @@ void main() {
       expect(requests.single.headers['authorization'], 'Bearer rider-token');
     });
 
+    test(
+      'posts a trimmed failed-delivery reason with Rider session auth',
+      () async {
+        late http.Request submitted;
+        final service = _authService((request) async {
+          submitted = request;
+          return http.Response(
+            jsonEncode({
+              'message': 'Failed delivery attempt recorded.',
+              'data': {
+                ..._deliveryPayload('Delivery Failed', canStart: false),
+                'status_raw': 'delivery_failed',
+                'parcels': [
+                  {
+                    'parcel_no': 'P-200',
+                    'status': 'failed',
+                    'size_class': 'small',
+                    'weight_kg': 1.2,
+                  },
+                ],
+              },
+            }),
+            200,
+          );
+        });
+        final repository = RiderRepository(authService: service);
+
+        final failed = await repository.failDelivery(
+          'SH-200',
+          failureReason: '  Recipient unavailable  ',
+        );
+
+        expect(failed.statusRaw, 'delivery_failed');
+        expect(submitted.method, 'POST');
+        expect(submitted.url.path, '/api/mobile/rider/deliveries/SH-200/fail');
+        expect(jsonDecode(submitted.body), {
+          'failure_reason': 'Recipient unavailable',
+        });
+        expect(submitted.headers['authorization'], 'Bearer rider-token');
+      },
+    );
+
     test('uploads private delivery proof and parses COD completion', () async {
       final requests = <http.Request>[];
       final service = _authService((request) async {

@@ -125,6 +125,7 @@ void main() {
     expect(find.text('P-20'), findsOneWidget);
     expect(find.text('Delivery Details'), findsOneWidget);
     expect(find.byType(FilledButton), findsNothing);
+    expect(find.text('Report Failed Delivery'), findsNothing);
   });
 
   testWidgets('eligible delivery starts and refreshes server-confirmed state', (
@@ -259,6 +260,155 @@ void main() {
     expect(find.text('This delivery is out for delivery.'), findsOneWidget);
     expect(find.text('Start Delivery'), findsNothing);
   });
+
+  testWidgets(
+    'reports a failed delivery with a required reason and refreshes server state',
+    (tester) async {
+      tester.view.physicalSize = const Size(800, 1600);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final requests = <http.Request>[];
+      await tester.pumpWidget(
+        MaterialApp(
+          home: RiderJobDetailPage(
+            repository: _repository((request) async {
+              requests.add(request);
+              if (request.method == 'POST') {
+                return http.Response(
+                  jsonEncode({
+                    'message': 'Failed delivery attempt recorded.',
+                    'data': {
+                      ..._deliveryPayload('Delivery Failed', canStart: false),
+                      'status_raw': 'delivery_failed',
+                    },
+                  }),
+                  200,
+                );
+              }
+              final status = requests.any((request) => request.method == 'POST')
+                  ? 'Delivery Failed'
+                  : 'Out for Delivery';
+              return http.Response(
+                jsonEncode({
+                  'data': {
+                    ..._deliveryPayload(status, canStart: false),
+                    if (status == 'Delivery Failed')
+                      'status_raw': 'delivery_failed',
+                  },
+                }),
+                200,
+              );
+            }),
+            kind: RiderAssignmentKind.delivery,
+            jobId: 'SH-20',
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.ensureVisible(find.text('Report Failed Delivery'));
+      await tester.tap(find.text('Report Failed Delivery'));
+      await tester.pumpAndSettle();
+      expect(find.text('Failure reason'), findsOneWidget);
+
+      await tester.ensureVisible(find.text('Submit failure report'));
+      await tester.tap(find.text('Submit failure report'));
+      await tester.pumpAndSettle();
+      expect(find.text('Enter a failure reason.'), findsOneWidget);
+      expect(requests.where((request) => request.method == 'POST'), isEmpty);
+
+      await tester.enterText(
+        find.byType(TextFormField).last,
+        'Recipient unavailable',
+      );
+      await tester.ensureVisible(find.text('Submit failure report'));
+      await tester.tap(find.text('Submit failure report'));
+      await tester.pumpAndSettle();
+
+      expect(requests.map((request) => request.method), ['GET', 'POST', 'GET']);
+      expect(requests[1].url.path, '/api/mobile/rider/deliveries/SH-20/fail');
+      expect(jsonDecode(requests[1].body), {
+        'failure_reason': 'Recipient unavailable',
+      });
+      expect(
+        find.text(
+          'The server confirmed this delivery attempt was recorded as failed.',
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('Report Failed Delivery'), findsNothing);
+      expect(find.text('Complete Delivery'), findsNothing);
+    },
+  );
+
+  testWidgets(
+    'uncertain failed-delivery result requires an explicit refresh before retry',
+    (tester) async {
+      tester.view.physicalSize = const Size(800, 1600);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final requests = <http.Request>[];
+      await tester.pumpWidget(
+        MaterialApp(
+          home: RiderJobDetailPage(
+            repository: _repository((request) async {
+              requests.add(request);
+              if (request.method == 'POST') {
+                return http.Response(
+                  jsonEncode({'message': 'server error'}),
+                  500,
+                );
+              }
+              return http.Response(
+                jsonEncode({
+                  'data': _deliveryPayload('Out for Delivery', canStart: false),
+                }),
+                200,
+              );
+            }),
+            kind: RiderAssignmentKind.delivery,
+            jobId: 'SH-20',
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.ensureVisible(find.text('Report Failed Delivery'));
+      await tester.tap(find.text('Report Failed Delivery'));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byType(TextFormField).last,
+        'Recipient unavailable',
+      );
+      await tester.ensureVisible(find.text('Submit failure report'));
+      await tester.tap(find.text('Submit failure report'));
+      await tester.pumpAndSettle();
+
+      expect(requests.map((request) => request.method), ['GET', 'POST', 'GET']);
+      expect(find.text('Refresh delivery state'), findsOneWidget);
+      expect(find.text('Submit failure report'), findsNothing);
+
+      await tester.tap(find.text('Refresh delivery state'));
+      await tester.pumpAndSettle();
+      expect(requests.map((request) => request.method), [
+        'GET',
+        'POST',
+        'GET',
+        'GET',
+      ]);
+      expect(find.text('Submit failure report'), findsOneWidget);
+      expect(
+        find.textContaining('server confirms this delivery is still active'),
+        findsOneWidget,
+      );
+      expect(
+        requests.where((request) => request.method == 'POST'),
+        hasLength(1),
+      );
+    },
+  );
 
   testWidgets(
     'delivery completion form validates proof and COD before explicit upload',
@@ -989,6 +1139,7 @@ Map<String, Object?> _deliveryPayload(
       'status': switch (status) {
         'Out for Delivery' => 'out_for_delivery',
         'Delivered' => 'delivered',
+        'Delivery Failed' => 'failed',
         _ => 'dispatched',
       },
       'size_class': 'small',
