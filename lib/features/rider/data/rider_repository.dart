@@ -116,6 +116,18 @@ class RiderRepository {
     ),
   );
 
+  Future<RiderAssignment> retryDelivery(String shipmentNo) async =>
+      RiderAssignment.fromJson(
+        _data(
+          await _authService.requestWithSession<Object?>(
+            method: AuthenticatedRequestMethod.post,
+            path:
+                '/api/mobile/rider/deliveries/${Uri.encodeComponent(shipmentNo)}/retry',
+            parse: (response) => response,
+          ),
+        ),
+      );
+
   Future<RiderDeliveryCompletion> deliveryCompletionStatus(
     String shipmentNo,
   ) async => RiderDeliveryCompletion.fromJson(

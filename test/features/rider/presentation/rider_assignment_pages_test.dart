@@ -1090,6 +1090,211 @@ void main() {
     expect(find.textContaining('Could not load assigned jobs'), findsOneWidget);
     expect(find.text('Retry'), findsOneWidget);
   });
+
+  testWidgets('eligible failed delivery retries and refreshes server state', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(800, 1400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final requests = <http.Request>[];
+    var retried = false;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: RiderJobDetailPage(
+          repository: _repository((request) async {
+            requests.add(request);
+            if (request.method == 'POST') {
+              retried = true;
+              return http.Response(
+                jsonEncode({
+                  'message': 'Delivery retry started.',
+                  'data': _deliveryPayload('Out for Delivery', canStart: false),
+                }),
+                200,
+              );
+            }
+            return http.Response(
+              jsonEncode({
+                'data': _deliveryPayload(
+                  retried ? 'Out for Delivery' : 'Delivery Failed',
+                  canStart: false,
+                  canRetry: !retried,
+                ),
+              }),
+              200,
+            );
+          }),
+          kind: RiderAssignmentKind.delivery,
+          jobId: 'SH-20',
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Retry Delivery'), findsOneWidget);
+    expect(find.text('Complete Delivery'), findsNothing);
+    await tester.ensureVisible(find.text('Retry Delivery'));
+    await tester.tap(find.text('Retry Delivery'));
+    await tester.pumpAndSettle();
+
+    expect(requests.map((request) => request.method), ['GET', 'POST', 'GET']);
+    expect(requests[1].url.path, '/api/mobile/rider/deliveries/SH-20/retry');
+    expect(find.text('This delivery is out for delivery.'), findsOneWidget);
+    expect(find.text('The server confirmed this delivery is out for delivery again.'), findsOneWidget);
+    expect(find.text('Complete Delivery'), findsOneWidget);
+    expect(find.text('Report Failed Delivery'), findsOneWidget);
+    expect(find.text('Retry Delivery'), findsNothing);
+  });
+
+  testWidgets('future retry schedule hides the action until refreshed eligibility', (
+    tester,
+  ) async {
+    final requests = <http.Request>[];
+    var refreshed = false;
+    final futureSchedule = DateTime.now()
+        .add(const Duration(days: 1))
+        .toUtc()
+        .toIso8601String();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: RiderJobDetailPage(
+          repository: _repository((request) async {
+            requests.add(request);
+            if (request.method == 'GET' && requests.length > 1) {
+              refreshed = true;
+            }
+            final eligible = refreshed;
+            return http.Response(
+              jsonEncode({
+                'data': _deliveryPayload(
+                  'Delivery Failed',
+                  canStart: false,
+                  canRetry: eligible,
+                  retryAvailableAt: eligible ? null : futureSchedule,
+                  retryUnavailableReason: eligible
+                      ? null
+                      : 'Retry is scheduled for a later time.',
+                ),
+              }),
+              200,
+            );
+          }),
+          kind: RiderAssignmentKind.delivery,
+          jobId: 'SH-20',
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('Retry is scheduled for'), findsOneWidget);
+    expect(find.text('Retry Delivery'), findsNothing);
+    await tester.tap(find.text('Refresh delivery state'));
+    await tester.pumpAndSettle();
+
+    expect(requests.where((request) => request.method == 'GET'), hasLength(2));
+    expect(find.text('Retry Delivery'), findsOneWidget);
+  });
+
+  testWidgets('uncertain retry is reconciled without replaying the mutation', (
+    tester,
+  ) async {
+    final requests = <http.Request>[];
+    var retried = false;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: RiderJobDetailPage(
+          repository: _repository((request) async {
+            requests.add(request);
+            if (request.method == 'POST') {
+              retried = true;
+              return http.Response(
+                jsonEncode({'message': 'The connection timed out.'}),
+                504,
+              );
+            }
+            return http.Response(
+              jsonEncode({
+                'data': _deliveryPayload(
+                  retried ? 'Out for Delivery' : 'Delivery Failed',
+                  canStart: false,
+                  canRetry: !retried,
+                ),
+              }),
+              200,
+            );
+          }),
+          kind: RiderAssignmentKind.delivery,
+          jobId: 'SH-20',
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Retry Delivery'));
+    await tester.tap(find.text('Retry Delivery'));
+    await tester.pumpAndSettle();
+
+    expect(requests.map((request) => request.method), ['GET', 'POST', 'GET']);
+    expect(find.text('The server confirmed this delivery is out for delivery again.'), findsOneWidget);
+    expect(find.text('Retry Delivery'), findsNothing);
+    expect(find.text('Complete Delivery'), findsOneWidget);
+  });
+
+  testWidgets('retry button disables while a request is pending', (tester) async {
+    tester.view.physicalSize = const Size(800, 1400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final requests = <http.Request>[];
+    final retryResponse = Completer<http.Response>();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: RiderJobDetailPage(
+          repository: _repository((request) async {
+            requests.add(request);
+            if (request.method == 'POST') return retryResponse.future;
+            return http.Response(
+              jsonEncode({
+                'data': _deliveryPayload(
+                  'Delivery Failed',
+                  canStart: false,
+                  canRetry: true,
+                ),
+              }),
+              200,
+            );
+          }),
+          kind: RiderAssignmentKind.delivery,
+          jobId: 'SH-20',
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Retry Delivery'));
+    await tester.tap(find.text('Retry Delivery'));
+    await tester.pump();
+
+    final retryButton = tester.widget<FilledButton>(
+      find.ancestor(
+        of: find.text('Retrying delivery…'),
+        matching: find.byType(FilledButton),
+      ),
+    );
+    expect(retryButton.onPressed, isNull);
+    expect(requests.where((request) => request.method == 'POST'), hasLength(1));
+
+    retryResponse.complete(
+      http.Response(
+        jsonEncode({
+          'data': _deliveryPayload('Out for Delivery', canStart: false),
+        }),
+        200,
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(requests.where((request) => request.method == 'POST'), hasLength(1));
+  });
 }
 
 Map<String, Object?> _pickupPayload(String statusRaw) => {
@@ -1116,12 +1321,18 @@ Map<String, Object?> _pickupPayload(String statusRaw) => {
 Map<String, Object?> _deliveryPayload(
   String status, {
   required bool canStart,
+  bool canRetry = false,
+  String? retryAvailableAt,
+  String? retryUnavailableReason,
 }) => {
   'kind': 'delivery',
   'id': 'SH-20',
   'title': 'Buyer Rae',
   'status': status,
   'can_start_delivery': canStart,
+  'can_retry': canRetry,
+  'retry_available_at': retryAvailableAt,
+  'retry_unavailable_reason': retryUnavailableReason,
   'cod_due_minor': 10000,
   'requires_cod_collection': true,
   'address': 'Quezon City',

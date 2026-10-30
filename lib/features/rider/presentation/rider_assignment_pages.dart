@@ -171,6 +171,7 @@ class _RiderJobDetailPageState extends State<RiderJobDetailPage> {
   String _waybillScanMethod = 'manual';
   bool _actionPending = false;
   bool _deliveryRefreshRequired = false;
+  bool _retryRefreshRequired = false;
   bool _completionFormVisible = false;
   bool _completionRefreshRequired = false;
   bool _failureFormVisible = false;
@@ -194,6 +195,7 @@ class _RiderJobDetailPageState extends State<RiderJobDetailPage> {
   void _retry() => setState(() {
     _job = _load();
     _deliveryRefreshRequired = false;
+    _retryRefreshRequired = false;
     _failureRefreshRequired = false;
     _actionError = null;
   });
@@ -421,6 +423,126 @@ class _RiderJobDetailPageState extends State<RiderJobDetailPage> {
     } finally {
       if (mounted) setState(() => _actionPending = false);
     }
+  }
+
+  Future<void> _retryDelivery(RiderAssignment job) async {
+    if (_actionPending ||
+        job.statusRaw != 'delivery_failed' ||
+        !job.canRetry) {
+      return;
+    }
+
+    setState(() {
+      _actionPending = true;
+      _actionError = null;
+      _actionNotice = null;
+      _retryRefreshRequired = false;
+    });
+
+    try {
+      final response = await widget.repository.retryDelivery(widget.jobId);
+      RiderAssignment latest;
+      var refreshFailed = false;
+      try {
+        latest = await widget.repository.deliveryDetail(widget.jobId);
+      } catch (_) {
+        latest = response;
+        refreshFailed = true;
+      }
+      if (!mounted) return;
+
+      final retried = latest.statusRaw == 'out_for_delivery';
+      setState(() {
+        _job = Future.value(latest);
+        _retryRefreshRequired = refreshFailed || !retried;
+        _actionNotice = retried
+            ? 'The server confirmed this delivery is out for delivery again.'
+            : null;
+        _actionError = retried
+            ? refreshFailed
+                  ? 'The retry was confirmed. Refresh delivery state when the connection is available.'
+                  : null
+            : 'The retry response and refreshed delivery state do not match. Refresh before continuing.';
+      });
+    } catch (error) {
+      RiderAssignment? latest;
+      try {
+        latest = await widget.repository.deliveryDetail(widget.jobId);
+      } catch (_) {
+        // Require a successful state refresh before another retry submission.
+      }
+      if (!mounted) return;
+
+      final retried = latest?.statusRaw == 'out_for_delivery';
+      setState(() {
+        if (latest != null) _job = Future.value(latest);
+        if (retried) {
+          _retryRefreshRequired = false;
+          _actionNotice =
+              'The server confirmed this delivery is out for delivery again.';
+          _actionError = null;
+        } else if (latest == null) {
+          _retryRefreshRequired = true;
+          _actionError =
+              'The retry result is uncertain. Refresh server state before trying again.';
+        } else if (latest.statusRaw == 'delivery_failed') {
+          // The refreshed state confirms the retry did not commit. The button
+          // remains governed by the server's current can_retry value.
+          _retryRefreshRequired = false;
+          _actionError = _deliveryActionErrorMessage(error);
+        } else {
+          _retryRefreshRequired = true;
+          _actionError =
+              'This delivery is no longer eligible for retry. Refresh before continuing.';
+        }
+      });
+    } finally {
+      if (mounted) setState(() => _actionPending = false);
+    }
+  }
+
+  Future<void> _refreshRetryState() async {
+    if (_actionPending) return;
+    setState(() {
+      _actionPending = true;
+      _actionError = null;
+      _actionNotice = null;
+    });
+    try {
+      final latest = await widget.repository.deliveryDetail(widget.jobId);
+      if (!mounted) return;
+      final retried = latest.statusRaw == 'out_for_delivery';
+      setState(() {
+        _job = Future.value(latest);
+        _retryRefreshRequired = false;
+        _actionNotice = retried
+            ? 'The server confirmed this delivery is out for delivery again.'
+            : latest.canRetry
+            ? 'The server confirms this delivery is ready to retry.'
+            : null;
+        _actionError = retried || latest.canRetry
+            ? null
+            : latest.retryUnavailableReason.isNotEmpty
+            ? latest.retryUnavailableReason
+            : 'The current delivery state does not allow a retry.';
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _retryRefreshRequired = true;
+        _actionError = _deliveryActionErrorMessage(error);
+      });
+    } finally {
+      if (mounted) setState(() => _actionPending = false);
+    }
+  }
+
+  String _retryAvailabilityLabel(DateTime dateTime) {
+    final local = dateTime.toLocal();
+    final localizations = MaterialLocalizations.of(context);
+    final date = localizations.formatMediumDate(local);
+    final time = localizations.formatTimeOfDay(TimeOfDay.fromDateTime(local));
+    return '$date at $time';
   }
 
   bool _isUncertainDeliveryFailure(Object error) =>
@@ -991,6 +1113,18 @@ class _RiderJobDetailPageState extends State<RiderJobDetailPage> {
             icon: const Icon(Icons.refresh_rounded),
             label: const Text('Refresh delivery status'),
           )
+        else if (_retryRefreshRequired)
+          OutlinedButton.icon(
+            onPressed: _actionPending ? null : _refreshRetryState,
+            icon: _actionPending
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.refresh_rounded),
+            label: const Text('Refresh delivery state'),
+          )
         else if (_failureRefreshRequired)
           OutlinedButton.icon(
             onPressed: _actionPending ? null : _refreshFailureState,
@@ -1041,6 +1175,45 @@ class _RiderJobDetailPageState extends State<RiderJobDetailPage> {
                 icon: const Icon(Icons.report_gmailerrorred_outlined),
                 label: const Text('Report Failed Delivery'),
               ),
+            ],
+          )
+        else if (job.statusRaw == 'delivery_failed')
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _ActionMessage(
+                message: job.canRetry
+                    ? 'The latest delivery attempt failed. Another attempt is available.'
+                    : job.retryAvailableAt != null
+                    ? 'The latest delivery attempt failed. Retry is scheduled for ${_retryAvailabilityLabel(job.retryAvailableAt!)}.'
+                    : job.retryUnavailableReason.isNotEmpty
+                    ? job.retryUnavailableReason
+                    : 'The latest delivery attempt failed. Retry is unavailable for the current server state.',
+                isError: false,
+              ),
+              if (job.canRetry) ...[
+                const SizedBox(height: 8),
+                FilledButton.icon(
+                  onPressed: _actionPending ? null : () => _retryDelivery(job),
+                  icon: _actionPending
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.refresh_rounded),
+                  label: Text(
+                    _actionPending ? 'Retrying delivery…' : 'Retry Delivery',
+                  ),
+                ),
+              ] else if (job.retryAvailableAt != null) ...[
+                const SizedBox(height: 8),
+                OutlinedButton.icon(
+                  onPressed: _actionPending ? null : _refreshRetryState,
+                  icon: const Icon(Icons.refresh_rounded),
+                  label: const Text('Refresh delivery state'),
+                ),
+              ],
             ],
           )
         else if (job.statusRaw == 'delivered' && _actionNotice == null)

@@ -62,6 +62,9 @@ class RiderAssignment {
     required this.status,
     this.statusRaw = '',
     this.canStartDelivery = false,
+    this.canRetry = false,
+    this.retryAvailableAt,
+    this.retryUnavailableReason = '',
     this.codDueMinor = 0,
     this.requiresCodCollection = false,
     required this.address,
@@ -83,6 +86,9 @@ class RiderAssignment {
   final String status;
   final String statusRaw;
   final bool canStartDelivery;
+  final bool canRetry;
+  final DateTime? retryAvailableAt;
+  final String retryUnavailableReason;
   final int codDueMinor;
   final bool requiresCodCollection;
   final String address;
@@ -149,6 +155,9 @@ class RiderAssignment {
           ? statusRaw
           : status.toLowerCase().replaceAll(RegExp(r'\s+'), '_'),
       canStartDelivery: map['can_start_delivery'] == true,
+      canRetry: map['can_retry'] == true,
+      retryAvailableAt: DateTime.tryParse(_string(map['retry_available_at'])),
+      retryUnavailableReason: _string(map['retry_unavailable_reason']),
       codDueMinor: _integer(map['cod_due_minor']),
       requiresCodCollection: map['requires_cod_collection'] == true,
       address: _string(map['address']),

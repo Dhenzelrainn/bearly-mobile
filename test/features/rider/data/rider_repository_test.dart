@@ -314,6 +314,33 @@ void main() {
       },
     );
 
+    test('posts a retry to the authenticated delivery retry endpoint', () async {
+      late http.Request submitted;
+      final service = _authService((request) async {
+        submitted = request;
+        return http.Response(
+          jsonEncode({
+            'message': 'Delivery retry started.',
+            'data': {
+              ..._deliveryPayload('Out for Delivery', canStart: false),
+              'status_raw': 'out_for_delivery',
+              'can_retry': false,
+            },
+          }),
+          200,
+        );
+      });
+      final repository = RiderRepository(authService: service);
+
+      final retry = await repository.retryDelivery('SH-200');
+
+      expect(retry.statusRaw, 'out_for_delivery');
+      expect(retry.canRetry, isFalse);
+      expect(submitted.method, 'POST');
+      expect(submitted.url.path, '/api/mobile/rider/deliveries/SH-200/retry');
+      expect(submitted.headers['authorization'], 'Bearer rider-token');
+    });
+
     test('uploads private delivery proof and parses COD completion', () async {
       final requests = <http.Request>[];
       final service = _authService((request) async {
@@ -529,6 +556,9 @@ Map<String, Object?> _deliveryPayload(
   'title': 'Buyer B',
   'status': status,
   'can_start_delivery': canStart,
+  'can_retry': false,
+  'retry_available_at': null,
+  'retry_unavailable_reason': null,
   'cod_due_minor': 10000,
   'requires_cod_collection': true,
   'address': 'BGC, Taguig',
