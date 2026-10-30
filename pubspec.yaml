@@ -16,6 +16,7 @@ dependencies:
   http: ^1.5.0
   flutter_secure_storage: ^10.3.4
   image_picker: ^1.2.2
+  mobile_scanner: ^7.4.2
   phone_numbers_parser: ^9.0.26
   shared_preferences: ^2.5.5
 

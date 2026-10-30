@@ -6,6 +6,7 @@ import 'package:bearly_mobile/features/auth/models/account_role.dart';
 import 'package:bearly_mobile/features/rider/data/rider_repository.dart';
 import 'package:bearly_mobile/features/rider/models/rider_assignment.dart';
 import 'package:bearly_mobile/features/rider/presentation/rider_assignment_pages.dart';
+import 'package:bearly_mobile/features/rider/presentation/rider_waybill_scanner_page.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -172,6 +173,7 @@ void main() {
     await tester.tap(find.text('Accept pickup'));
     await tester.pumpAndSettle();
     expect(find.byType(TextFormField), findsOneWidget);
+    expect(find.text('Scan Barcode'), findsOneWidget);
     expect(
       find.text('The server confirmed that this pickup is accepted.'),
       findsOneWidget,
@@ -257,6 +259,248 @@ void main() {
     );
   });
 
+  testWidgets(
+    'scanner is hidden until pickup acceptance and after collection',
+    (tester) async {
+      tester.view.physicalSize = const Size(800, 1000);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      for (final status in ['assigned', 'picked_up', 'completed']) {
+        await tester.pumpWidget(
+          MaterialApp(
+            home: RiderJobDetailPage(
+              repository: _repository(
+                (_) async => http.Response(
+                  jsonEncode({'data': _pickupPayload(status)}),
+                  200,
+                ),
+              ),
+              kind: RiderAssignmentKind.pickup,
+              jobId: 'PU-10',
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.text('Scan Barcode'), findsNothing, reason: status);
+      }
+    },
+  );
+
+  testWidgets('scan fills the field once and does not submit confirmation', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(800, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final requests = <http.Request>[];
+    var status = 'accepted';
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: RiderJobDetailPage(
+          repository: _repository((request) async {
+            requests.add(request);
+            if (request.method == 'POST') status = 'picked_up';
+            return http.Response(
+              jsonEncode({'data': _pickupPayload(status)}),
+              200,
+            );
+          }),
+          kind: RiderAssignmentKind.pickup,
+          jobId: 'PU-10',
+          scannerPreviewBuilder: _fakeScannerPreview,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Scan Barcode'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Decode duplicate values'));
+    await tester.pumpAndSettle();
+
+    expect(
+      tester.widget<TextFormField>(find.byType(TextFormField)).controller!.text,
+      'BRLY-CAMERA-WAYBILL-10',
+    );
+    expect(find.text('Verify waybill and confirm pickup'), findsOneWidget);
+    expect(requests.map((request) => request.method), ['GET']);
+
+    await tester.tap(find.text('Verify waybill and confirm pickup'));
+    await tester.pumpAndSettle();
+    expect(requests.map((request) => request.method), ['GET', 'POST']);
+    expect(jsonDecode(requests.last.body), {
+      'waybill_identifier': 'BRLY-CAMERA-WAYBILL-10',
+      'scan_method': 'camera',
+    });
+  });
+
+  testWidgets('manually correcting a scanned value uses manual confirmation', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(800, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final requests = <http.Request>[];
+    var status = 'accepted';
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: RiderJobDetailPage(
+          repository: _repository((request) async {
+            requests.add(request);
+            if (request.method == 'POST') status = 'picked_up';
+            return http.Response(
+              jsonEncode({'data': _pickupPayload(status)}),
+              200,
+            );
+          }),
+          kind: RiderAssignmentKind.pickup,
+          jobId: 'PU-10',
+          scannerPreviewBuilder: _fakeScannerPreview,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Scan Barcode'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Decode duplicate values'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextFormField), 'CORRECTED-MANUALLY');
+    await tester.tap(find.text('Verify waybill and confirm pickup'));
+    await tester.pumpAndSettle();
+
+    expect(jsonDecode(requests.last.body), {
+      'waybill_identifier': 'CORRECTED-MANUALLY',
+      'scan_method': 'manual',
+    });
+  });
+
+  testWidgets('empty scan stays open and cancellation preserves manual entry', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(800, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: RiderJobDetailPage(
+          repository: _repository(
+            (_) async => http.Response(
+              jsonEncode({'data': _pickupPayload('accepted')}),
+              200,
+            ),
+          ),
+          kind: RiderAssignmentKind.pickup,
+          jobId: 'PU-10',
+          scannerPreviewBuilder: _fakeScannerPreview,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Scan Barcode'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Emit empty barcode'));
+    await tester.pumpAndSettle();
+    expect(
+      find.textContaining('No readable Code 128 value was found'),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.byTooltip('Cancel scan'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextFormField), 'MANUAL-WAYBILL-10');
+    expect(
+      tester.widget<TextFormField>(find.byType(TextFormField)).controller!.text,
+      'MANUAL-WAYBILL-10',
+    );
+    expect(find.text('Verify waybill and confirm pickup'), findsOneWidget);
+  });
+
+  testWidgets('camera permission denial returns to manual waybill entry', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(800, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: RiderJobDetailPage(
+          repository: _repository(
+            (_) async => http.Response(
+              jsonEncode({'data': _pickupPayload('accepted')}),
+              200,
+            ),
+          ),
+          kind: RiderAssignmentKind.pickup,
+          jobId: 'PU-10',
+          scannerPreviewBuilder: _fakeScannerPreview,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Scan Barcode'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Deny camera permission'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Camera permission was denied'), findsOneWidget);
+
+    await tester.tap(find.text('Return to manual entry'));
+    await tester.pumpAndSettle();
+    expect(find.byType(TextFormField), findsOneWidget);
+    await tester.enterText(find.byType(TextFormField), 'MANUAL-WAYBILL-20');
+    expect(find.text('Verify waybill and confirm pickup'), findsOneWidget);
+  });
+
+  testWidgets('canceling scanner returns without changing the waybill field', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(800, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: RiderJobDetailPage(
+          repository: _repository(
+            (_) async => http.Response(
+              jsonEncode({'data': _pickupPayload('accepted')}),
+              200,
+            ),
+          ),
+          kind: RiderAssignmentKind.pickup,
+          jobId: 'PU-10',
+          scannerPreviewBuilder: _fakeScannerPreview,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextFormField), 'MANUAL-BEFORE-SCAN');
+
+    await tester.tap(find.text('Scan Barcode'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Cancel scan'));
+    await tester.pumpAndSettle();
+
+    expect(
+      tester.widget<TextFormField>(find.byType(TextFormField)).controller!.text,
+      'MANUAL-BEFORE-SCAN',
+    );
+  });
+
   testWidgets('failed job list request provides retry state', (tester) async {
     await tester.pumpWidget(
       MaterialApp(
@@ -282,6 +526,7 @@ Map<String, Object?> _pickupPayload(String statusRaw) => {
   'status': switch (statusRaw) {
     'accepted' => 'Accepted',
     'picked_up' => 'Picked Up',
+    'completed' => 'Completed',
     _ => 'Assigned',
   },
   'status_raw': statusRaw,
@@ -294,6 +539,34 @@ Map<String, Object?> _pickupPayload(String statusRaw) => {
   'instructions': '',
   'manifest': [],
 };
+
+Widget _fakeScannerPreview(
+  BuildContext context,
+  WaybillScannerCallbacks callbacks,
+) => Center(
+  child: Column(
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      TextButton(
+        onPressed: () {
+          callbacks.onBarcodeDetected('BRLY-CAMERA-WAYBILL-10');
+          callbacks.onBarcodeDetected('DUPLICATE-WAYBILL-IGNORED');
+        },
+        child: const Text('Decode duplicate values'),
+      ),
+      TextButton(
+        onPressed: () => callbacks.onBarcodeDetected(null),
+        child: const Text('Emit empty barcode'),
+      ),
+      TextButton(
+        onPressed: () => callbacks.onCameraError(
+          'Camera permission was denied. Allow camera access in device settings, or return to enter the waybill manually.',
+        ),
+        child: const Text('Deny camera permission'),
+      ),
+    ],
+  ),
+);
 
 RiderRepository _repository(
   Future<http.Response> Function(http.Request) handler,

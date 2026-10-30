@@ -6,6 +6,7 @@ import '../../../core/theme/bearly_theme.dart';
 import '../data/rider_repository.dart';
 import '../models/rider_assignment.dart';
 import '../widgets/rider_shared_widgets.dart';
+import 'rider_waybill_scanner_page.dart';
 
 class RiderAssignmentListPage extends StatefulWidget {
   const RiderAssignmentListPage({
@@ -136,11 +137,13 @@ class RiderJobDetailPage extends StatefulWidget {
     required this.repository,
     required this.kind,
     required this.jobId,
+    this.scannerPreviewBuilder,
   });
 
   final RiderRepository repository;
   final RiderAssignmentKind kind;
   final String jobId;
+  final WaybillScannerPreviewBuilder? scannerPreviewBuilder;
 
   @override
   State<RiderJobDetailPage> createState() => _RiderJobDetailPageState();
@@ -150,6 +153,7 @@ class _RiderJobDetailPageState extends State<RiderJobDetailPage> {
   late Future<RiderAssignment> _job;
   final _waybillFormKey = GlobalKey<FormState>();
   final _waybillController = TextEditingController();
+  String _waybillScanMethod = 'manual';
   bool _actionPending = false;
   String? _actionError;
   String? _actionNotice;
@@ -191,11 +195,33 @@ class _RiderJobDetailPageState extends State<RiderJobDetailPage> {
       action: () => widget.repository.confirmPickup(
         widget.jobId,
         waybillIdentifier: _waybillController.text,
+        scanMethod: _waybillScanMethod,
       ),
       isCommitted: (job) =>
           const {'picked_up', 'completed'}.contains(job.statusRaw),
       successMessage: 'The server confirmed collection of this pickup.',
     );
+  }
+
+  Future<void> _scanWaybill() async {
+    final value = await Navigator.of(context).push<String>(
+      MaterialPageRoute<String>(
+        builder: (_) => RiderWaybillScannerPage(
+          previewBuilder: widget.scannerPreviewBuilder,
+        ),
+      ),
+    );
+    if (!mounted || value == null) return;
+
+    _waybillController.value = TextEditingValue(
+      text: value,
+      selection: TextSelection.collapsed(offset: value.length),
+    );
+    setState(() {
+      _waybillScanMethod = 'camera';
+      _actionError = null;
+      _actionNotice = null;
+    });
   }
 
   Future<void> _performPickupAction({
@@ -439,11 +465,18 @@ class _RiderJobDetailPageState extends State<RiderJobDetailPage> {
                   ? 'Enter the waybill value to confirm collection.'
                   : null,
               onChanged: (_) => setState(() {
+                _waybillScanMethod = 'manual';
                 _actionError = null;
                 _actionNotice = null;
               }),
               onFieldSubmitted: (_) => _confirmPickup(),
             ),
+          ),
+          const SizedBox(height: 8),
+          OutlinedButton.icon(
+            onPressed: _actionPending ? null : _scanWaybill,
+            icon: const Icon(Icons.qr_code_scanner_rounded),
+            label: const Text('Scan Barcode'),
           ),
           const SizedBox(height: 8),
           FilledButton.icon(

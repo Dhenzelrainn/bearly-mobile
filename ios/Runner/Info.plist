@@ -25,7 +25,7 @@
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>NSCameraUsageDescription</key>
-	<string>Bearly uses the camera so you can capture registration documents.</string>
+	<string>Bearly uses the camera to capture registration documents and scan Rider waybills.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Bearly uses your photo library so you can select registration documents.</string>
 	<key>UILaunchStoryboardName</key>
