@@ -62,6 +62,8 @@ class RiderAssignment {
     required this.status,
     this.statusRaw = '',
     this.canStartDelivery = false,
+    this.codDueMinor = 0,
+    this.requiresCodCollection = false,
     required this.address,
     required this.parcelCount,
     this.contactName = '',
@@ -81,6 +83,8 @@ class RiderAssignment {
   final String status;
   final String statusRaw;
   final bool canStartDelivery;
+  final int codDueMinor;
+  final bool requiresCodCollection;
   final String address;
   final int parcelCount;
   final String contactName;
@@ -145,6 +149,8 @@ class RiderAssignment {
           ? statusRaw
           : status.toLowerCase().replaceAll(RegExp(r'\s+'), '_'),
       canStartDelivery: map['can_start_delivery'] == true,
+      codDueMinor: _integer(map['cod_due_minor']),
+      requiresCodCollection: map['requires_cod_collection'] == true,
       address: _string(map['address']),
       parcelCount: _integer(map['parcel_count']),
       contactName: _string(map['contact_name']),
@@ -158,6 +164,55 @@ class RiderAssignment {
       products: products,
     );
   }
+}
+
+class RiderDeliveryCompletion {
+  const RiderDeliveryCompletion({
+    required this.assignment,
+    required this.shipmentStatus,
+    required this.alreadyCompleted,
+    this.codCollection,
+  });
+
+  final RiderAssignment assignment;
+  final String shipmentStatus;
+  final bool alreadyCompleted;
+  final RiderCodCollection? codCollection;
+
+  factory RiderDeliveryCompletion.fromJson(Object? value) {
+    final map = _jsonMap(value, 'delivery completion');
+    final collection = map['cod_collection'];
+    return RiderDeliveryCompletion(
+      assignment: RiderAssignment.fromJson(map),
+      shipmentStatus: _string(map['shipment_status']),
+      alreadyCompleted: map['already_completed'] == true,
+      codCollection: collection == null
+          ? null
+          : RiderCodCollection.fromJson(_jsonMap(collection, 'COD collection')),
+    );
+  }
+}
+
+class RiderCodCollection {
+  const RiderCodCollection({
+    required this.status,
+    required this.amountDueMinor,
+    required this.amountCollectedMinor,
+    required this.discrepancyMinor,
+  });
+
+  final String status;
+  final int amountDueMinor;
+  final int amountCollectedMinor;
+  final int discrepancyMinor;
+
+  factory RiderCodCollection.fromJson(Map<String, Object?> value) =>
+      RiderCodCollection(
+        status: _string(value['status']),
+        amountDueMinor: _integer(value['amount_due_minor']),
+        amountCollectedMinor: _integer(value['amount_collected_minor']),
+        discrepancyMinor: _integer(value['discrepancy_minor']),
+      );
 }
 
 class RiderJobParcel {

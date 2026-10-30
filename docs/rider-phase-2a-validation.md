@@ -55,3 +55,15 @@ A read-only query explicitly targeted `bearly_latest_dev_import_20261028`. It ve
 - The earlier Phase 2A record was assignment #8 / pickup request #9 / shipment #10. The Phase 2B test used the distinct assignment, pickup request, shipment, parcel, and waybill above; the earlier completed job was not reused for the camera test.
 
 The camera decode and Flutter display are operator-reported physical-test results. The database check verifies only the record relationships and statuses listed above; it does not claim that either shipment has advanced through sorting or delivery.
+
+## Phase 3A physical delivery-start validation
+
+**Test date:** October 30, 2026<br>
+**Rider:** Mark Carlo A. Andasan (user #18)<br>
+**Logistics provider:** PB Sorting Center<br>
+**Dispatch batch:** `DSP-20261030-E6PPNVA2`<br>
+**Shipment:** #11<br>
+**Waybill:** `BRLY-0D2WODACCFYU3D08BG8C`<br>
+**Zone:** `PILA-02`
+
+The operator reported that the Rider Mobile started the assigned delivery through the Mobile API. Flutter displayed `Out for Delivery`, and Logistics Web displayed the same stage. The available test evidence records the shipment as still active and **not delivered**. No delivery completion or COD collection is claimed by this validation record.

@@ -1,12 +1,18 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../../../core/network/api_client.dart';
 import '../../../core/routes/app_route_names.dart';
 import '../../../core/theme/bearly_theme.dart';
+import '../../auth/data/auth_service.dart';
 import '../data/rider_repository.dart';
 import '../models/rider_assignment.dart';
 import '../widgets/rider_shared_widgets.dart';
 import 'rider_waybill_scanner_page.dart';
+
+typedef RiderProofPhotoPicker = Future<XFile?> Function(ImageSource source);
 
 class RiderAssignmentListPage extends StatefulWidget {
   const RiderAssignmentListPage({
@@ -138,12 +144,14 @@ class RiderJobDetailPage extends StatefulWidget {
     required this.kind,
     required this.jobId,
     this.scannerPreviewBuilder,
+    this.proofPhotoPicker,
   });
 
   final RiderRepository repository;
   final RiderAssignmentKind kind;
   final String jobId;
   final WaybillScannerPreviewBuilder? scannerPreviewBuilder;
+  final RiderProofPhotoPicker? proofPhotoPicker;
 
   @override
   State<RiderJobDetailPage> createState() => _RiderJobDetailPageState();
@@ -152,10 +160,18 @@ class RiderJobDetailPage extends StatefulWidget {
 class _RiderJobDetailPageState extends State<RiderJobDetailPage> {
   late Future<RiderAssignment> _job;
   final _waybillFormKey = GlobalKey<FormState>();
+  final _deliveryCompletionFormKey = GlobalKey<FormState>();
   final _waybillController = TextEditingController();
+  final _recipientNameController = TextEditingController();
+  final _codCollectedAmountController = TextEditingController();
+  XFile? _proofPhoto;
+  Uint8List? _proofPhotoBytes;
   String _waybillScanMethod = 'manual';
   bool _actionPending = false;
   bool _deliveryRefreshRequired = false;
+  bool _completionFormVisible = false;
+  bool _completionRefreshRequired = false;
+  String? _proofPhotoError;
   String? _actionError;
   String? _actionNotice;
 
@@ -180,6 +196,8 @@ class _RiderJobDetailPageState extends State<RiderJobDetailPage> {
   @override
   void dispose() {
     _waybillController.dispose();
+    _recipientNameController.dispose();
+    _codCollectedAmountController.dispose();
     super.dispose();
   }
 
@@ -264,6 +282,214 @@ class _RiderJobDetailPageState extends State<RiderJobDetailPage> {
       if (mounted) setState(() => _actionPending = false);
     }
   }
+
+  Future<void> _chooseProofPhoto(ImageSource source) async {
+    if (_actionPending) return;
+    try {
+      final photo = await (widget.proofPhotoPicker ?? _pickProofPhoto)(source);
+      if (photo == null || !mounted) return;
+
+      final extension = photo.name.contains('.')
+          ? photo.name.split('.').last.toLowerCase()
+          : '';
+      if (!const {'jpg', 'jpeg', 'png', 'webp'}.contains(extension)) {
+        setState(() => _proofPhotoError = 'Choose a JPG, PNG, or WebP photo.');
+        return;
+      }
+      final bytes = await photo.readAsBytes();
+      if (bytes.isEmpty) {
+        setState(() => _proofPhotoError = 'The selected photo is empty.');
+        return;
+      }
+      if (bytes.length > 10 * 1024 * 1024) {
+        setState(
+          () => _proofPhotoError = 'The photo must be 10 MB or smaller.',
+        );
+        return;
+      }
+      setState(() {
+        _proofPhoto = photo;
+        _proofPhotoBytes = bytes;
+        _proofPhotoError = null;
+        _actionError = null;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(
+        () => _proofPhotoError = 'Could not select a proof photo. Try again.',
+      );
+    }
+  }
+
+  Future<XFile?> _pickProofPhoto(ImageSource source) => ImagePicker().pickImage(
+    source: source,
+    maxWidth: 1920,
+    maxHeight: 1920,
+    imageQuality: 85,
+  );
+
+  void _openDeliveryCompletionForm() {
+    setState(() {
+      _completionFormVisible = true;
+      _completionRefreshRequired = false;
+      _proofPhoto = null;
+      _proofPhotoBytes = null;
+      _proofPhotoError = null;
+      _actionError = null;
+      _actionNotice = null;
+    });
+  }
+
+  void _clearDeliveryCompletionForm() {
+    _recipientNameController.clear();
+    _codCollectedAmountController.clear();
+    _proofPhoto = null;
+    _proofPhotoBytes = null;
+    _proofPhotoError = null;
+  }
+
+  Future<void> _refreshCompletionState() async {
+    if (_actionPending) return;
+    setState(() {
+      _actionPending = true;
+      _actionError = null;
+      _actionNotice = null;
+    });
+    try {
+      final latest = await widget.repository.deliveryCompletionStatus(
+        widget.jobId,
+      );
+      if (!mounted) return;
+      final delivered = latest.assignment.statusRaw == 'delivered';
+      final stillOutForDelivery =
+          latest.assignment.statusRaw == 'out_for_delivery';
+      setState(() {
+        _job = Future.value(latest.assignment);
+        _completionRefreshRequired = !delivered && !stillOutForDelivery;
+        _completionFormVisible = stillOutForDelivery;
+        _actionNotice = delivered
+            ? 'The server confirmed that your assigned parcels are delivered.'
+            : null;
+        _actionError = delivered
+            ? null
+            : stillOutForDelivery
+            ? 'The server confirms this delivery is still active. Review the form before retrying.'
+            : 'The current delivery state prevents a safe retry.';
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _completionRefreshRequired = true;
+        _actionError = _deliveryActionErrorMessage(error);
+      });
+    } finally {
+      if (mounted) setState(() => _actionPending = false);
+    }
+  }
+
+  Future<void> _completeDelivery(RiderAssignment job) async {
+    if (_actionPending || !_completionFormVisible) return;
+    final formValid =
+        _deliveryCompletionFormKey.currentState?.validate() ?? false;
+    if (!formValid) return;
+    if (_proofPhoto == null || _proofPhotoBytes == null) {
+      setState(
+        () => _proofPhotoError =
+            'Add a proof-of-delivery photo before confirming.',
+      );
+      return;
+    }
+
+    setState(() {
+      _actionPending = true;
+      _actionError = null;
+      _actionNotice = null;
+      _proofPhotoError = null;
+      _completionRefreshRequired = false;
+    });
+
+    try {
+      final submitted = await widget.repository.completeDelivery(
+        widget.jobId,
+        recipientName: _recipientNameController.text,
+        proofPhotoBytes: _proofPhotoBytes!,
+        proofPhotoName: _proofPhoto!.name,
+        codCollectedAmount: job.requiresCodCollection
+            ? _codCollectedAmountController.text
+            : null,
+      );
+      RiderDeliveryCompletion latest;
+      try {
+        latest = await widget.repository.deliveryCompletionStatus(widget.jobId);
+      } catch (_) {
+        // The multipart response itself is a server-confirmed completion.
+        latest = submitted;
+      }
+      if (!mounted) return;
+      final delivered = latest.assignment.statusRaw == 'delivered';
+      setState(() {
+        _job = Future.value(latest.assignment);
+        _completionFormVisible = !delivered;
+        _completionRefreshRequired = !delivered;
+        _actionNotice = delivered
+            ? (latest.codCollection?.status == 'disputed'
+                  ? 'Delivery completed. The COD difference was recorded for review.'
+                  : 'The server confirmed that your assigned parcels are delivered.')
+            : null;
+        _actionError = delivered
+            ? null
+            : 'The completion response and refreshed state do not match. Refresh before retrying.';
+      });
+      if (delivered) _clearDeliveryCompletionForm();
+    } catch (error) {
+      if (!_isUncertainDeliveryCompletion(error)) {
+        if (!mounted) return;
+        setState(() => _actionError = _deliveryActionErrorMessage(error));
+        return;
+      }
+
+      try {
+        final latest = await widget.repository.deliveryCompletionStatus(
+          widget.jobId,
+        );
+        if (!mounted) return;
+        final delivered = latest.assignment.statusRaw == 'delivered';
+        final stillOutForDelivery =
+            latest.assignment.statusRaw == 'out_for_delivery';
+        setState(() {
+          _job = Future.value(latest.assignment);
+          _completionRefreshRequired = !delivered && !stillOutForDelivery;
+          _completionFormVisible = !delivered && stillOutForDelivery;
+          _actionNotice = delivered
+              ? 'The server confirmed that your assigned parcels are delivered.'
+              : null;
+          _actionError = delivered
+              ? null
+              : stillOutForDelivery
+              ? 'The server confirms the delivery is still active. Review the form before retrying.'
+              : 'The current delivery state prevents a safe retry. Refresh before continuing.';
+        });
+        if (delivered) _clearDeliveryCompletionForm();
+      } catch (refreshError) {
+        if (!mounted) return;
+        setState(() {
+          _completionRefreshRequired = true;
+          _actionError =
+              'The upload result is uncertain. Refresh server state before retrying.';
+        });
+      }
+    } finally {
+      if (mounted) setState(() => _actionPending = false);
+    }
+  }
+
+  bool _isUncertainDeliveryCompletion(Object error) =>
+      error is ApiTimeoutException ||
+      error is ApiTransportException ||
+      error is ApiFormatException ||
+      (error is ApiHttpException && error.statusCode >= 500) ||
+      (error is AuthSessionChangedException &&
+          error.requestMayHaveReachedServer);
 
   String _deliveryActionErrorMessage(Object error) {
     if (error is ApiHttpException && error.responseData is Map) {
@@ -597,12 +823,26 @@ class _RiderJobDetailPageState extends State<RiderJobDetailPage> {
           _ActionMessage(message: _actionError!, isError: true),
           const SizedBox(height: 10),
         ],
-        if (_deliveryRefreshRequired)
+        if (_completionRefreshRequired)
+          OutlinedButton.icon(
+            onPressed: _actionPending ? null : _refreshCompletionState,
+            icon: _actionPending
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.refresh_rounded),
+            label: const Text('Refresh delivery state'),
+          )
+        else if (_deliveryRefreshRequired)
           OutlinedButton.icon(
             onPressed: _actionPending ? null : _retry,
             icon: const Icon(Icons.refresh_rounded),
             label: const Text('Refresh delivery status'),
           )
+        else if (_completionFormVisible)
+          _deliveryCompletionForm(job)
         else if (showStart)
           FilledButton.icon(
             onPressed: _actionPending ? null : _startDelivery,
@@ -618,13 +858,164 @@ class _RiderJobDetailPageState extends State<RiderJobDetailPage> {
             ),
           )
         else if (job.statusRaw == 'out_for_delivery')
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const _ActionMessage(
+                message: 'This delivery is out for delivery.',
+                isError: false,
+              ),
+              const SizedBox(height: 8),
+              OutlinedButton.icon(
+                onPressed: _actionPending ? null : _openDeliveryCompletionForm,
+                icon: const Icon(Icons.task_alt_rounded),
+                label: const Text('Complete Delivery'),
+              ),
+            ],
+          )
+        else if (job.statusRaw == 'delivered' && _actionNotice == null)
           const _ActionMessage(
-            message: 'This delivery is out for delivery.',
+            message:
+                'The server confirmed that your assigned parcels are delivered.',
             isError: false,
           ),
       ],
     );
   }
+
+  Widget _deliveryCompletionForm(RiderAssignment job) => Form(
+    key: _deliveryCompletionFormKey,
+    child: Card(
+      color: Colors.white,
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              'Confirm delivery',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: 10),
+            TextFormField(
+              controller: _recipientNameController,
+              enabled: !_actionPending,
+              maxLength: 160,
+              textCapitalization: TextCapitalization.words,
+              decoration: const InputDecoration(
+                labelText: 'Recipient name',
+                border: OutlineInputBorder(),
+              ),
+              validator: (value) => value == null || value.trim().isEmpty
+                  ? 'Enter the recipient name.'
+                  : value.trim().length > 160
+                  ? 'Recipient name must be 160 characters or fewer.'
+                  : null,
+            ),
+            if (job.requiresCodCollection) ...[
+              const SizedBox(height: 8),
+              Text(
+                'COD amount due: ${_formatPeso(job.codDueMinor)}',
+                style: Theme.of(context).textTheme.titleSmall,
+              ),
+              const SizedBox(height: 8),
+              TextFormField(
+                controller: _codCollectedAmountController,
+                enabled: !_actionPending,
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+                decoration: const InputDecoration(
+                  labelText: 'Actual COD cash collected',
+                  prefixText: '₱ ',
+                  hintText: '0.00',
+                  border: OutlineInputBorder(),
+                ),
+                validator: (value) {
+                  final amount = value?.trim() ?? '';
+                  if (amount.isEmpty) return 'Enter the actual cash collected.';
+                  if (!RegExp(r'^\d{1,8}(?:\.\d{1,2})?$').hasMatch(amount)) {
+                    return 'Enter an amount with up to 2 decimal places.';
+                  }
+                  return null;
+                },
+              ),
+            ],
+            const SizedBox(height: 10),
+            if (_proofPhotoBytes != null) ...[
+              ClipRRect(
+                borderRadius: BorderRadius.circular(10),
+                child: Image.memory(
+                  _proofPhotoBytes!,
+                  height: 180,
+                  fit: BoxFit.contain,
+                  errorBuilder: (_, _, _) => const SizedBox(
+                    height: 72,
+                    child: Center(child: Text('Photo preview unavailable.')),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+            ],
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                OutlinedButton.icon(
+                  onPressed: _actionPending
+                      ? null
+                      : () => _chooseProofPhoto(ImageSource.camera),
+                  icon: const Icon(Icons.photo_camera_outlined),
+                  label: Text(
+                    _proofPhoto == null
+                        ? 'Capture proof photo'
+                        : 'Retake photo',
+                  ),
+                ),
+                TextButton.icon(
+                  onPressed: _actionPending
+                      ? null
+                      : () => _chooseProofPhoto(ImageSource.gallery),
+                  icon: const Icon(Icons.photo_library_outlined),
+                  label: const Text('Choose photo'),
+                ),
+              ],
+            ),
+            if (_proofPhoto != null) ...[
+              const SizedBox(height: 4),
+              Text('Selected: ${_proofPhoto!.name}'),
+            ],
+            if (_proofPhotoError != null) ...[
+              const SizedBox(height: 4),
+              Text(
+                _proofPhotoError!,
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
+            ],
+            const SizedBox(height: 12),
+            FilledButton.icon(
+              onPressed: _actionPending ? null : () => _completeDelivery(job),
+              icon: _actionPending
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.check_circle_outline_rounded),
+              label: Text(
+                _actionPending
+                    ? 'Uploading proof and confirming…'
+                    : 'Confirm delivery',
+              ),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+
+  String _formatPeso(int amountMinor) =>
+      '₱${(amountMinor / 100).toStringAsFixed(2)}';
 }
 
 class _ActionMessage extends StatelessWidget {

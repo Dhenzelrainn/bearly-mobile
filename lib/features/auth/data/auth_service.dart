@@ -313,6 +313,62 @@ class AuthService extends ChangeNotifier {
     }
   }
 
+  /// Uploads multipart data with the active Sanctum session while keeping the
+  /// credential private to this service.
+  Future<T> multipartRequestWithSession<T>({
+    required String path,
+    required Map<String, String> fields,
+    required String fileField,
+    required List<int> fileBytes,
+    required String fileName,
+    int? expectedSessionEpoch,
+    int? expectedAccountId,
+    required T Function(Object? response) parse,
+  }) async {
+    final requestEpoch = _sessionEpoch;
+    final requestAccountId = currentSession?.id;
+    _checkExpectedSession(
+      expectedSessionEpoch: expectedSessionEpoch,
+      expectedAccountId: expectedAccountId,
+      requestMayHaveReachedServer: false,
+    );
+    final token = _ephemeralToken ?? await _tokenStore.read();
+    _checkRequestSession(
+      requestEpoch,
+      expectedSessionEpoch: expectedSessionEpoch,
+      expectedAccountId: expectedAccountId,
+      requestMayHaveReachedServer: false,
+    );
+    if (token == null || token.trim().isEmpty) {
+      throw const AuthException('Sign in to access this Bearly resource.');
+    }
+
+    try {
+      final response = await _apiClient.postMultipart(
+        path,
+        headers: _authorization(token),
+        fields: fields,
+        fileField: fileField,
+        fileBytes: fileBytes,
+        fileName: fileName,
+      );
+      _checkRequestSession(
+        requestEpoch,
+        expectedSessionEpoch: expectedSessionEpoch,
+        expectedAccountId: expectedAccountId,
+        requestMayHaveReachedServer: true,
+      );
+      return parse(response);
+    } on ApiHttpException catch (error) {
+      if ((error.statusCode == 401 || error.statusCode == 403) &&
+          _sessionEpoch == requestEpoch &&
+          currentSession?.id == requestAccountId) {
+        await _clearLocalSession();
+      }
+      rethrow;
+    }
+  }
+
   /// Attempts server revocation, then always removes the local credential.
   Future<void> logout() async {
     String? token;

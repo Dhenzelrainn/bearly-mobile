@@ -272,6 +272,91 @@ void main() {
       expect(requests.single.headers['authorization'], 'Bearer rider-token');
     });
 
+    test('uploads private delivery proof and parses COD completion', () async {
+      final requests = <http.Request>[];
+      final service = _authService((request) async {
+        requests.add(request);
+        return http.Response(
+          jsonEncode({
+            'data': {
+              ..._deliveryPayload('Delivered', canStart: false),
+              'shipment_status': 'delivered',
+              'already_completed': false,
+              'cod_collection': {
+                'status': 'disputed',
+                'amount_due_minor': 10000,
+                'amount_collected_minor': 9500,
+                'discrepancy_minor': -500,
+              },
+            },
+          }),
+          200,
+        );
+      });
+      final repository = RiderRepository(authService: service);
+
+      final completion = await repository.completeDelivery(
+        'SH-200',
+        recipientName: ' Buyer B ',
+        proofPhotoBytes: [1, 2, 3, 4],
+        proofPhotoName: 'delivery-proof.png',
+        codCollectedAmount: '95.00',
+      );
+
+      expect(completion.assignment.statusRaw, 'delivered');
+      expect(completion.shipmentStatus, 'delivered');
+      expect(completion.codCollection?.status, 'disputed');
+      expect(completion.codCollection?.amountDueMinor, 10000);
+      expect(completion.codCollection?.discrepancyMinor, -500);
+      expect(requests.single.method, 'POST');
+      expect(
+        requests.single.url.path,
+        '/api/mobile/rider/deliveries/SH-200/complete',
+      );
+      expect(requests.single.headers['authorization'], 'Bearer rider-token');
+      expect(
+        requests.single.headers['content-type'],
+        startsWith('multipart/form-data; boundary='),
+      );
+      final body = utf8.decode(requests.single.bodyBytes, allowMalformed: true);
+      expect(body, contains('name="recipient_name"'));
+      expect(body, contains('Buyer B'));
+      expect(body, contains('name="cod_collected_amount"'));
+      expect(body, contains('95.00'));
+      expect(body, contains('filename="delivery-proof.png"'));
+      expect(body, contains('\u0001\u0002\u0003\u0004'));
+    });
+
+    test('refreshes delivery completion state from the server', () async {
+      final requests = <http.Request>[];
+      final service = _authService((request) async {
+        requests.add(request);
+        return http.Response(
+          jsonEncode({
+            'data': {
+              ..._deliveryPayload('Delivered', canStart: false),
+              'shipment_status': 'delivered',
+              'already_completed': true,
+              'cod_collection': null,
+            },
+          }),
+          200,
+        );
+      });
+      final repository = RiderRepository(authService: service);
+
+      final status = await repository.deliveryCompletionStatus('SH-200');
+
+      expect(status.assignment.statusRaw, 'delivered');
+      expect(status.shipmentStatus, 'delivered');
+      expect(status.alreadyCompleted, isTrue);
+      expect(
+        requests.single.url.path,
+        '/api/mobile/rider/deliveries/SH-200/completion-status',
+      );
+      expect(requests.single.method, 'GET');
+    });
+
     test(
       'loads authenticated account data on each request without caching',
       () async {
@@ -402,6 +487,8 @@ Map<String, Object?> _deliveryPayload(
   'title': 'Buyer B',
   'status': status,
   'can_start_delivery': canStart,
+  'cod_due_minor': 10000,
+  'requires_cod_collection': true,
   'address': 'BGC, Taguig',
   'contact_phone': '09171112222',
   'waybill': 'WB-200',
@@ -414,9 +501,11 @@ Map<String, Object?> _deliveryPayload(
   'parcels': [
     {
       'parcel_no': 'P-200',
-      'status': status == 'Out for Delivery'
-          ? 'out_for_delivery'
-          : 'dispatched',
+      'status': switch (status) {
+        'Out for Delivery' => 'out_for_delivery',
+        'Delivered' => 'delivered',
+        _ => 'dispatched',
+      },
       'size_class': 'small',
       'weight_kg': 1.2,
     },

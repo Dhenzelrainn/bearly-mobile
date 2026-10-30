@@ -150,6 +150,60 @@ class ApiClient {
     body: body,
   );
 
+  /// Posts private multipart fields and a proof image without logging content.
+  Future<Object?> postMultipart(
+    String path, {
+    Map<String, Object?>? queryParameters,
+    Map<String, String>? headers,
+    required Map<String, String> fields,
+    required String fileField,
+    required List<int> fileBytes,
+    required String fileName,
+  }) async {
+    final request = http.MultipartRequest(
+      'POST',
+      _buildUri(path, queryParameters),
+    )..headers.addAll(_buildHeaders(headers, hasBody: false));
+    request.fields.addAll(fields);
+    request.files.add(
+      http.MultipartFile.fromBytes(fileField, fileBytes, filename: fileName),
+    );
+
+    final http.Response response;
+    try {
+      response = await (() async {
+        final streamed = await _client.send(request);
+        return http.Response.fromStream(streamed);
+      })().timeout(timeout);
+    } on TimeoutException {
+      throw ApiTimeoutException(timeout);
+    } on http.ClientException {
+      throw const ApiTransportException();
+    }
+
+    final responseText = response.body.trim();
+    Object? responseData;
+    var responseWasJson = false;
+    if (responseText.isNotEmpty) {
+      try {
+        responseData = jsonDecode(responseText);
+        responseWasJson = true;
+      } on FormatException {
+        if (response.statusCode >= 200 && response.statusCode < 300) {
+          throw ApiFormatException(statusCode: response.statusCode);
+        }
+      }
+    }
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw ApiHttpException(
+        statusCode: response.statusCode,
+        responseData: responseData,
+        responseWasJson: responseWasJson,
+      );
+    }
+    return responseData;
+  }
+
   Future<Object?> _request(
     String method,
     String path, {

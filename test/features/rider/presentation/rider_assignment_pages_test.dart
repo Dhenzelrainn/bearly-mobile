@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:bearly_mobile/core/network/api_client.dart';
 import 'package:bearly_mobile/features/auth/data/auth_service.dart';
@@ -12,6 +13,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
+import 'package:image_picker/image_picker.dart';
 
 void main() {
   testWidgets('assigned delivery list shows API data without accept controls', (
@@ -257,6 +259,213 @@ void main() {
     expect(find.text('This delivery is out for delivery.'), findsOneWidget);
     expect(find.text('Start Delivery'), findsNothing);
   });
+
+  testWidgets(
+    'delivery completion form validates proof and COD before explicit upload',
+    (tester) async {
+      tester.view.physicalSize = const Size(800, 1600);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final requests = <http.Request>[];
+      var photoPickerCalls = 0;
+      final proofPhoto = _TestProofXFile();
+      await tester.pumpWidget(
+        MaterialApp(
+          home: RiderJobDetailPage(
+            repository: _repository((request) async {
+              requests.add(request);
+              if (request.method == 'POST') {
+                return http.Response(
+                  jsonEncode({
+                    'message':
+                        'Delivery completion was recorded by the server.',
+                    'data': {
+                      ..._deliveryPayload('Delivered', canStart: false),
+                      'shipment_status': 'delivered',
+                      'already_completed': false,
+                      'cod_collection': {
+                        'status': 'collected',
+                        'amount_due_minor': 10000,
+                        'amount_collected_minor': 10000,
+                        'discrepancy_minor': 0,
+                      },
+                    },
+                  }),
+                  200,
+                );
+              }
+              final isStatus = request.url.path.endsWith('/completion-status');
+              return http.Response(
+                jsonEncode({
+                  'data': {
+                    ..._deliveryPayload(
+                      isStatus ? 'Delivered' : 'Out for Delivery',
+                      canStart: false,
+                    ),
+                    'shipment_status': isStatus
+                        ? 'delivered'
+                        : 'out_for_delivery',
+                    'already_completed': isStatus,
+                    'cod_collection': isStatus
+                        ? {
+                            'status': 'collected',
+                            'amount_due_minor': 10000,
+                            'amount_collected_minor': 10000,
+                            'discrepancy_minor': 0,
+                          }
+                        : null,
+                  },
+                }),
+                200,
+              );
+            }),
+            kind: RiderAssignmentKind.delivery,
+            jobId: 'SH-20',
+            proofPhotoPicker: (_) async {
+              photoPickerCalls++;
+              return proofPhoto;
+            },
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Complete Delivery'), findsOneWidget);
+      await tester.tap(find.text('Complete Delivery'));
+      await tester.pumpAndSettle();
+      expect(find.text('COD amount due: ₱100.00'), findsOneWidget);
+      expect(requests, hasLength(1));
+
+      await tester.ensureVisible(find.text('Confirm delivery').last);
+      await tester.tap(find.text('Confirm delivery').last);
+      await tester.pumpAndSettle();
+      expect(find.text('Enter the recipient name.'), findsOneWidget);
+      expect(find.text('Enter the actual cash collected.'), findsOneWidget);
+      expect(requests.where((request) => request.method == 'POST'), isEmpty);
+
+      final fields = find.byType(TextFormField);
+      await tester.enterText(fields.at(0), 'Buyer Rae');
+      await tester.enterText(fields.at(1), '100.00');
+      await tester.ensureVisible(find.text('Confirm delivery').last);
+      await tester.tap(find.text('Confirm delivery').last);
+      await tester.pumpAndSettle();
+      expect(
+        find.text('Add a proof-of-delivery photo before confirming.'),
+        findsOneWidget,
+      );
+      expect(requests.where((request) => request.method == 'POST'), isEmpty);
+
+      await tester.ensureVisible(find.text('Capture proof photo'));
+      await tester.tap(find.text('Capture proof photo'));
+      await tester.pumpAndSettle();
+      expect(photoPickerCalls, 1);
+      expect(find.text('Choose a JPG, PNG, or WebP photo.'), findsNothing);
+      expect(
+        find.text('Could not select a proof photo. Try again.'),
+        findsNothing,
+      );
+      expect(find.text('Selected: proof.png'), findsOneWidget);
+      expect(requests.where((request) => request.method == 'POST'), isEmpty);
+
+      await tester.ensureVisible(find.text('Confirm delivery').last);
+      await tester.tap(find.text('Confirm delivery').last);
+      await tester.pumpAndSettle();
+
+      expect(requests.map((request) => request.method), ['GET', 'POST', 'GET']);
+      expect(
+        requests[1].url.path,
+        '/api/mobile/rider/deliveries/SH-20/complete',
+      );
+      final multipartBody = utf8.decode(
+        requests[1].bodyBytes,
+        allowMalformed: true,
+      );
+      expect(multipartBody, contains('Buyer Rae'));
+      expect(multipartBody, contains('100.00'));
+      expect(multipartBody, contains('proof.png'));
+      expect(
+        find.text(
+          'The server confirmed that your assigned parcels are delivered.',
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('Complete Delivery'), findsNothing);
+    },
+  );
+
+  testWidgets(
+    'uncertain completion refreshes server state before allowing retry',
+    (tester) async {
+      tester.view.physicalSize = const Size(800, 1600);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final proofPhoto = _TestProofXFile();
+      final requests = <http.Request>[];
+      await tester.pumpWidget(
+        MaterialApp(
+          home: RiderJobDetailPage(
+            repository: _repository((request) async {
+              requests.add(request);
+              if (request.method == 'POST') {
+                return http.Response(
+                  jsonEncode({'message': 'Server error.'}),
+                  500,
+                );
+              }
+              if (!request.url.path.endsWith('/completion-status')) {
+                return http.Response(
+                  jsonEncode({
+                    'data': _deliveryPayload(
+                      'Out for Delivery',
+                      canStart: false,
+                    ),
+                  }),
+                  200,
+                );
+              }
+              return http.Response(
+                jsonEncode({
+                  'data': {
+                    ..._deliveryPayload('Delivered', canStart: false),
+                    'shipment_status': 'delivered',
+                    'already_completed': true,
+                    'cod_collection': null,
+                  },
+                }),
+                200,
+              );
+            }),
+            kind: RiderAssignmentKind.delivery,
+            jobId: 'SH-20',
+            proofPhotoPicker: (_) async => proofPhoto,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Complete Delivery'));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextFormField).first, 'Buyer Rae');
+      await tester.enterText(find.byType(TextFormField).at(1), '100.00');
+      await tester.ensureVisible(find.text('Capture proof photo'));
+      await tester.tap(find.text('Capture proof photo'));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text('Confirm delivery').last);
+      await tester.tap(find.text('Confirm delivery').last);
+      await tester.pumpAndSettle();
+
+      expect(requests.map((request) => request.method), ['GET', 'POST', 'GET']);
+      expect(requests.last.url.path, endsWith('/completion-status'));
+      expect(
+        find.text(
+          'The server confirmed that your assigned parcels are delivered.',
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('Complete Delivery'), findsNothing);
+    },
+  );
 
   testWidgets(
     'delivery request error refreshes before offering another start',
@@ -763,6 +972,8 @@ Map<String, Object?> _deliveryPayload(
   'title': 'Buyer Rae',
   'status': status,
   'can_start_delivery': canStart,
+  'cod_due_minor': 10000,
+  'requires_cod_collection': true,
   'address': 'Quezon City',
   'contact_phone': '09170000000',
   'waybill': 'WB-20',
@@ -775,14 +986,30 @@ Map<String, Object?> _deliveryPayload(
   'parcels': [
     {
       'parcel_no': 'P-20',
-      'status': status == 'Out for Delivery'
-          ? 'out_for_delivery'
-          : 'dispatched',
+      'status': switch (status) {
+        'Out for Delivery' => 'out_for_delivery',
+        'Delivered' => 'delivered',
+        _ => 'dispatched',
+      },
       'size_class': 'small',
       'weight_kg': 1.0,
     },
   ],
 };
+
+final _proofPng = base64Decode(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADUlEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC',
+);
+
+class _TestProofXFile extends XFile {
+  _TestProofXFile() : super('proof.png');
+
+  @override
+  String get name => 'proof.png';
+
+  @override
+  Future<Uint8List> readAsBytes() async => _proofPng;
+}
 
 Widget _fakeScannerPreview(
   BuildContext context,

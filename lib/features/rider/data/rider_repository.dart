@@ -101,6 +101,43 @@ class RiderRepository {
     ),
   );
 
+  Future<RiderDeliveryCompletion> deliveryCompletionStatus(
+    String shipmentNo,
+  ) async => RiderDeliveryCompletion.fromJson(
+    _data(
+      await _authService.getWithSession(
+        '/api/mobile/rider/deliveries/${Uri.encodeComponent(shipmentNo)}/completion-status',
+      ),
+    ),
+  );
+
+  Future<RiderDeliveryCompletion> completeDelivery(
+    String shipmentNo, {
+    required String recipientName,
+    required List<int> proofPhotoBytes,
+    required String proofPhotoName,
+    String? codCollectedAmount,
+  }) async {
+    final fields = <String, String>{'recipient_name': recipientName.trim()};
+    if (codCollectedAmount != null) {
+      fields['cod_collected_amount'] = codCollectedAmount.trim();
+    }
+
+    return RiderDeliveryCompletion.fromJson(
+      _data(
+        await _authService.multipartRequestWithSession<Object?>(
+          path:
+              '/api/mobile/rider/deliveries/${Uri.encodeComponent(shipmentNo)}/complete',
+          fields: fields,
+          fileField: 'proof_photo',
+          fileBytes: proofPhotoBytes,
+          fileName: proofPhotoName,
+          parse: (response) => response,
+        ),
+      ),
+    );
+  }
+
   Future<List<RiderAssignment>> _jobs(Object? value) async {
     final data = _data(value);
     if (data is! List) {
