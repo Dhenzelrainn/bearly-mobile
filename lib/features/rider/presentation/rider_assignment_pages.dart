@@ -1374,7 +1374,7 @@ class _RiderJobDetailPageState extends State<RiderJobDetailPage> {
             TextFormField(
               controller: _failureReasonController,
               enabled: !_actionPending,
-              maxLength: 500,
+              maxLength: 100,
               minLines: 2,
               maxLines: 4,
               textCapitalization: TextCapitalization.sentences,
@@ -1387,8 +1387,8 @@ class _RiderJobDetailPageState extends State<RiderJobDetailPage> {
               validator: (value) {
                 final reason = value?.trim() ?? '';
                 if (reason.isEmpty) return 'Enter a failure reason.';
-                if (reason.length > 500) {
-                  return 'Failure reason must be 500 characters or fewer.';
+                if (reason.length > 100) {
+                  return 'Failure reason must be 100 characters or fewer.';
                 }
                 return null;
               },

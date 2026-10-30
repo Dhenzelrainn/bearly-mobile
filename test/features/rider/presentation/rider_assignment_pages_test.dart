@@ -343,6 +343,87 @@ void main() {
   );
 
   testWidgets(
+    'failure reason is limited to 100 characters and valid input uses the existing API',
+    (tester) async {
+      tester.view.physicalSize = const Size(800, 1600);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final requests = <http.Request>[];
+      await tester.pumpWidget(
+        MaterialApp(
+          home: RiderJobDetailPage(
+            repository: _repository((request) async {
+              requests.add(request);
+              if (request.method == 'POST') {
+                return http.Response(
+                  jsonEncode({
+                    'data': _deliveryPayload(
+                      'Delivery Failed',
+                      canStart: false,
+                    ),
+                  }),
+                  200,
+                );
+              }
+              return http.Response(
+                jsonEncode({
+                  'data': _deliveryPayload(
+                    requests.any((item) => item.method == 'POST')
+                        ? 'Delivery Failed'
+                        : 'Out for Delivery',
+                    canStart: false,
+                  ),
+                }),
+                200,
+              );
+            }),
+            kind: RiderAssignmentKind.delivery,
+            jobId: 'SH-20',
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.ensureVisible(find.text('Report Failed Delivery'));
+      await tester.tap(find.text('Report Failed Delivery'));
+      await tester.pumpAndSettle();
+
+      final reasonFieldFinder = find.byType(TextFormField).last;
+      final reasonTextFieldFinder = find.descendant(
+        of: reasonFieldFinder,
+        matching: find.byType(TextField),
+      );
+      expect(tester.widget<TextField>(reasonTextFieldFinder).maxLength, 100);
+      final submittedInput = List.filled(101, 'x').join();
+      await tester.enterText(reasonFieldFinder, submittedInput);
+      expect(
+        tester.widget<TextFormField>(reasonFieldFinder).controller!.text.length,
+        100,
+      );
+
+      await tester.ensureVisible(find.text('Submit failure report'));
+      await tester.tap(find.text('Submit failure report'));
+      await tester.pumpAndSettle();
+
+      expect(requests.map((request) => request.method), ['GET', 'POST', 'GET']);
+      expect(
+        requests[1].url.path,
+        '/api/mobile/rider/deliveries/SH-20/fail',
+      );
+      expect(jsonDecode(requests[1].body), {
+        'failure_reason': List.filled(100, 'x').join(),
+      });
+      expect(
+        find.text(
+          'The server confirmed this delivery attempt was recorded as failed.',
+        ),
+        findsOneWidget,
+      );
+    },
+  );
+
+  testWidgets(
     'uncertain failed-delivery result requires an explicit refresh before retry',
     (tester) async {
       tester.view.physicalSize = const Size(800, 1600);
