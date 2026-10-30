@@ -98,3 +98,34 @@ A read-only query explicitly connected to `bearly_latest_dev_import_20261028` ve
 Laravel's fresh Rider dashboard metric and Assigned Deliveries endpoint both call the same active-delivery filter. Rider profile #3 has six dispatch records, all with delivered parcels, so a fresh dashboard/list response should report zero active delivery assignments. The stale count came from Flutter retaining the dashboard Future loaded when the page was first opened; navigation did not refresh it on return. The previous refresh callback also passed a Future-returning assignment expression to `setState`, which Flutter rejects. Flutter now refreshes after a pushed screen is popped and performs the state update synchronously. The new widget regression test verifies a count changing from one to zero; all 28 Rider tests passed, and scoped analysis reported no issues.
 
 `No ledger entry` refers to the Rider earnings ledger displayed alongside delivery history, not the separate COD cash-collection record. Delivery attempts do not create Rider earnings by themselves. Shipping settlement materialization requires the Seller Order to be `completed` and to pass the settlement, payment, and COD checks. This order still awaits Buyer receipt confirmation, and the read-only check found no shipping settlement or Rider earning for shipment #11. The absence is therefore expected at this stage; no earning was created as part of this audit.
+
+## Phase 3D live failed-delivery and retry validation
+
+**Test date:** October 31, 2026 (operator-reported)<br>
+**Shipment:** #10, `SHP-MG5M2VGNS9MEISXZWLL0`<br>
+**Waybill:** `BRLY-P37CPITUW58BFGPRYNU1`<br>
+**Dispatch batch:** `DSP-20261030-RSWYTYDH`<br>
+**Rider:** Mark Carlo A. Andasan (user #18, Rider profile #3)
+
+### Operator-reported UI results
+
+On the Samsung phone, Flutter reported the controlled staging delivery failure and showed the server-confirmed `Delivery Failed` state. Logistics Monitoring independently displayed `Delivery Failed` with one exception. The Rider tapped Retry Delivery once. Flutter then confirmed `Out for Delivery`; Logistics Monitoring showed `Out For Delivery`, one active route, and zero exceptions. These are operator-reported UI observations.
+
+### Read-only database verification
+
+A read-only PDO transaction explicitly connected to `bearly_latest_dev_import_20261028` and verified:
+
+- Shipment #10 is an outbound shipment with status `out_for_delivery`. Parcel #10 is also `out_for_delivery` and remains linked to waybill `BRLY-P37CPITUW58BFGPRYNU1`.
+- Exactly one delivery attempt exists: attempt #10, attempt number 1, outcome `failed`, associated with dispatch batch #9 and Rider profile #3. Retry did not create another attempt.
+- The single stored failure reason is exactly: `STAGING TEST ONLY: simulated unsuccessful delivery for testing. no handover or COD cash collected.`
+- Exactly one parcel failure event (`out_for_delivery` -> `failed`) and one shipment failure event (`out_for_delivery` -> `delivery_failed`) exist. Exactly one parcel retry event (`failed` -> `out_for_delivery`) and one shipment retry event (`delivery_failed` -> `out_for_delivery`) exist. All four events identify Rider user #18 as actor and `rider` as source. No duplicate failure or retry transition was found.
+- Dispatch batch #9 remains `dispatched`, assigned to Rider profile #3. That profile belongs to user #18, is approved, and is associated with Logistics profile #1.
+- The shipment records COD due of 55,500 minor units (PHP 555.00), but has no COD collection, no COD collection event, and no `cod_collected_at` timestamp.
+- Shipment #10 has no return shipment. Its Seller Order has no associated return request or refund, and no return-linked cash payout was found.
+- The latest shipment/parcel tracking events record the retry transition to `out_for_delivery`, matching the current shipment and parcel states. The operator-reported Web and Flutter states agree with these database values.
+
+Event timestamps as stored in MySQL were 2026-10-30 16:37:12 for the failure and 2026-10-30 16:39:04 for the retry; their timezone interpretation was not independently verified.
+
+### Result
+
+**PASS** for the controlled failure and single retry state transitions. Shipment #10 remains active and out for delivery; this test did not complete delivery, collect COD, create a return, or issue a refund. This section records the reported UI results separately from the database findings above.
