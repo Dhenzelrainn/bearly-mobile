@@ -437,8 +437,17 @@ Widget _stageChip(String status, String label) => Chip(
   visualDensity: VisualDensity.compact,
 );
 
-String _humanStatus(String status) => status
-    .split('_')
-    .where((word) => word.isNotEmpty)
-    .map((word) => '${word[0].toUpperCase()}${word.substring(1)}')
-    .join(' ');
+String _humanStatus(String status) => switch (status) {
+  'assigned_to_rider' => 'Assigned to Rider',
+  'at_sorting_center' => 'At Sorting Center',
+  'delivery_failed' => 'Delivery Failed',
+  'in_transit' => 'In Transit',
+  'out_for_delivery' => 'Out for Delivery',
+  'picked_up' => 'Picked Up',
+  'return_to_sender' => 'Return to Sender',
+  _ => status
+      .split('_')
+      .where((word) => word.isNotEmpty)
+      .map((word) => '${word[0].toUpperCase()}${word.substring(1)}')
+      .join(' '),
+};

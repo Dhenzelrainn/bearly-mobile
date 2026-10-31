@@ -113,3 +113,31 @@ On October 31, 2026, the operator reported successfully opening Logistics Mobile
 The Logistics account was scoped to PB Sorting Center, Sorting Center SC-1. All three batches displayed Rider Mark Carlo A. Andasan and delivery zone PILA-02 — Pila / Pinagbayanan. The Assigned batch showed its parcel and shipment as `Dispatched`, with assignment and release events in the timeline. The Out for Delivery batch showed its parcel and shipment as `Out For Delivery`; its timeline included the previously recorded failed delivery attempt and staging-test reason. The Delivered batch showed its parcel and shipment as `Delivered`, 100% completion, and the delivery event in its timeline. The displayed stages and progress were consistent with earlier Laravel Web Delivery Monitoring observations. Manual refresh and list-to-detail navigation worked. No delivery mutation was performed as part of this monitoring verification.
 
 Low-priority display note: the Delivered timeline currently uses the generic description “Latest recorded parcel status.”
+
+## Phase L7 — Integration review, UI cleanup, and regression testing
+
+### Audit scope and evidence
+
+Reviewed Flutter role login and session lifecycle, role-based routes, Buyer and Rider regression paths, Logistics navigation, mutation feedback/reconciliation, and the L1–L6 Mobile API contracts in Laravel. This section separates code inspection and automated tests from the operator-reported L1–L6 device checks above. No Laravel runtime or staging database was queried, and no staging mutation was performed for L7.
+
+### Findings
+
+- **Confirmed bug — stale Logistics dashboard metrics:** the dashboard loaded its counts at entry and did not refresh after returning from Incoming Parcel Receipt, Incoming City Handoff, Sorting Queue, or Delivery Dispatch. Returning could leave operation counts stale until the operator manually refreshed. Fixed by refreshing the dashboard after those operation pages close.
+- **Confirmed UI consistency issue — delivery status casing:** monitoring detail converted `out_for_delivery` to “Out For Delivery”, while the server-provided stage and Laravel Web use “Out for Delivery”. Added explicit display labels for known shipment/parcel states, retaining the generic formatter for unknown states.
+- **Confirmed stale test fixture:** the root auth smoke test expected a previous static Rider screen and assumed a server role could override the selected role. It now selects Rider explicitly and mocks the current Rider dashboard response; this changes the test fixture only.
+- **No issue found in inspected mutation safeguards:** receipt, handoff acceptance, sorting, and dispatch retain explicit confirmation, pending-request guards, server-confirmed success, and uncertain-response reconciliation. No automatic mutation retries were found in these paths.
+- **No issue found in role/session handling by code inspection:** login submits the selected role; the returned active role is validated; saved sessions are verified with `/api/mobile/me`; explicit 401/403 responses clear local credentials; transient failures retain the session; logout clears local credentials even if the server cannot be reached. Logistics API routes use Sanctum, eligible-account and Logistics-role middleware, and derive provider/center scope from the authenticated account. This is code/test evidence, not a fresh live authentication test.
+- **Incomplete features intentionally deferred:** Buyer Buy Now and seller Chat still show a later-phase placeholder; Rider messaging is not connected to the Mobile API. These were not implemented in L7.
+- **Low-priority UI note:** the Delivered monitoring timeline still uses the generic “Latest recorded parcel status” detail. No backend timeline behavior was changed.
+
+### Fixes and validation
+
+The Logistics dashboard now reloads after returning from receipt, handoff, sorting, or dispatch. A regression test verifies the dashboard makes a fresh request and displays the refreshed count. Monitoring detail uses “Out for Delivery” consistently with Laravel’s displayed stage; the widget regression test checks both parcel and shipment labels.
+
+Automated validation: the full Flutter suite passed (**291 tests**), including the Logistics suite (**51 tests**). Targeted analysis of all L7-modified Dart files reported no issues. The Android debug APK built successfully. A broader scoped analysis of `lib/core` and the auth, Buyer, Rider, and Logistics features reported six existing info-level lints in unrelated logo/auth/registration files; it found no issues in the modified files. No Laravel tests were run because Laravel source was not changed; relevant routes and shared services were inspected only.
+
+These test results are automated evidence. No new Samsung device test was performed for L7.
+
+### Remaining physical-device check
+
+On Samsung, during a separately approved ordinary receipt, handoff acceptance, sort, or dispatch operation, confirm the dashboard counts refresh when returning from that workflow. Do not create or perform a staging operation solely for L7 validation. Open an existing monitoring batch detail and confirm an `out_for_delivery` parcel/shipment reads “Out for Delivery”; this status-label check is read-only. Previously recorded L1–L6 operator validations remain unchanged.

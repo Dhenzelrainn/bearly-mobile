@@ -59,35 +59,35 @@ class _LogisticsHomePageState extends State<LogisticsHomePage> {
     ),
   );
 
-  void _openIncomingReceipt() => Navigator.of(context).push<void>(
-    MaterialPageRoute<void>(
-      builder: (_) => LogisticsWaybillLookupPage(
-        repository: widget.repository,
-        receiptEnabled: true,
-      ),
+  Future<void> _openIncomingReceipt() => _openOperationalPage(
+    LogisticsWaybillLookupPage(
+      repository: widget.repository,
+      receiptEnabled: true,
     ),
   );
 
-  void _openIncomingHandoff() => Navigator.of(context).push<void>(
-    MaterialPageRoute<void>(
-      builder: (_) => LogisticsWaybillLookupPage(
-        repository: widget.repository,
-        handoffEnabled: true,
-      ),
+  Future<void> _openIncomingHandoff() => _openOperationalPage(
+    LogisticsWaybillLookupPage(
+      repository: widget.repository,
+      handoffEnabled: true,
     ),
   );
 
-  void _openSortingQueue() => Navigator.of(context).push<void>(
-    MaterialPageRoute<void>(
-      builder: (_) => LogisticsSortingQueuePage(repository: widget.repository),
-    ),
+  Future<void> _openSortingQueue() => _openOperationalPage(
+    LogisticsSortingQueuePage(repository: widget.repository),
   );
 
-  void _openDispatchBoard() => Navigator.of(context).push<void>(
-    MaterialPageRoute<void>(
-      builder: (_) => LogisticsDispatchPage(repository: widget.repository),
-    ),
+  Future<void> _openDispatchBoard() => _openOperationalPage(
+    LogisticsDispatchPage(repository: widget.repository),
   );
+
+  Future<void> _openOperationalPage(Widget page) async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(builder: (_) => page),
+    );
+    if (!mounted) return;
+    await _refresh();
+  }
 
   void _openDeliveryMonitoring() => Navigator.of(context).push<void>(
     MaterialPageRoute<void>(

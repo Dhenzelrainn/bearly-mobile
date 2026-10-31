@@ -102,8 +102,8 @@ void main() {
     expect(find.text('Out for Delivery'), findsOneWidget);
     expect(find.textContaining('BRLY-ULD904RGCHZK1SIDLUND'), findsOneWidget);
     expect(find.textContaining('SHP-20261031-LONG-SHIPMENT-REFERENCE'), findsOneWidget);
-    expect(find.text('Parcel status: Out For Delivery'), findsOneWidget);
-    expect(find.text('Shipment status: Out For Delivery'), findsOneWidget);
+    expect(find.text('Parcel status: Out for Delivery'), findsOneWidget);
+    expect(find.text('Shipment status: Out for Delivery'), findsOneWidget);
     expect(find.text('Assigned to rider'), findsOneWidget);
     await tester.scrollUntilVisible(
       find.text('Released for delivery'),

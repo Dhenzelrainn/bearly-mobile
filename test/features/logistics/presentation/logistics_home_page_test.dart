@@ -106,6 +106,49 @@ void main() {
     expect(find.text('Read-only parcel lookup'), findsNothing);
   });
 
+  testWidgets('refreshes dashboard after returning from an operations page', (
+    tester,
+  ) async {
+    var dashboardRequests = 0;
+    final auth = _authService((request) async {
+      expect(request.url.path, '/api/mobile/logistics/dashboard');
+      dashboardRequests++;
+      return http.Response(
+        jsonEncode(_dashboard(receivedToday: dashboardRequests)),
+        200,
+      );
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: LogisticsHomePage(
+          authService: auth,
+          repository: LogisticsRepository(authService: auth),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(dashboardRequests, 1);
+
+    await tester.tap(
+      find.byKey(const ValueKey('logistics-open-incoming-receipt')),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Incoming Parcel Receipt'), findsOneWidget);
+
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+
+    expect(dashboardRequests, 2);
+    final receivedCard = find
+        .ancestor(of: find.text('Received today'), matching: find.byType(Card))
+        .first;
+    expect(
+      find.descendant(of: receivedCard, matching: find.text('2')),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('dashboard opens provider delivery monitoring', (tester) async {
     final auth = _authService((request) async {
       if (request.url.path == '/api/mobile/logistics/dashboard') {
