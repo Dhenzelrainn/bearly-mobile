@@ -14,6 +14,341 @@ import 'package:http/testing.dart';
 
 void main() {
   testWidgets(
+    'manual handoff acceptance requires explicit confirmation and refreshes server state',
+    (tester) async {
+      final requests = <http.Request>[];
+      var lookups = 0;
+      final auth = _authService((request) async {
+        requests.add(request);
+        if (request.method == 'POST') {
+          expect(jsonDecode(request.body), {'scan_method': 'manual'});
+          return http.Response(
+            jsonEncode(_handoffResponse('BRLY-L3B-001')),
+            200,
+          );
+        }
+        lookups++;
+        return http.Response(
+          jsonEncode(
+            _lookup(
+              waybill: 'BRLY-L3B-001',
+              handoffEligible: lookups == 1,
+              handoffStatus: lookups == 1 ? 'sent' : 'accepted',
+              handoffEligibilityCode: lookups == 1
+                  ? 'eligible'
+                  : 'already_accepted',
+              hasHandoff: true,
+              logisticsProviderName: 'Victoria Logistics',
+              receivingProviderName: 'Pila Logistics',
+              receivingCenterName: 'Pila Sorting Center',
+              receivingCenterCode: 'SC-PILA',
+            ),
+          ),
+          200,
+        );
+      });
+
+      await tester.pumpWidget(_app(auth, handoffEnabled: true));
+      await tester.enterText(
+        find.byKey(const ValueKey('logistics-waybill-input')),
+        'BRLY-L3B-001',
+      );
+      await tester.tap(find.byKey(const ValueKey('logistics-lookup-waybill')));
+      await tester.pumpAndSettle();
+
+      expect(requests.map((request) => request.method), ['GET']);
+      expect(find.text('Victoria Logistics'), findsWidgets);
+      expect(find.text('Pila Logistics'), findsWidgets);
+      expect(find.text('Pila Sorting Center (SC-PILA)'), findsOneWidget);
+      final accept = find.byKey(const ValueKey('logistics-confirm-handoff'));
+      expect(accept, findsOneWidget);
+      await tester.ensureVisible(accept);
+      await tester.pumpAndSettle();
+      await tester.tap(accept);
+      await tester.pumpAndSettle();
+
+      expect(requests.map((request) => request.method), ['GET']);
+      expect(
+        find.byKey(const ValueKey('logistics-handoff-confirm-dialog')),
+        findsOneWidget,
+      );
+      expect(find.textContaining('BRLY-L3B-001'), findsWidgets);
+      await tester.tap(
+        find.byKey(const ValueKey('logistics-handoff-confirm-dialog')),
+      );
+      await tester.pump();
+      await tester.pumpAndSettle();
+
+      expect(requests.map((request) => request.method), ['GET', 'POST', 'GET']);
+      expect(
+        requests[1].url.path,
+        '/api/mobile/logistics/waybills/BRLY-L3B-001/accept-handoff',
+      );
+      expect(
+        requests[1].headers['authorization'],
+        'Bearer logistics-test-token',
+      );
+      expect(find.text('Accepted'), findsWidgets);
+      expect(
+        find.textContaining('server confirms this handoff was accepted'),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('logistics-confirm-handoff')),
+        findsNothing,
+      );
+    },
+  );
+
+  testWidgets('camera-scanned handoff records camera scan method', (
+    tester,
+  ) async {
+    final requests = <http.Request>[];
+    var lookups = 0;
+    final auth = _authService((request) async {
+      requests.add(request);
+      if (request.method == 'POST') {
+        expect(jsonDecode(request.body), {'scan_method': 'camera'});
+        return http.Response(
+          jsonEncode(_handoffResponse('BRLY-L3B-CAMERA')),
+          200,
+        );
+      }
+      lookups++;
+      return http.Response(
+        jsonEncode(
+          _lookup(
+            waybill: 'BRLY-L3B-CAMERA',
+            handoffEligible: lookups == 1,
+            handoffStatus: lookups == 1 ? 'sent' : 'accepted',
+            handoffEligibilityCode: lookups == 1
+                ? 'eligible'
+                : 'already_accepted',
+            hasHandoff: true,
+            logisticsProviderName: 'Victoria Logistics',
+            receivingProviderName: 'Pila Logistics',
+            receivingCenterName: 'Pila Sorting Center',
+            receivingCenterCode: 'SC-PILA',
+          ),
+        ),
+        200,
+      );
+    });
+
+    await tester.pumpWidget(
+      _app(
+        auth,
+        handoffEnabled: true,
+        scannerPreviewBuilder: (context, callbacks) => Center(
+          child: ElevatedButton(
+            key: const ValueKey('emit-handoff-scan'),
+            onPressed: () => callbacks.onBarcodeDetected('BRLY-L3B-CAMERA'),
+            child: const Text('Simulate handoff scan'),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.byKey(const ValueKey('logistics-scan-waybill')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('emit-handoff-scan')));
+    await tester.pumpAndSettle();
+
+    expect(requests, isEmpty);
+    expect(
+      tester
+          .widget<TextField>(
+            find.byKey(const ValueKey('logistics-waybill-input')),
+          )
+          .controller!
+          .text,
+      'BRLY-L3B-CAMERA',
+    );
+    await tester.tap(find.byKey(const ValueKey('logistics-lookup-waybill')));
+    await tester.pumpAndSettle();
+    final accept = find.byKey(const ValueKey('logistics-confirm-handoff'));
+    await tester.ensureVisible(accept);
+    await tester.pumpAndSettle();
+    await tester.tap(accept);
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('logistics-handoff-confirm-dialog')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(requests.map((request) => request.method), ['GET', 'POST', 'GET']);
+  });
+
+  testWidgets('ineligible handoffs never expose the acceptance action', (
+    tester,
+  ) async {
+    final auth = _authService(
+      (_) async => http.Response(
+        jsonEncode(
+          _lookup(
+            handoffEligible: false,
+            handoffEligibilityCode: 'destination_zone_uncovered',
+          ),
+        ),
+        200,
+      ),
+    );
+
+    await tester.pumpWidget(_app(auth, handoffEnabled: true));
+    await tester.enterText(
+      find.byKey(const ValueKey('logistics-waybill-input')),
+      'BRLY-L3B-UNCOVERED',
+    );
+    await tester.tap(find.byKey(const ValueKey('logistics-lookup-waybill')));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('no active zone covering'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('logistics-confirm-handoff')),
+      findsNothing,
+    );
+  });
+
+  testWidgets(
+    'uncertain handoff response requires a fresh lookup before another submission',
+    (tester) async {
+      final requests = <http.Request>[];
+      var lookups = 0;
+      final auth = _authService((request) async {
+        requests.add(request);
+        if (request.method == 'POST') {
+          return http.Response('server error', 500);
+        }
+        lookups++;
+        return http.Response(
+          jsonEncode(
+            _lookup(
+              waybill: 'BRLY-L3B-UNCERTAIN',
+              handoffEligible: lookups == 1,
+              handoffStatus: lookups == 1 ? 'sent' : 'accepted',
+              handoffEligibilityCode: lookups == 1
+                  ? 'eligible'
+                  : 'already_accepted',
+              hasHandoff: true,
+              logisticsProviderName: 'Victoria Logistics',
+              receivingProviderName: 'Pila Logistics',
+              receivingCenterName: 'Pila Sorting Center',
+              receivingCenterCode: 'SC-PILA',
+            ),
+          ),
+          200,
+        );
+      });
+
+      await tester.pumpWidget(_app(auth, handoffEnabled: true));
+      await tester.enterText(
+        find.byKey(const ValueKey('logistics-waybill-input')),
+        'BRLY-L3B-UNCERTAIN',
+      );
+      await tester.tap(find.byKey(const ValueKey('logistics-lookup-waybill')));
+      await tester.pumpAndSettle();
+      final accept = find.byKey(const ValueKey('logistics-confirm-handoff'));
+      await tester.ensureVisible(accept);
+      await tester.pumpAndSettle();
+      await tester.tap(accept);
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('logistics-handoff-confirm-dialog')),
+      );
+      await tester.pump();
+      await tester.pumpAndSettle();
+
+      expect(requests.map((request) => request.method), ['GET', 'POST']);
+      expect(
+        find.textContaining('result is uncertain'),
+        findsOneWidget,
+        reason: tester
+            .widgetList<Text>(find.byType(Text))
+            .map((widget) => widget.data)
+            .join(' | '),
+      );
+      expect(
+        find.byKey(const ValueKey('logistics-confirm-handoff')),
+        findsNothing,
+      );
+
+      final refresh = find.byKey(const ValueKey('logistics-lookup-waybill'));
+      await tester.drag(find.byType(ListView), const Offset(0, 1000));
+      await tester.pumpAndSettle();
+      await tester.pumpAndSettle();
+      await tester.tap(refresh);
+      await tester.pumpAndSettle();
+      expect(requests.map((request) => request.method), ['GET', 'POST', 'GET']);
+      expect(
+        find.byKey(const ValueKey('logistics-confirm-handoff')),
+        findsNothing,
+      );
+      expect(find.textContaining('already been accepted'), findsWidgets);
+    },
+  );
+
+  testWidgets(
+    'handoff confirmation prevents a second tap while POST is pending',
+    (tester) async {
+      final requests = <http.Request>[];
+      final response = Completer<http.Response>();
+      var lookup = 0;
+      final auth = _authService((request) async {
+        requests.add(request);
+        if (request.method == 'POST') return response.future;
+        lookup++;
+        return http.Response(
+          jsonEncode(
+            _lookup(
+              waybill: 'BRLY-L3B-PENDING',
+              handoffEligible: lookup == 1,
+              handoffStatus: lookup == 1 ? 'sent' : 'accepted',
+              handoffEligibilityCode: lookup == 1
+                  ? 'eligible'
+                  : 'already_accepted',
+              hasHandoff: true,
+              logisticsProviderName: 'Victoria Logistics',
+              receivingProviderName: 'Pila Logistics',
+              receivingCenterName: 'Pila Sorting Center',
+              receivingCenterCode: 'SC-PILA',
+            ),
+          ),
+          200,
+        );
+      });
+
+      await tester.pumpWidget(_app(auth, handoffEnabled: true));
+      await tester.enterText(
+        find.byKey(const ValueKey('logistics-waybill-input')),
+        'BRLY-L3B-PENDING',
+      );
+      await tester.tap(find.byKey(const ValueKey('logistics-lookup-waybill')));
+      await tester.pumpAndSettle();
+      final accept = find.byKey(const ValueKey('logistics-confirm-handoff'));
+      await tester.ensureVisible(accept);
+      await tester.pumpAndSettle();
+      await tester.tap(accept);
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('logistics-handoff-confirm-dialog')),
+      );
+      await tester.pump();
+      await tester.pump();
+
+      final pendingButton = tester.widget<FilledButton>(
+        find.byKey(const ValueKey('logistics-confirm-handoff')),
+      );
+      expect(pendingButton.onPressed, isNull);
+      expect(requests.map((request) => request.method), ['GET', 'POST']);
+
+      response.complete(
+        http.Response(jsonEncode(_handoffResponse('BRLY-L3B-PENDING')), 200),
+      );
+      await tester.pumpAndSettle();
+      expect(requests.map((request) => request.method), ['GET', 'POST', 'GET']);
+    },
+  );
+
+  testWidgets(
     'manual waybill lookup displays only server returned read-only data',
     (tester) async {
       final requests = <http.Request>[];
@@ -644,22 +979,33 @@ Widget _app(
   AuthService auth, {
   WaybillScannerPreviewBuilder? scannerPreviewBuilder,
   bool receiptEnabled = false,
+  bool handoffEnabled = false,
 }) => MaterialApp(
   home: LogisticsWaybillLookupPage(
     repository: LogisticsRepository(authService: auth),
     scannerPreviewBuilder: scannerPreviewBuilder,
     receiptEnabled: receiptEnabled,
+    handoffEnabled: handoffEnabled,
   ),
 );
 
 Map<String, Object?> _lookup({
+  String waybill = 'BRLY-L2-001',
   bool receiptEligible = false,
+  bool handoffEligible = false,
   String parcelStatus = 'out_for_delivery',
   String shipmentStatus = 'out_for_delivery',
   String receiptCode = 'invalid_state',
+  String handoffEligibilityCode = 'not_pending',
+  bool hasHandoff = false,
+  String handoffStatus = 'sent',
+  String logisticsProviderName = 'Victoria Logistics',
+  String receivingProviderName = 'Victoria Logistics',
+  String receivingCenterName = 'Victoria Sorting Center',
+  String receivingCenterCode = 'SC-3',
 }) => {
   'data': {
-    'waybill': 'BRLY-L2-001',
+    'waybill': waybill,
     'shipment': {
       'reference': 'SHP-L2-001',
       'status': shipmentStatus,
@@ -670,17 +1016,17 @@ Map<String, Object?> _lookup({
       'city': 'Pila',
       'province': 'Laguna',
     },
-    'logistics_provider': {'id': 3, 'name': 'Victoria Logistics'},
+    'logistics_provider': {'id': 3, 'name': logisticsProviderName},
     'receiving_logistics_provider': {
-      'id': 3,
-      'name': 'Victoria Logistics',
+      'id': 1,
+      'name': receivingProviderName,
       'status': 'active',
     },
     'current_sorting_center': null,
     'receiving_sorting_center': {
       'id': 3,
-      'name': 'Victoria Sorting Center',
-      'code': 'SC-3',
+      'name': receivingCenterName,
+      'code': receivingCenterCode,
       'status': 'active',
       'address': 'Victoria, Laguna',
     },
@@ -691,7 +1037,24 @@ Map<String, Object?> _lookup({
           ? 'Eligible for ordinary receipt at this Sorting Center.'
           : 'This parcel is not eligible for ordinary receipt in its current state.',
     },
-    'handoff': null,
+    'handoff_acceptance_eligibility': {
+      'eligible': handoffEligible,
+      'code': handoffEligible ? 'eligible' : handoffEligibilityCode,
+      'message': handoffEligible
+          ? 'This incoming city handoff is eligible for acceptance.'
+          : handoffEligibilityCode == 'destination_zone_uncovered'
+          ? 'The destination Sorting Center has no active zone covering every parcel.'
+          : handoffEligibilityCode == 'already_accepted'
+          ? 'This city handoff has already been accepted into your Sorting Center.'
+          : 'There is no eligible incoming City Handoff for this waybill.',
+    },
+    'handoff': hasHandoff
+        ? {
+            'status': handoffStatus,
+            'from_provider': logisticsProviderName,
+            'to_provider': receivingProviderName,
+          }
+        : null,
     'parcels': [
       {
         'reference': 'PCL-L2-001',
@@ -714,6 +1077,50 @@ Map<String, Object?> _lookup({
       'message':
           'Verify any physical return to the Sorting Center before intake.',
     },
+  },
+};
+
+Map<String, Object?> _handoffResponse(String waybill) => {
+  'message': 'Incoming city handoff accepted.',
+  'data': {
+    'waybill': waybill,
+    'shipment': {
+      'reference': 'SHP-L3B-001',
+      'status': 'at_sorting_center',
+      'purpose': 'outbound',
+    },
+    'logistics_provider': {'id': 3, 'name': 'Victoria Logistics'},
+    'receiving_logistics_provider': {
+      'id': 1,
+      'name': 'Pila Logistics',
+      'status': 'active',
+    },
+    'receiving_sorting_center': {
+      'id': 1,
+      'name': 'Pila Sorting Center',
+      'code': 'SC-PILA',
+      'status': 'active',
+      'address': 'Pila',
+    },
+    'handoff': {
+      'status': 'accepted',
+      'from_provider': 'Victoria Logistics',
+      'to_provider': 'Pila Logistics',
+      'accepted_at': '2026-10-31T08:00:00Z',
+    },
+    'parcels': [
+      {
+        'reference': 'PCL-L3B-001',
+        'status': 'received',
+        'current_sorting_center': {
+          'id': 1,
+          'name': 'Pila Sorting Center',
+          'code': 'SC-PILA',
+          'status': 'active',
+          'address': 'Pila',
+        },
+      },
+    ],
   },
 };
 

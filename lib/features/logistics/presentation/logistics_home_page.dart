@@ -65,6 +65,15 @@ class _LogisticsHomePageState extends State<LogisticsHomePage> {
     ),
   );
 
+  void _openIncomingHandoff() => Navigator.of(context).push<void>(
+    MaterialPageRoute<void>(
+      builder: (_) => LogisticsWaybillLookupPage(
+        repository: widget.repository,
+        handoffEnabled: true,
+      ),
+    ),
+  );
+
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(
@@ -185,6 +194,16 @@ class _LogisticsHomePageState extends State<LogisticsHomePage> {
             onPressed: _openIncomingReceipt,
             icon: const Icon(Icons.move_to_inbox_outlined),
             label: const Text('Incoming Parcel Receipt'),
+          ),
+        ),
+        const SizedBox(height: 8),
+        SizedBox(
+          width: double.infinity,
+          child: FilledButton.tonalIcon(
+            key: const ValueKey('logistics-open-incoming-handoff'),
+            onPressed: _openIncomingHandoff,
+            icon: const Icon(Icons.swap_horiz_rounded),
+            label: const Text('Incoming City Handoff'),
           ),
         ),
         const SizedBox(height: 18),

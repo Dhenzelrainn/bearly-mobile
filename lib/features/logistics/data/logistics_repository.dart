@@ -52,4 +52,41 @@ class LogisticsRepository {
       },
     );
   }
+
+  Future<void> acceptHandoff(
+    String identifier, {
+    required String scanMethod,
+  }) async {
+    await _authService.requestWithSession<void>(
+      method: AuthenticatedRequestMethod.post,
+      path:
+          '/api/mobile/logistics/waybills/${Uri.encodeComponent(identifier.trim())}/accept-handoff',
+      body: {'scan_method': scanMethod},
+      parse: (response) {
+        if (response is! Map || response['data'] is! Map) {
+          throw const FormatException('Missing handoff response data.');
+        }
+
+        final data = response['data'] as Map;
+        final shipment = data['shipment'];
+        final handoff = data['handoff'];
+        final parcels = data['parcels'];
+        if (data['waybill'] is! String ||
+            shipment is! Map ||
+            shipment['status'] != 'at_sorting_center' ||
+            handoff is! Map ||
+            handoff['status'] != 'accepted' ||
+            data['receiving_sorting_center'] is! Map ||
+            parcels is! List ||
+            parcels.isEmpty ||
+            parcels.any(
+              (parcel) => parcel is! Map || parcel['status'] != 'received',
+            )) {
+          throw const FormatException(
+            'Bearly returned an incomplete handoff confirmation.',
+          );
+        }
+      },
+    );
+  }
 }

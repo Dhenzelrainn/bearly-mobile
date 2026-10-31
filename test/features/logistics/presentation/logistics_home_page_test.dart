@@ -87,6 +87,18 @@ void main() {
     await tester.pageBack();
     await tester.pumpAndSettle();
     await tester.tap(
+      find.byKey(const ValueKey('logistics-open-incoming-handoff')),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Incoming City Handoff'), findsOneWidget);
+    expect(
+      find.textContaining('accept only a handoff addressed'),
+      findsOneWidget,
+    );
+
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+    await tester.tap(
       find.byKey(const ValueKey('logistics-open-incoming-receipt')),
     );
     await tester.pumpAndSettle();

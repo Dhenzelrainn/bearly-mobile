@@ -167,6 +167,7 @@ class LogisticsWaybillLookup {
     required this.currentSortingCenter,
     required this.receivingSortingCenter,
     required this.receiptEligibility,
+    required this.handoffAcceptanceEligibility,
     required this.handoff,
     required this.parcels,
     required this.terminal,
@@ -183,6 +184,7 @@ class LogisticsWaybillLookup {
   final LogisticsSortingCenter? currentSortingCenter;
   final LogisticsSortingCenter? receivingSortingCenter;
   final LogisticsReceiptEligibility receiptEligibility;
+  final LogisticsHandoffAcceptanceEligibility handoffAcceptanceEligibility;
   final LogisticsWaybillHandoff? handoff;
   final List<LogisticsLookupParcel> parcels;
   final bool terminal;
@@ -199,6 +201,7 @@ class LogisticsWaybillLookup {
     final receivingCenterValue = data['receiving_sorting_center'];
     final handoffValue = data['handoff'];
     final receiptEligibilityValue = data['receipt_eligibility'];
+    final handoffEligibilityValue = data['handoff_acceptance_eligibility'];
     final guidance = _map(data['next_step_guidance'], 'next_step_guidance');
     final parcelList = _list(data['parcels'], 'parcels');
 
@@ -221,6 +224,10 @@ class LogisticsWaybillLookup {
       receiptEligibility: LogisticsReceiptEligibility.fromJson(
         receiptEligibilityValue,
       ),
+      handoffAcceptanceEligibility:
+          LogisticsHandoffAcceptanceEligibility.fromJson(
+            handoffEligibilityValue,
+          ),
       handoff: handoffValue == null
           ? null
           : LogisticsWaybillHandoff.fromJson(handoffValue),
@@ -254,6 +261,35 @@ class LogisticsReceiptEligibility {
     }
 
     return LogisticsReceiptEligibility(
+      eligible: value['eligible'] == true,
+      code: _string(value['code']),
+      message: _string(value['message']),
+    );
+  }
+}
+
+class LogisticsHandoffAcceptanceEligibility {
+  const LogisticsHandoffAcceptanceEligibility({
+    required this.eligible,
+    required this.code,
+    required this.message,
+  });
+
+  final bool eligible;
+  final String code;
+  final String message;
+
+  factory LogisticsHandoffAcceptanceEligibility.fromJson(Object? value) {
+    if (value is! Map) {
+      return const LogisticsHandoffAcceptanceEligibility(
+        eligible: false,
+        code: 'unavailable',
+        message:
+            'Handoff acceptance eligibility was not provided by the server.',
+      );
+    }
+
+    return LogisticsHandoffAcceptanceEligibility(
       eligible: value['eligible'] == true,
       code: _string(value['code']),
       message: _string(value['message']),
