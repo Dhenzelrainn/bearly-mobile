@@ -8,6 +8,7 @@ import '../../auth/data/auth_service.dart';
 import '../data/logistics_repository.dart';
 import '../models/logistics_dashboard.dart';
 import 'logistics_dispatch_page.dart';
+import 'logistics_delivery_monitoring_page.dart';
 import 'logistics_sorting_queue_page.dart';
 import 'logistics_waybill_lookup_page.dart';
 
@@ -85,6 +86,14 @@ class _LogisticsHomePageState extends State<LogisticsHomePage> {
   void _openDispatchBoard() => Navigator.of(context).push<void>(
     MaterialPageRoute<void>(
       builder: (_) => LogisticsDispatchPage(repository: widget.repository),
+    ),
+  );
+
+  void _openDeliveryMonitoring() => Navigator.of(context).push<void>(
+    MaterialPageRoute<void>(
+      builder: (_) => LogisticsDeliveryMonitoringPage(
+        repository: widget.repository,
+      ),
     ),
   );
 
@@ -296,6 +305,16 @@ class _LogisticsHomePageState extends State<LogisticsHomePage> {
             onPressed: _openDispatchBoard,
             icon: const Icon(Icons.outbox_outlined),
             label: const Text('Delivery Dispatch'),
+          ),
+        ),
+        const SizedBox(height: 8),
+        SizedBox(
+          width: double.infinity,
+          child: OutlinedButton.icon(
+            key: const ValueKey('logistics-open-delivery-monitoring'),
+            onPressed: _openDeliveryMonitoring,
+            icon: const Icon(Icons.route_outlined),
+            label: const Text('Delivery Monitoring'),
           ),
         ),
       ],

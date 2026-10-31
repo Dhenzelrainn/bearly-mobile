@@ -1,6 +1,7 @@
 import '../../auth/data/auth_service.dart';
 import '../models/logistics_dashboard.dart';
 import '../models/logistics_dispatch.dart';
+import '../models/logistics_monitoring.dart';
 import '../models/logistics_sorting.dart';
 
 class LogisticsRepository {
@@ -124,5 +125,20 @@ class LogisticsRepository {
     path: '/api/mobile/logistics/dispatch/zones/$zoneId/dispatch',
     body: {'rider_profile_id': riderProfileId},
     parse: LogisticsDispatchResult.fromResponse,
+  );
+
+  Future<LogisticsDeliveryMonitoring> deliveryMonitoring() async =>
+      LogisticsDeliveryMonitoring.fromResponse(
+        await _authService.getWithSession(
+          '/api/mobile/logistics/delivery-monitoring',
+        ),
+      );
+
+  Future<LogisticsDeliveryDetail> deliveryMonitoringDetail(
+    String batchReference,
+  ) async => LogisticsDeliveryDetail.fromResponse(
+    await _authService.getWithSession(
+      '/api/mobile/logistics/delivery-monitoring/${Uri.encodeComponent(batchReference.trim())}',
+    ),
   );
 }

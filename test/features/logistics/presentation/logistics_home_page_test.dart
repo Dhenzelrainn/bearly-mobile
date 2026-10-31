@@ -106,6 +106,45 @@ void main() {
     expect(find.text('Read-only parcel lookup'), findsNothing);
   });
 
+  testWidgets('dashboard opens provider delivery monitoring', (tester) async {
+    final auth = _authService((request) async {
+      if (request.url.path == '/api/mobile/logistics/dashboard') {
+        return http.Response(jsonEncode(_dashboard()), 200);
+      }
+      expect(request.method, 'GET');
+      expect(request.url.path, '/api/mobile/logistics/delivery-monitoring');
+      return http.Response(
+        jsonEncode({
+          'data': {
+            'provider': {'id': 3, 'name': 'Victoria Logistics'},
+            'deliveries': [],
+          },
+        }),
+        200,
+      );
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: LogisticsHomePage(
+          authService: auth,
+          repository: LogisticsRepository(authService: auth),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(
+      find.byKey(const ValueKey('logistics-open-delivery-monitoring')),
+      250,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.tap(find.byKey(const ValueKey('logistics-open-delivery-monitoring')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Delivery Monitoring'), findsOneWidget);
+    expect(find.text('No delivery batches are available yet.'), findsOneWidget);
+  });
+
   testWidgets(
     'dashboard labels current status separately from historical intake',
     (tester) async {
