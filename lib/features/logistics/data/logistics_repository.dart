@@ -1,5 +1,6 @@
 import '../../auth/data/auth_service.dart';
 import '../models/logistics_dashboard.dart';
+import '../models/logistics_sorting.dart';
 
 class LogisticsRepository {
   const LogisticsRepository({required AuthService authService})
@@ -89,4 +90,21 @@ class LogisticsRepository {
       },
     );
   }
+
+  Future<LogisticsSortingQueue> sortingQueue() async =>
+      LogisticsSortingQueue.fromResponse(
+        await _authService.getWithSession(
+          '/api/mobile/logistics/sorting-queue',
+        ),
+      );
+
+  Future<LogisticsSortResult> sortParcel({
+    required int parcelId,
+    required int sortingZoneId,
+  }) async => _authService.requestWithSession<LogisticsSortResult>(
+    method: AuthenticatedRequestMethod.post,
+    path: '/api/mobile/logistics/sorting/parcels/$parcelId/sort',
+    body: {'sorting_zone_id': sortingZoneId},
+    parse: LogisticsSortResult.fromResponse,
+  );
 }

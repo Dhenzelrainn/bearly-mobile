@@ -40,3 +40,30 @@ Automated isolated-database results: Laravel Mobile handoff and L2/L3-A lookup t
 ### Pending operator-controlled live test
 
 No L3-B handoff-send or acceptance request has been made against staging. To test this parcel, first send it through the Victoria Logistics Web City Handoffs workflow. Then, while signed in as the destination Logistics operator for PB Sorting Center, open **Incoming City Handoff** in Flutter, scan or enter the waybill, verify the source/destination and SC-1 details and eligible state, and explicitly confirm once. After success, verify `shipment_transfers.status = accepted`, the shipment is `at_sorting_center` under the destination provider, the parcel is `received` at SC-1, and exactly one `logistics_handoff_accepted` event exists. If the response is uncertain, refresh the lookup before considering another submission. No Mobile sorting or dispatch actions are included in this phase.
+
+## Phase L4 — Sorting and destination-zone assignment
+
+### Shipment #12 read-only staging verification
+
+On October 31, 2026, a read-only query explicitly connected to `bearly_latest_dev_import_20261028` verified the parcel's state after the operator-controlled L3-B handoff:
+
+This current check supersedes the earlier pre-acceptance snapshot and pending-test note in the Phase L3-B section above.
+
+- Shipment #12 (`SHP-Y1UO5AHT0PL4XMRVFPYV`) remains `at_sorting_center` under destination Logistics profile #1; its origin profile is #3.
+- Parcel #12 (`PCL-6WLXGU2SQ0TDWEIA1MZH`) is `received` at active center SC-1, owned by provider profile #1, with no current sorting zone.
+- Exactly one transfer is `accepted`, from profile #3 to profile #1, and exactly one `logistics_handoff_accepted` event is recorded. No `parcel_sorted` or `parcel_resorted` event exists.
+- The order destination is Pinagbayanan, Pila, Laguna (`0403422000`). Active SC-1 zone `PILA-02` (zone #2) covers that barangay and municipality. The parcel is eligible to appear in the Mobile sorting queue, subject to the server's live eligibility response and operator confirmation.
+
+This is a read-only database verification. It confirms recorded custody and destination coverage, not physical parcel presence. No sorting or zone assignment has been performed. Shipment #10 and delivered shipment #11 were not queried or changed for this phase.
+
+### Implementation and automated validation
+
+Mobile adds an authenticated sorting queue for received parcels at the authenticated Logistics provider's single active Sorting Center. The server derives provider and center identity, returns only active zones whose coverage matches the parcel destination, and revalidates status, custody, owner, zone activity, and coverage under the existing `ParcelSortingService` transaction. The Mobile adapter allows one `received` to `sorted` transition and rejects duplicate/terminal sorting; Web's established `parcel_resorted` behavior remains unchanged. Successful responses include server-confirmed parcel, zone, and shipment state. Sorting does not create COD or other financial entries.
+
+The Flutter dashboard now links to **Sorting Queue**. Operators can review a parcel, select a server-provided matching zone, confirm sorting explicitly, and refresh state. Timeouts, transport failures, malformed responses, and server errors block another submission until a fresh queue read succeeds. No Mobile dispatching, Rider assignment, City Handoff sending, return, COD, or live-map action is included.
+
+Automated isolated-database validation for L4: Laravel Mobile sorting, existing Web sorting/intake, cross-city workflow, and Mobile handoff acceptance tests passed (48 tests, 1,216 assertions). Flutter sorting-queue tests passed (5 tests) for dashboard navigation, matching-zone selection, confirmation, post-success refresh, uncertain-response reconciliation, and read-error retry. These automated results do not represent a live sort.
+
+### Pending operator-controlled Samsung test
+
+No sort request has been submitted against staging. For the expected smoke test, sign in to the Pila Logistics Mobile account, open **Sorting Queue**, refresh, open waybill `BRLY-ULD904RGCHZK1SIDLUND`, and verify the server still shows shipment #12 at SC-1, parcel #12 as `received`, and `PILA-02` as a selectable active matching zone. After confirming the parcel's physical presence and the destination, select `PILA-02` and tap **Mark parcel sorted**. Review the confirmation dialog and confirm once only. Then verify Flutter's server-confirmed `sorted` parcel/zone state and `/logistics/sorting` in Laravel Web. If a request times out or returns a server error, refresh the queue before any further action; do not replay automatically.
