@@ -7,6 +7,7 @@ import '../../../core/widgets/bearly_logo.dart';
 import '../../auth/data/auth_service.dart';
 import '../data/logistics_repository.dart';
 import '../models/logistics_dashboard.dart';
+import 'logistics_dispatch_page.dart';
 import 'logistics_sorting_queue_page.dart';
 import 'logistics_waybill_lookup_page.dart';
 
@@ -78,6 +79,12 @@ class _LogisticsHomePageState extends State<LogisticsHomePage> {
   void _openSortingQueue() => Navigator.of(context).push<void>(
     MaterialPageRoute<void>(
       builder: (_) => LogisticsSortingQueuePage(repository: widget.repository),
+    ),
+  );
+
+  void _openDispatchBoard() => Navigator.of(context).push<void>(
+    MaterialPageRoute<void>(
+      builder: (_) => LogisticsDispatchPage(repository: widget.repository),
     ),
   );
 
@@ -279,6 +286,16 @@ class _LogisticsHomePageState extends State<LogisticsHomePage> {
             onPressed: _openSortingQueue,
             icon: const Icon(Icons.sort_rounded),
             label: const Text('Sorting Queue'),
+          ),
+        ),
+        const SizedBox(height: 8),
+        SizedBox(
+          width: double.infinity,
+          child: FilledButton.tonalIcon(
+            key: const ValueKey('logistics-open-delivery-dispatch'),
+            onPressed: _openDispatchBoard,
+            icon: const Icon(Icons.outbox_outlined),
+            label: const Text('Delivery Dispatch'),
           ),
         ),
       ],

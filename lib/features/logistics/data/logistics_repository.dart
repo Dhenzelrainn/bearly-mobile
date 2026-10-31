@@ -1,5 +1,6 @@
 import '../../auth/data/auth_service.dart';
 import '../models/logistics_dashboard.dart';
+import '../models/logistics_dispatch.dart';
 import '../models/logistics_sorting.dart';
 
 class LogisticsRepository {
@@ -106,5 +107,22 @@ class LogisticsRepository {
     path: '/api/mobile/logistics/sorting/parcels/$parcelId/sort',
     body: {'sorting_zone_id': sortingZoneId},
     parse: LogisticsSortResult.fromResponse,
+  );
+
+  Future<LogisticsDispatchBoard> dispatchBoard() async =>
+      LogisticsDispatchBoard.fromResponse(
+        await _authService.getWithSession(
+          '/api/mobile/logistics/dispatch-board',
+        ),
+      );
+
+  Future<LogisticsDispatchResult> dispatchZone({
+    required int zoneId,
+    required int riderProfileId,
+  }) async => _authService.requestWithSession<LogisticsDispatchResult>(
+    method: AuthenticatedRequestMethod.post,
+    path: '/api/mobile/logistics/dispatch/zones/$zoneId/dispatch',
+    body: {'rider_profile_id': riderProfileId},
+    parse: LogisticsDispatchResult.fromResponse,
   );
 }

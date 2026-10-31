@@ -67,3 +67,29 @@ Automated isolated-database validation for L4: Laravel Mobile sorting, existing 
 ### Pending operator-controlled Samsung test
 
 No sort request has been submitted against staging. For the expected smoke test, sign in to the Pila Logistics Mobile account, open **Sorting Queue**, refresh, open waybill `BRLY-ULD904RGCHZK1SIDLUND`, and verify the server still shows shipment #12 at SC-1, parcel #12 as `received`, and `PILA-02` as a selectable active matching zone. After confirming the parcel's physical presence and the destination, select `PILA-02` and tap **Mark parcel sorted**. Review the confirmation dialog and confirm once only. Then verify Flutter's server-confirmed `sorted` parcel/zone state and `/logistics/sorting` in Laravel Web. If a request times out or returns a server error, refresh the queue before any further action; do not replay automatically.
+## Phase L5 — Delivery dispatch
+
+### Reused Web workflow and Mobile contract
+
+The existing Web entry point is `GET /logistics/dispatch` and `POST /logistics/dispatch/{zone}`. The POST delegates to `DispatchService::dispatchZone()`, which locks and revalidates the provider-owned zone, Rider eligibility and zone assignment, available capacity, and every ready parcel in that zone. It creates one dispatch batch for the entire coverage-matched ready zone set, updates parcel/shipment states as appropriate, writes the existing tracking events, and notifies the assigned Rider after commit. Mobile delegates to this same service; it does not implement another dispatch engine.
+
+The authenticated Mobile API adds `GET /api/mobile/logistics/dispatch-board` and `POST /api/mobile/logistics/dispatch/zones/{zone}/dispatch`. Provider and active Sorting Center come from the authenticated Logistics account. The board shares its read model with the Web dispatch page and shows zone parcel membership, waybills, eligible Riders, and remaining capacity. The POST accepts only `rider_profile_id` in its body; the server scopes the zone to the account's active center and transactionally recomputes the complete parcel set and capacity. The response contains the created batch, server-confirmed parcel states, and a refreshed board. Dispatch itself does not create delivery attempts, COD collections, delivery completions, or payouts.
+
+Flutter adds **Delivery Dispatch** to the Logistics dashboard. The operator reviews all waybills in a zone, selects a server-eligible Rider, and confirms explicitly. A timeout, transport error, malformed response, or server error blocks another submission until a fresh board read reconciles state; the POST is never automatically replayed.
+
+### Isolated validation results
+
+Laravel's new Mobile dispatch API suite and the existing Web dispatch and Mobile sorting regression suites passed: 40 tests, 254 assertions. Coverage includes provider isolation, whole-zone multi-parcel batches, active-load capacity, stale board data, duplicate dispatch rejection, status/event transitions, no COD or delivery-attempt side effects, and visibility in the assigned Rider's existing delivery API. Flutter's new dispatch widget tests passed (6); the complete Logistics widget suite passed (38). Targeted Logistics analysis reported no issues, and the Android debug APK built successfully. All dispatch mutations in these automated tests used Laravel's isolated test database. No staging dispatch was performed.
+
+### Candidate and controlled Samsung procedure
+
+The Phase L5 brief names Shipment #12 (`SHP-Y1UO5AHT0PL4XMRVFPYV`), waybill `BRLY-ULD904RGCHZK1SIDLUND`, Pila Sorting Center SC-1, and zone `PILA-02` as a possible candidate, with Mark Carlo A. Andasan as a potential Rider. These are earlier operator-observed references, not a current eligibility check or authorization to dispatch. No staging records were changed during L5 implementation. Before a live test, refresh the Mobile board and verify the provider, active center, zone, every listed waybill, the candidate Rider's current eligibility/capacity, and the parcel's physical presence. The Web workflow dispatches every eligible parcel in the zone, so review the full set before confirmation.
+
+For a later operator-controlled test on the Samsung device:
+
+1. Confirm the local SafeTest server and current staging database are the intended ones; keep Cloudflare stopped and do not use an unverified server.
+2. Sign in to the Logistics account that owns the displayed active Sorting Center, then open **Delivery Dispatch** from the dashboard.
+3. Refresh the board. Confirm each parcel in the target zone is physically present and ready, then review the full waybill list and the selected Rider's remaining capacity.
+4. Select an eligible Rider and tap **Review dispatch**. Check that the zone, all parcels, and Rider are correct in the confirmation dialog. Cancel if anything differs.
+5. Only after explicit operator approval, confirm once. Wait for the batch reference and server-confirmed `dispatched` parcel state. If the response is uncertain, refresh the board and inspect state before any retry.
+6. Verify the generated batch and parcel states in Laravel Web `/logistics/dispatch` and `/logistics/monitoring`, then confirm the batch is visible in that Rider's Flutter **Assigned Deliveries**. Do not start delivery as part of this dispatch test.
