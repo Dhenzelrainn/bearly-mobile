@@ -22,6 +22,7 @@ class _LogisticsDispatchPageState extends State<LogisticsDispatchPage> {
   bool _needsReconciliation = false;
   String? _message;
   String? _error;
+  String? _confirmedBatchReference;
 
   @override
   void initState() {
@@ -40,7 +41,14 @@ class _LogisticsDispatchPageState extends State<LogisticsDispatchPage> {
       if (!mounted) return;
       setState(() => _needsReconciliation = false);
     } catch (_) {
-      // Keep dispatch blocked after an uncertain POST until a fresh read works.
+      if (!mounted) return;
+      setState(() {
+        _error = _needsReconciliation
+            ? 'Could not verify the dispatch state. Refresh successfully before trying again.'
+            : _confirmedBatchReference != null
+            ? _confirmedRefreshMessage(_confirmedBatchReference!)
+            : 'Could not refresh the dispatch board. Try again before dispatching.';
+      });
     }
   }
 
@@ -101,36 +109,15 @@ class _LogisticsDispatchPageState extends State<LogisticsDispatchPage> {
       _submittingZoneId = zone.id;
       _error = null;
       _message = null;
+      _confirmedBatchReference = null;
     });
 
+    late final LogisticsDispatchResult result;
     try {
-      final result = await widget.repository.dispatchZone(
+      result = await widget.repository.dispatchZone(
         zoneId: zone.id,
         riderProfileId: rider.id,
       );
-      if (!mounted) return;
-      setState(() {
-        _message =
-            'Server confirmed ${result.batchReference}: ${result.parcels.length} parcel(s) dispatched to ${result.riderName}.';
-        _selectedRiders.remove(zone.id);
-        _board = Future.value(result.refreshedBoard);
-        _needsReconciliation = false;
-      });
-
-      // Read once more after the server confirmation so the visible board is
-      // current even if other dispatch activity happened concurrently.
-      final refreshed = widget.repository.dispatchBoard();
-      setState(() => _board = refreshed);
-      try {
-        await refreshed;
-      } catch (_) {
-        if (mounted) {
-          setState(
-            () => _error =
-                'Dispatch was confirmed as ${result.batchReference}, but the board could not refresh. Use Refresh before dispatching again.',
-          );
-        }
-      }
     } catch (error) {
       if (!mounted) return;
       final uncertain = _isUncertain(error);
@@ -139,11 +126,41 @@ class _LogisticsDispatchPageState extends State<LogisticsDispatchPage> {
         _error = uncertain
             ? 'The dispatch result is uncertain. Refresh the board from the server before trying again.'
             : _requestMessage(error);
+        _submittingZoneId = null;
       });
+      return;
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _message =
+          'Server confirmed ${result.batchReference}: ${result.parcels.length} parcel(s) dispatched to ${result.riderName}.';
+      _confirmedBatchReference = result.batchReference;
+      _selectedRiders.remove(zone.id);
+      _board = Future.value(result.refreshedBoard);
+      _needsReconciliation = false;
+      _error = null;
+    });
+
+    try {
+      // Keep the server-confirmed board visible unless this follow-up read
+      // succeeds; a failed GET cannot turn a successful dispatch into a POST
+      // failure or replace the confirmed board with a FutureBuilder error.
+      final refreshed = await widget.repository.dispatchBoard();
+      if (mounted) setState(() => _board = Future.value(refreshed));
+    } catch (_) {
+      if (mounted) {
+        setState(
+          () => _error = _confirmedRefreshMessage(result.batchReference),
+        );
+      }
     } finally {
       if (mounted) setState(() => _submittingZoneId = null);
     }
   }
+
+  String _confirmedRefreshMessage(String batchReference) =>
+      'Dispatch was confirmed as $batchReference, but the board could not be refreshed. Refresh server state before dispatching more parcels.';
 
   bool _isUncertain(Object error) =>
       error is ApiTimeoutException ||

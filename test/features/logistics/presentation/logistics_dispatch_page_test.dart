@@ -134,11 +134,138 @@ void main() {
         findsOneWidget,
       );
       expect(
+        find.text(
+          'Could not dispatch these parcels. Check the board and try again.',
+        ),
+        findsNothing,
+      );
+      expect(
         find.text('No sorted parcels are ready for delivery dispatch.'),
         findsOneWidget,
       );
     },
   );
+
+  testWidgets(
+    'confirmed dispatch stays successful when the follow-up board read fails',
+    (tester) async {
+      final requests = <http.Request>[];
+      final auth = _auth((request) async {
+        requests.add(request);
+        if (request.method == 'POST') {
+          return http.Response(jsonEncode(_dispatchResult()), 200);
+        }
+        if (requests.where((item) => item.method == 'GET').length == 1) {
+          return http.Response(jsonEncode(_board()), 200);
+        }
+        return http.Response(
+          jsonEncode({'message': 'temporary read error'}),
+          503,
+        );
+      });
+
+      await tester.pumpWidget(_dispatch(auth));
+      await tester.pumpAndSettle();
+      await _submitConfirmedDispatch(tester);
+
+      expect(requests.map((request) => request.method), ['GET', 'POST', 'GET']);
+      expect(
+        requests.where((request) => request.method == 'POST'),
+        hasLength(1),
+      );
+      expect(
+        find.textContaining('Server confirmed DSP-L5-001'),
+        findsOneWidget,
+      );
+      expect(
+        find.textContaining(
+          'Dispatch was confirmed as DSP-L5-001, but the board could not be refreshed.',
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.text(
+          'Could not dispatch these parcels. Check the board and try again.',
+        ),
+        findsNothing,
+      );
+      expect(find.textContaining('result is uncertain'), findsNothing);
+    },
+  );
+
+  testWidgets('confirmed POST rejection shows an error without success', (
+    tester,
+  ) async {
+    final requests = <http.Request>[];
+    final auth = _auth((request) async {
+      requests.add(request);
+      if (request.method == 'POST') {
+        return http.Response(
+          jsonEncode({
+            'message': 'The selected Rider is no longer eligible.',
+            'errors': {
+              'rider_profile_id': ['The selected Rider is no longer eligible.'],
+            },
+          }),
+          422,
+        );
+      }
+      return http.Response(jsonEncode(_board()), 200);
+    });
+
+    await tester.pumpWidget(_dispatch(auth));
+    await tester.pumpAndSettle();
+    await _submitConfirmedDispatch(tester);
+
+    expect(requests.map((request) => request.method), ['GET', 'POST']);
+    expect(requests.where((request) => request.method == 'POST'), hasLength(1));
+    expect(
+      find.text('The selected Rider is no longer eligible.'),
+      findsOneWidget,
+    );
+    expect(find.textContaining('Server confirmed'), findsNothing);
+    expect(find.textContaining('result is uncertain'), findsNothing);
+  });
+
+  testWidgets('manual refresh after successful dispatch preserves its result', (
+    tester,
+  ) async {
+    final requests = <http.Request>[];
+    final auth = _auth((request) async {
+      requests.add(request);
+      if (request.method == 'POST') {
+        return http.Response(jsonEncode(_dispatchResult()), 200);
+      }
+      final getCount = requests.where((item) => item.method == 'GET').length;
+      return http.Response(
+        jsonEncode(getCount == 1 ? _board() : _board(zones: const [])),
+        200,
+      );
+    });
+
+    await tester.pumpWidget(_dispatch(auth));
+    await tester.pumpAndSettle();
+    await _submitConfirmedDispatch(tester);
+    expect(find.textContaining('Server confirmed DSP-L5-001'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('Refresh dispatch board'));
+    await tester.pumpAndSettle();
+
+    expect(requests.map((request) => request.method), [
+      'GET',
+      'POST',
+      'GET',
+      'GET',
+    ]);
+    expect(requests.where((request) => request.method == 'POST'), hasLength(1));
+    expect(find.textContaining('Server confirmed DSP-L5-001'), findsOneWidget);
+    expect(
+      find.text(
+        'Could not dispatch these parcels. Check the board and try again.',
+      ),
+      findsNothing,
+    );
+  });
 
   testWidgets('no eligible Rider is clearly reported', (tester) async {
     final auth = _auth(
@@ -301,7 +428,12 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(requests.map((request) => request.method), ['GET', 'POST']);
+      expect(
+        requests.where((request) => request.method == 'POST'),
+        hasLength(1),
+      );
       expect(find.textContaining('result is uncertain'), findsOneWidget);
+      expect(find.textContaining('Server confirmed'), findsNothing);
       expect(tester.widget<FilledButton>(action).onPressed, isNull);
       await tester.tap(
         find.byKey(
@@ -351,6 +483,17 @@ Future<void> _chooseRider(WidgetTester tester) async {
   await tester.tap(find.byKey(const ValueKey('logistics-dispatch-rider-2')));
   await tester.pumpAndSettle();
   await tester.tap(find.text('Rider Mark · 3 of 5 capacity available').last);
+  await tester.pumpAndSettle();
+}
+
+Future<void> _submitConfirmedDispatch(WidgetTester tester) async {
+  await _chooseRider(tester);
+  final action = find.byKey(const ValueKey('logistics-dispatch-zone-2'));
+  await tester.ensureVisible(action);
+  await tester.pumpAndSettle();
+  await tester.tap(action);
+  await tester.pumpAndSettle();
+  await tester.tap(find.byKey(const ValueKey('logistics-confirm-dispatch')));
   await tester.pumpAndSettle();
 }
 
