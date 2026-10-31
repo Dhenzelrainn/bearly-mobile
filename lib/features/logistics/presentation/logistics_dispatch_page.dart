@@ -60,11 +60,27 @@ class _LogisticsDispatchPageState extends State<LogisticsDispatchPage> {
       context: context,
       builder: (dialogContext) => AlertDialog(
         key: const ValueKey('logistics-dispatch-confirm-dialog'),
+        scrollable: true,
         title: const Text('Review delivery dispatch'),
-        content: Text(
-          'Dispatch all ${zone.readyCount} ready parcel(s) in ${zone.code} '
-          'to ${rider.name}?\n\nWaybills: '
-          '${zone.parcels.map((parcel) => parcel.waybill).join(', ')}',
+        content: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'Dispatch all ${zone.readyCount} ready parcel(s) in ${zone.code} to:',
+            ),
+            const SizedBox(height: 8),
+            Text(rider.name, style: Theme.of(context).textTheme.titleSmall),
+            const SizedBox(height: 12),
+            Text('Waybills', style: Theme.of(context).textTheme.labelLarge),
+            const SizedBox(height: 4),
+            ...zone.parcels.map(
+              (parcel) => Padding(
+                padding: const EdgeInsets.only(bottom: 4),
+                child: Text(parcel.waybill, softWrap: true),
+              ),
+            ),
+          ],
         ),
         actions: [
           TextButton(
@@ -292,13 +308,31 @@ class _LogisticsDispatchPageState extends State<LogisticsDispatchPage> {
             ),
           const SizedBox(height: 8),
           ...zone.parcels.map(
-            (parcel) => ListTile(
-              dense: true,
-              contentPadding: EdgeInsets.zero,
-              leading: const Icon(Icons.local_shipping_outlined),
-              title: Text(parcel.waybill),
-              subtitle: Text(
-                '${parcel.reference} · ${parcel.shipmentReference} · ${parcel.status}',
+            (parcel) => Padding(
+              padding: const EdgeInsets.symmetric(vertical: 6),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Padding(
+                    padding: EdgeInsets.only(top: 2),
+                    child: Icon(Icons.local_shipping_outlined),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(parcel.waybill, softWrap: true),
+                        const SizedBox(height: 2),
+                        Text(
+                          '${parcel.reference} · ${parcel.shipmentReference} · ${parcel.status}',
+                          softWrap: true,
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
@@ -314,6 +348,8 @@ class _LogisticsDispatchPageState extends State<LogisticsDispatchPage> {
             DropdownButtonFormField<int>(
               key: ValueKey('logistics-dispatch-rider-${zone.id}'),
               initialValue: _selectedRiders[zone.id],
+              isExpanded: true,
+              itemHeight: null,
               decoration: const InputDecoration(
                 labelText: 'Eligible Rider',
                 border: OutlineInputBorder(),
@@ -322,8 +358,14 @@ class _LogisticsDispatchPageState extends State<LogisticsDispatchPage> {
                   .map(
                     (rider) => DropdownMenuItem<int>(
                       value: rider.id,
-                      child: Text(
-                        '${rider.name} · ${rider.remaining} of ${rider.capacity} capacity available',
+                      child: ConstrainedBox(
+                        constraints: BoxConstraints(
+                          maxWidth: MediaQuery.sizeOf(context).width - 176,
+                        ),
+                        child: Text(
+                          '${rider.name} · ${rider.remaining} of ${rider.capacity} capacity available',
+                          softWrap: true,
+                        ),
                       ),
                     ),
                   )

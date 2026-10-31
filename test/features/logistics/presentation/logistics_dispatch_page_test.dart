@@ -159,6 +159,94 @@ void main() {
     );
   });
 
+  for (final (width, textScale) in [(320.0, 1.0), (360.0, 1.3), (393.0, 1.5)]) {
+    testWidgets(
+      'dispatch card and review dialog fit at ${width.toInt()}px with text scale $textScale',
+      (tester) async {
+        const waybill =
+            'BRLY-ULD904RGCHZK1SIDLUND-EXTRA-LONG-IDENTIFIER-KEEP-FULL';
+        const parcelReference = 'PCL-6WLXGU2SQOTDWEIA1MZH-EXTRA-LONG';
+        const shipmentReference = 'SHP-Y1UO5AHT0PL4XMRVFPYV-EXTRA-LONG';
+        const riderName = 'Mark Carlo Alfonso de la Cruz Andasan Rivera';
+        const riderLabel = '$riderName · 3 of 10 capacity available';
+        final requests = <http.Request>[];
+        final auth = _auth((request) async {
+          requests.add(request);
+          return http.Response(
+            jsonEncode(
+              _board(
+                zones: [
+                  _zone(
+                    waybill: waybill,
+                    parcelReference: parcelReference,
+                    shipmentReference: shipmentReference,
+                    riders: [_rider(name: riderName, capacity: 10, load: 7)],
+                  ),
+                ],
+              ),
+            ),
+            200,
+          );
+        });
+
+        await _pumpDispatchAtSize(
+          tester,
+          auth,
+          width: width,
+          textScale: textScale,
+        );
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+        expect(find.text(waybill), findsOneWidget);
+        expect(find.textContaining(parcelReference), findsOneWidget);
+        expect(find.textContaining(shipmentReference), findsOneWidget);
+
+        final riderField = find.byKey(
+          const ValueKey('logistics-dispatch-rider-2'),
+        );
+        await tester.ensureVisible(riderField);
+        await tester.pumpAndSettle();
+        await tester.tap(riderField);
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+        expect(find.text(riderLabel), findsOneWidget);
+        await tester.tap(find.text(riderLabel));
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+        expect(find.textContaining(riderName), findsOneWidget);
+
+        final reviewButton = find.byKey(
+          const ValueKey('logistics-dispatch-zone-2'),
+        );
+        await tester.ensureVisible(reviewButton);
+        await tester.pumpAndSettle();
+        await tester.tap(reviewButton);
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+        expect(
+          find.byKey(const ValueKey('logistics-dispatch-confirm-dialog')),
+          findsOneWidget,
+        );
+        final dialog = find.byKey(
+          const ValueKey('logistics-dispatch-confirm-dialog'),
+        );
+        expect(
+          find.descendant(of: dialog, matching: find.text(riderName)),
+          findsOneWidget,
+        );
+        expect(
+          find.descendant(of: dialog, matching: find.text(waybill)),
+          findsOneWidget,
+        );
+
+        await tester.tap(find.text('Cancel'));
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+        expect(requests.map((request) => request.method), ['GET']);
+      },
+    );
+  }
+
   testWidgets(
     'uncertain dispatch blocks resubmission until a fresh board read',
     (tester) async {
@@ -253,6 +341,31 @@ Widget _dispatch(AuthService auth) => MaterialApp(
   ),
 );
 
+Future<void> _pumpDispatchAtSize(
+  WidgetTester tester,
+  AuthService auth, {
+  required double width,
+  required double textScale,
+}) async {
+  tester.view.devicePixelRatio = 1;
+  tester.view.physicalSize = Size(width, 820);
+  addTearDown(tester.view.resetPhysicalSize);
+  addTearDown(tester.view.resetDevicePixelRatio);
+  await tester.pumpWidget(
+    MaterialApp(
+      home: MediaQuery(
+        data: MediaQueryData(
+          size: Size(width, 820),
+          textScaler: TextScaler.linear(textScale),
+        ),
+        child: LogisticsDispatchPage(
+          repository: LogisticsRepository(authService: auth),
+        ),
+      ),
+    ),
+  );
+}
+
 AuthService _auth(Future<http.Response> Function(http.Request) handler) =>
     AuthService(
         apiClient: ApiClient(
@@ -303,7 +416,12 @@ Map<String, Object?> _dashboard() => {
   },
 };
 
-Map<String, Object?> _zone({List<Map<String, Object?>>? riders}) => {
+Map<String, Object?> _zone({
+  List<Map<String, Object?>>? riders,
+  String waybill = 'BRLY-L5-001',
+  String parcelReference = 'PCL-L5-001',
+  String shipmentReference = 'SHP-L5-001',
+}) => {
   'id': 2,
   'zone': 'PILA-02',
   'area': 'Pila / Pinagbayanan',
@@ -314,20 +432,24 @@ Map<String, Object?> _zone({List<Map<String, Object?>>? riders}) => {
   'parcels': [
     {
       'id': 12,
-      'reference': 'PCL-L5-001',
-      'waybill': 'BRLY-L5-001',
-      'shipment_reference': 'SHP-L5-001',
+      'reference': parcelReference,
+      'waybill': waybill,
+      'shipment_reference': shipmentReference,
       'status': 'sorted',
     },
   ],
 };
 
-Map<String, Object?> _rider() => {
+Map<String, Object?> _rider({
+  String name = 'Rider Mark',
+  int capacity = 5,
+  int load = 2,
+}) => {
   'id': 9,
-  'name': 'Rider Mark',
-  'load': 2,
-  'capacity': 5,
-  'remaining': 3,
+  'name': name,
+  'load': load,
+  'capacity': capacity,
+  'remaining': capacity - load,
 };
 
 Map<String, Object?> _board({List<Map<String, Object?>>? zones}) => {
