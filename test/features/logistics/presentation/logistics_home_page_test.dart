@@ -83,6 +83,15 @@ void main() {
     expect(find.text('Read-only parcel lookup'), findsOneWidget);
     expect(find.text('Scan with camera'), findsOneWidget);
     expect(find.text('Look up'), findsOneWidget);
+
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('logistics-open-incoming-receipt')),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Incoming Parcel Receipt'), findsOneWidget);
+    expect(find.text('Read-only parcel lookup'), findsNothing);
   });
 
   testWidgets(

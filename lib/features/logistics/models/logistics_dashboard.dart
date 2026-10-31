@@ -163,7 +163,10 @@ class LogisticsWaybillLookup {
     required this.purpose,
     required this.destination,
     required this.logisticsProvider,
+    required this.receivingProvider,
     required this.currentSortingCenter,
+    required this.receivingSortingCenter,
+    required this.receiptEligibility,
     required this.handoff,
     required this.parcels,
     required this.terminal,
@@ -176,7 +179,10 @@ class LogisticsWaybillLookup {
   final String purpose;
   final LogisticsDestination destination;
   final String logisticsProvider;
+  final String receivingProvider;
   final LogisticsSortingCenter? currentSortingCenter;
+  final LogisticsSortingCenter? receivingSortingCenter;
+  final LogisticsReceiptEligibility receiptEligibility;
   final LogisticsWaybillHandoff? handoff;
   final List<LogisticsLookupParcel> parcels;
   final bool terminal;
@@ -188,8 +194,11 @@ class LogisticsWaybillLookup {
     final shipment = _map(data['shipment'], 'shipment');
     final destination = _map(data['destination'], 'destination');
     final provider = _map(data['logistics_provider'], 'logistics_provider');
+    final receivingProvider = data['receiving_logistics_provider'];
     final centerValue = data['current_sorting_center'];
+    final receivingCenterValue = data['receiving_sorting_center'];
     final handoffValue = data['handoff'];
+    final receiptEligibilityValue = data['receipt_eligibility'];
     final guidance = _map(data['next_step_guidance'], 'next_step_guidance');
     final parcelList = _list(data['parcels'], 'parcels');
 
@@ -200,9 +209,18 @@ class LogisticsWaybillLookup {
       purpose: _string(shipment['purpose']),
       destination: LogisticsDestination.fromJson(destination),
       logisticsProvider: _string(provider['name']),
+      receivingProvider: receivingProvider is Map
+          ? _string(receivingProvider['name'])
+          : _string(provider['name']),
       currentSortingCenter: centerValue == null
           ? null
           : LogisticsSortingCenter.fromJson(centerValue),
+      receivingSortingCenter: receivingCenterValue == null
+          ? null
+          : LogisticsSortingCenter.fromJson(receivingCenterValue),
+      receiptEligibility: LogisticsReceiptEligibility.fromJson(
+        receiptEligibilityValue,
+      ),
       handoff: handoffValue == null
           ? null
           : LogisticsWaybillHandoff.fromJson(handoffValue),
@@ -211,6 +229,34 @@ class LogisticsWaybillLookup {
           .toList(growable: false),
       terminal: data['terminal'] == true,
       guidance: _string(guidance['message']),
+    );
+  }
+}
+
+class LogisticsReceiptEligibility {
+  const LogisticsReceiptEligibility({
+    required this.eligible,
+    required this.code,
+    required this.message,
+  });
+
+  final bool eligible;
+  final String code;
+  final String message;
+
+  factory LogisticsReceiptEligibility.fromJson(Object? value) {
+    if (value is! Map) {
+      return const LogisticsReceiptEligibility(
+        eligible: false,
+        code: 'unavailable',
+        message: 'Receipt eligibility was not provided by the server.',
+      );
+    }
+
+    return LogisticsReceiptEligibility(
+      eligible: value['eligible'] == true,
+      code: _string(value['code']),
+      message: _string(value['message']),
     );
   }
 }

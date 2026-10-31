@@ -56,6 +56,15 @@ class _LogisticsHomePageState extends State<LogisticsHomePage> {
     ),
   );
 
+  void _openIncomingReceipt() => Navigator.of(context).push<void>(
+    MaterialPageRoute<void>(
+      builder: (_) => LogisticsWaybillLookupPage(
+        repository: widget.repository,
+        receiptEnabled: true,
+      ),
+    ),
+  );
+
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(
@@ -166,6 +175,16 @@ class _LogisticsHomePageState extends State<LogisticsHomePage> {
             onPressed: _openWaybillLookup,
             icon: const Icon(Icons.qr_code_scanner_rounded),
             label: const Text('Scan Waybill'),
+          ),
+        ),
+        const SizedBox(height: 8),
+        SizedBox(
+          width: double.infinity,
+          child: FilledButton.icon(
+            key: const ValueKey('logistics-open-incoming-receipt'),
+            onPressed: _openIncomingReceipt,
+            icon: const Icon(Icons.move_to_inbox_outlined),
+            label: const Text('Incoming Parcel Receipt'),
           ),
         ),
         const SizedBox(height: 18),

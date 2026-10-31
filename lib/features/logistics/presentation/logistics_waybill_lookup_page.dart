@@ -11,10 +11,12 @@ class LogisticsWaybillLookupPage extends StatefulWidget {
     super.key,
     required this.repository,
     this.scannerPreviewBuilder,
+    this.receiptEnabled = false,
   });
 
   final LogisticsRepository repository;
   final WaybillScannerPreviewBuilder? scannerPreviewBuilder;
+  final bool receiptEnabled;
 
   @override
   State<LogisticsWaybillLookupPage> createState() =>
@@ -26,7 +28,12 @@ class _LogisticsWaybillLookupPageState
   final _identifierController = TextEditingController();
   LogisticsWaybillLookup? _result;
   String? _errorMessage;
+  String? _receiptMessage;
   bool _isLoading = false;
+  bool _isReceiving = false;
+  bool _needsReconciliation = false;
+  bool _receiptBlocked = false;
+  String _scanMethod = 'manual';
 
   @override
   void dispose() {
@@ -49,6 +56,9 @@ class _LogisticsWaybillLookupPageState
       _identifierController.text = scannedValue;
       _result = null;
       _errorMessage = null;
+      _receiptMessage = null;
+      _receiptBlocked = false;
+      _scanMethod = 'camera';
     });
   }
 
@@ -61,17 +71,26 @@ class _LogisticsWaybillLookupPageState
       });
       return;
     }
-    if (_isLoading) return;
+    if (_isLoading || _isReceiving) return;
 
     setState(() {
       _isLoading = true;
-      _result = null;
       _errorMessage = null;
     });
 
     try {
       final result = await widget.repository.lookupWaybill(identifier);
-      if (mounted) setState(() => _result = result);
+      if (mounted) {
+        setState(() {
+          _result = result;
+          if (_needsReconciliation) {
+            _needsReconciliation = false;
+            _receiptMessage = result.receiptEligibility.eligible
+                ? 'The server confirms this parcel is still eligible. Review its current details before confirming receipt again.'
+                : 'Server state refreshed: ${result.receiptEligibility.message}';
+          }
+        });
+      }
     } on ApiHttpException catch (error) {
       if (!mounted) return;
       setState(
@@ -126,29 +145,183 @@ class _LogisticsWaybillLookupPageState
     }
   }
 
+  Future<void> _confirmReceipt() async {
+    final result = _result;
+    if (!widget.receiptEnabled ||
+        result == null ||
+        !result.receiptEligibility.eligible ||
+        _isReceiving ||
+        _needsReconciliation) {
+      return;
+    }
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Confirm incoming parcel receipt'),
+        content: Text(
+          'Confirm that ${result.waybill} physically arrived at '
+          '${result.receivingSortingCenter?.name ?? 'your Sorting Center'}?',
+        ),
+        actions: [
+          TextButton(
+            key: const ValueKey('logistics-receipt-cancel'),
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            key: const ValueKey('logistics-receipt-confirm-dialog'),
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Confirm receipt'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true && mounted) await _receive(result);
+  }
+
+  Future<void> _receive(LogisticsWaybillLookup result) async {
+    if (_isReceiving || _needsReconciliation) return;
+    setState(() {
+      _isReceiving = true;
+      _errorMessage = null;
+      _receiptMessage = 'Sending receipt confirmation to Bearly…';
+    });
+
+    try {
+      await widget.repository.receiveWaybill(
+        result.waybill,
+        scanMethod: _scanMethod,
+      );
+
+      // A successful POST is followed by a read-only lookup so the screen
+      // displays the server-confirmed state, not a locally assumed transition.
+      try {
+        final refreshed = await widget.repository.lookupWaybill(result.waybill);
+        if (mounted) {
+          setState(() {
+            _result = refreshed;
+            _needsReconciliation = false;
+            _receiptMessage =
+                refreshed.receiptEligibility.code == 'already_received'
+                ? 'The server confirms this parcel was received at the Sorting Center.'
+                : 'Receipt was accepted. Current state: ${refreshed.receiptEligibility.message}';
+          });
+        }
+      } catch (_) {
+        if (mounted) {
+          setState(() {
+            _needsReconciliation = true;
+            _receiptMessage =
+                'Receipt was accepted, but the state refresh failed. Refresh server state before processing this waybill again.';
+          });
+        }
+      }
+    } on ApiHttpException catch (error) {
+      if (!mounted) return;
+      if (error.statusCode == 409 || error.statusCode >= 500) {
+        setState(() {
+          _needsReconciliation = true;
+          _receiptMessage = error.statusCode == 409
+              ? 'The server reports a parcel state conflict. Refresh server state before trying again.'
+              : 'The result is uncertain. Refresh server state before trying again.';
+        });
+      } else {
+        setState(() {
+          _receiptBlocked = const [401, 403, 404].contains(error.statusCode);
+          _errorMessage = switch (error.statusCode) {
+            401 => 'Your session expired. Sign in again to continue.',
+            403 => 'This Logistics account cannot receive parcels right now.',
+            404 =>
+              'No parcel with that waybill is available to your Logistics account.',
+            422 =>
+              'The receipt request was invalid. Review the waybill and try again.',
+            429 =>
+              'Too many receipt requests. Wait a moment before trying again.',
+            _ => 'The server rejected the receipt request.',
+          };
+        });
+      }
+    } on ApiTimeoutException {
+      if (mounted) {
+        setState(() {
+          _needsReconciliation = true;
+          _receiptMessage =
+              'The result is uncertain. Refresh server state before trying again.';
+        });
+      }
+    } on ApiTransportException {
+      if (mounted) {
+        setState(() {
+          _needsReconciliation = true;
+          _receiptMessage =
+              'The result is uncertain because the connection was lost. Refresh server state before trying again.';
+        });
+      }
+    } on ApiException {
+      if (mounted) {
+        setState(() {
+          _needsReconciliation = true;
+          _receiptMessage =
+              'The result is uncertain. Refresh server state before trying again.';
+        });
+      }
+    } on FormatException {
+      if (mounted) {
+        setState(() {
+          _needsReconciliation = true;
+          _receiptMessage =
+              'Bearly returned an unreadable receipt result. Refresh server state before trying again.';
+        });
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _needsReconciliation = true;
+          _receiptMessage =
+              'The result is uncertain. Refresh server state before trying again.';
+        });
+      }
+    } finally {
+      if (mounted) setState(() => _isReceiving = false);
+    }
+  }
+
   Future<void> _scanAnother() async {
     setState(() {
       _identifierController.clear();
       _result = null;
       _errorMessage = null;
+      _receiptMessage = null;
+      _receiptBlocked = false;
+      _scanMethod = 'manual';
     });
     await _scan();
   }
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('Waybill lookup')),
+    appBar: AppBar(
+      title: Text(
+        widget.receiptEnabled ? 'Incoming parcel receipt' : 'Waybill lookup',
+      ),
+    ),
     body: SafeArea(
       child: ListView(
         padding: const EdgeInsets.all(16),
         children: [
           Text(
-            'Read-only parcel lookup',
+            widget.receiptEnabled
+                ? 'Incoming Parcel Receipt'
+                : 'Read-only parcel lookup',
             style: Theme.of(context).textTheme.headlineMedium,
           ),
           const SizedBox(height: 6),
           Text(
-            'Scan a Code 128 waybill or enter it manually. Looking up a parcel never changes its status or custody.',
+            widget.receiptEnabled
+                ? 'Scan or enter a waybill, review the server state, and confirm only after the parcel physically arrives at your Sorting Center.'
+                : 'Scan a Code 128 waybill or enter it manually. Looking up a parcel never changes its status or custody.',
             style: Theme.of(
               context,
             ).textTheme.bodyMedium?.copyWith(color: BearlyColors.muted),
@@ -158,6 +331,7 @@ class _LogisticsWaybillLookupPageState
             key: const ValueKey('logistics-waybill-input'),
             controller: _identifierController,
             maxLength: 120,
+            enabled: !_isLoading && !_isReceiving && !_needsReconciliation,
             textCapitalization: TextCapitalization.characters,
             autocorrect: false,
             enableSuggestions: false,
@@ -171,6 +345,9 @@ class _LogisticsWaybillLookupPageState
                 setState(() {
                   _errorMessage = null;
                   _result = null;
+                  _receiptMessage = null;
+                  _receiptBlocked = false;
+                  _scanMethod = 'manual';
                 });
               }
             },
@@ -182,7 +359,9 @@ class _LogisticsWaybillLookupPageState
               Expanded(
                 child: OutlinedButton.icon(
                   key: const ValueKey('logistics-scan-waybill'),
-                  onPressed: _isLoading ? null : _scan,
+                  onPressed: _isLoading || _isReceiving || _needsReconciliation
+                      ? null
+                      : _scan,
                   icon: const Icon(Icons.qr_code_scanner_rounded),
                   label: const Text('Scan with camera'),
                 ),
@@ -191,14 +370,20 @@ class _LogisticsWaybillLookupPageState
               Expanded(
                 child: FilledButton.icon(
                   key: const ValueKey('logistics-lookup-waybill'),
-                  onPressed: _isLoading ? null : _lookup,
+                  onPressed: _isLoading || _isReceiving ? null : _lookup,
                   icon: _isLoading
                       ? const SizedBox.square(
                           dimension: 18,
                           child: CircularProgressIndicator(strokeWidth: 2),
                         )
                       : const Icon(Icons.search_rounded),
-                  label: Text(_isLoading ? 'Looking up' : 'Look up'),
+                  label: Text(
+                    _isLoading
+                        ? 'Looking up'
+                        : _needsReconciliation
+                        ? 'Refresh server state'
+                        : 'Look up',
+                  ),
                 ),
               ),
             ],
@@ -209,6 +394,16 @@ class _LogisticsWaybillLookupPageState
               icon: Icons.info_outline_rounded,
               message: _errorMessage!,
               isError: true,
+            ),
+          ],
+          if (_receiptMessage != null) ...[
+            const SizedBox(height: 12),
+            _messageCard(
+              icon: _needsReconciliation
+                  ? Icons.sync_problem_rounded
+                  : Icons.info_outline_rounded,
+              message: _receiptMessage!,
+              isError: _needsReconciliation,
             ),
           ],
           if (_result case final result?) ...[
@@ -243,6 +438,14 @@ class _LogisticsWaybillLookupPageState
           _detail('Shipment', result.shipmentReference),
           _detail('Shipment status', _statusLabel(result.shipmentStatus)),
           _detail('Logistics provider', result.logisticsProvider),
+          if (widget.receiptEnabled) ...[
+            _detail('Receiving provider', result.receivingProvider),
+            if (result.receivingSortingCenter != null)
+              _detail(
+                'Receiving Sorting Center',
+                '${result.receivingSortingCenter!.name} (${result.receivingSortingCenter!.code})',
+              ),
+          ],
           _detail('Destination', _destinationLabel(result.destination)),
           if (result.currentSortingCenter != null)
             _detail(
@@ -270,17 +473,48 @@ class _LogisticsWaybillLookupPageState
             icon: result.terminal
                 ? Icons.check_circle_outline_rounded
                 : Icons.info_outline_rounded,
-            message: result.guidance,
+            message: widget.receiptEnabled
+                ? result.receiptEligibility.message
+                : result.guidance,
             isError: false,
           ),
+          if (widget.receiptEnabled &&
+              result.receiptEligibility.eligible &&
+              !_needsReconciliation &&
+              !_receiptBlocked)
+            Padding(
+              padding: const EdgeInsets.only(top: 12),
+              child: SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  key: const ValueKey('logistics-confirm-receipt'),
+                  onPressed: _isReceiving ? null : _confirmReceipt,
+                  icon: _isReceiving
+                      ? const SizedBox.square(
+                          dimension: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.inventory_2_outlined),
+                  label: Text(
+                    _isReceiving ? 'Confirming receipt' : 'Confirm Receipt',
+                  ),
+                ),
+              ),
+            ),
           const SizedBox(height: 8),
           SizedBox(
             width: double.infinity,
             child: OutlinedButton.icon(
               key: const ValueKey('logistics-scan-another'),
-              onPressed: _isLoading ? null : _scanAnother,
+              onPressed: _isLoading || _isReceiving || _needsReconciliation
+                  ? null
+                  : _scanAnother,
               icon: const Icon(Icons.qr_code_scanner_rounded),
-              label: const Text('Scan another parcel'),
+              label: Text(
+                widget.receiptEnabled
+                    ? 'Process another incoming parcel'
+                    : 'Scan another parcel',
+              ),
             ),
           ),
         ],
