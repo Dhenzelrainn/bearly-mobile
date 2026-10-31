@@ -93,3 +93,23 @@ For a later operator-controlled test on the Samsung device:
 4. Select an eligible Rider and tap **Review dispatch**. Check that the zone, all parcels, and Rider are correct in the confirmation dialog. Cancel if anything differs.
 5. Only after explicit operator approval, confirm once. Wait for the batch reference and server-confirmed `dispatched` parcel state. If the response is uncertain, refresh the board and inspect state before any retry.
 6. Verify the generated batch and parcel states in Laravel Web `/logistics/dispatch` and `/logistics/monitoring`, then confirm the batch is visible in that Rider's Flutter **Assigned Deliveries**. Do not start delivery as part of this dispatch test.
+
+## Phase L6 — Delivery monitoring
+
+### Automated validation
+
+The L6 provider-scoped monitoring API and existing Web monitoring regressions passed their focused Laravel tests (3 Mobile API tests, 32 assertions; 2 Web regression tests, 12 assertions). The Flutter Logistics widget suite passed (50 tests); targeted analysis reported no issues, and the Android debug APK built successfully. These are automated results and do not establish a physical-device or fresh database result.
+
+### Physical Samsung smoke test — operator-reported PASS
+
+On October 31, 2026, the operator reported successfully opening Logistics Mobile → **Delivery Monitoring** on a Samsung device and inspecting the following existing batches. This record is based on the operator-reported screenshots and observations. It is separate from the automated results above and earlier read-only database checks; no fresh database inspection was performed for this smoke test record.
+
+| Dispatch batch | Displayed stage | Progress | Result |
+| --- | --- | ---: | --- |
+| `DSP-20261031-ZS0TJXHV` | Assigned to Rider | 0% | PASS |
+| `DSP-20261030-RSWYTYDH` | Out for Delivery | 0% | PASS |
+| `DSP-20261030-E6PPNVA2` | Delivered | 100% | PASS |
+
+The Logistics account was scoped to PB Sorting Center, Sorting Center SC-1. All three batches displayed Rider Mark Carlo A. Andasan and delivery zone PILA-02 — Pila / Pinagbayanan. The Assigned batch showed its parcel and shipment as `Dispatched`, with assignment and release events in the timeline. The Out for Delivery batch showed its parcel and shipment as `Out For Delivery`; its timeline included the previously recorded failed delivery attempt and staging-test reason. The Delivered batch showed its parcel and shipment as `Delivered`, 100% completion, and the delivery event in its timeline. The displayed stages and progress were consistent with earlier Laravel Web Delivery Monitoring observations. Manual refresh and list-to-detail navigation worked. No delivery mutation was performed as part of this monitoring verification.
+
+Low-priority display note: the Delivered timeline currently uses the generic description “Latest recorded parcel status.”
