@@ -7,6 +7,7 @@ import '../../../core/widgets/bearly_logo.dart';
 import '../../auth/data/auth_service.dart';
 import '../data/logistics_repository.dart';
 import '../models/logistics_dashboard.dart';
+import 'logistics_waybill_lookup_page.dart';
 
 class LogisticsHomePage extends StatefulWidget {
   const LogisticsHomePage({
@@ -47,6 +48,12 @@ class _LogisticsHomePageState extends State<LogisticsHomePage> {
     context,
     AppRouteNames.login,
     (_) => false,
+  );
+
+  void _openWaybillLookup() => Navigator.of(context).push<void>(
+    MaterialPageRoute<void>(
+      builder: (_) => LogisticsWaybillLookupPage(repository: widget.repository),
+    ),
   );
 
   @override
@@ -151,6 +158,16 @@ class _LogisticsHomePageState extends State<LogisticsHomePage> {
         _providerCard(dashboard),
         const SizedBox(height: 12),
         _centerCard(dashboard),
+        const SizedBox(height: 12),
+        SizedBox(
+          width: double.infinity,
+          child: OutlinedButton.icon(
+            key: const ValueKey('logistics-open-waybill-lookup'),
+            onPressed: _openWaybillLookup,
+            icon: const Icon(Icons.qr_code_scanner_rounded),
+            label: const Text('Scan Waybill'),
+          ),
+        ),
         const SizedBox(height: 18),
         Text('Operations', style: Theme.of(context).textTheme.titleLarge),
         const SizedBox(height: 10),
@@ -297,28 +314,30 @@ class _LogisticsHomePageState extends State<LogisticsHomePage> {
             .toList(growable: false),
       );
 
-  Widget _parcelsSection(List<LogisticsIncomingParcel> parcels) =>
-      _summarySection(
-        title: 'Incoming parcels',
-        empty: 'No parcels are currently listed at your center.',
-        children: parcels
-            .map(
-              (parcel) => ListTile(
-                contentPadding: EdgeInsets.zero,
-                leading: const Icon(Icons.inventory_2_outlined),
-                title: Text(parcel.waybill),
-                subtitle: Text(
-                  '${parcel.status} · ${parcel.parcelCount} parcel(s)',
-                ),
-              ),
-            )
-            .toList(growable: false),
-      );
+  Widget _parcelsSection(
+    List<LogisticsIncomingParcel> parcels,
+  ) => _summarySection(
+    title: 'Parcel records at this center',
+    description:
+        'Current parcel statuses are shown below. Center intake records are historical.',
+    empty: 'No parcel records are currently listed at your center.',
+    children: parcels
+        .map(
+          (parcel) => ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.inventory_2_outlined),
+            title: Text(parcel.waybill),
+            subtitle: Text(_incomingParcelSummary(parcel)),
+          ),
+        )
+        .toList(growable: false),
+  );
 
   Widget _summarySection({
     required String title,
     required String empty,
     required List<Widget> children,
+    String? description,
   }) => Card(
     child: Padding(
       padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
@@ -326,6 +345,10 @@ class _LogisticsHomePageState extends State<LogisticsHomePage> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(title, style: Theme.of(context).textTheme.titleMedium),
+          if (description != null) ...[
+            const SizedBox(height: 4),
+            Text(description, style: Theme.of(context).textTheme.bodySmall),
+          ],
           const SizedBox(height: 6),
           if (children.isEmpty)
             Padding(
@@ -338,4 +361,20 @@ class _LogisticsHomePageState extends State<LogisticsHomePage> {
       ),
     ),
   );
+
+  String _incomingParcelSummary(LogisticsIncomingParcel parcel) {
+    final statuses = parcel.parcelStatuses.isEmpty
+        ? 'Unknown'
+        : parcel.parcelStatuses.map(_statusLabel).join(', ');
+    final summary = '$statuses · ${parcel.parcelCount} parcel(s)';
+    return parcel.intakeRecorded
+        ? '$summary · center intake recorded previously'
+        : summary;
+  }
+
+  String _statusLabel(String value) => value
+      .split('_')
+      .where((word) => word.isNotEmpty)
+      .map((word) => '${word[0].toUpperCase()}${word.substring(1)}')
+      .join(' ');
 }

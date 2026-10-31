@@ -132,13 +132,15 @@ class LogisticsIncomingParcel {
   const LogisticsIncomingParcel({
     required this.waybill,
     required this.purpose,
-    required this.status,
+    required this.parcelStatuses,
+    required this.intakeRecorded,
     required this.parcelCount,
   });
 
   final String waybill;
   final String purpose;
-  final String status;
+  final List<String> parcelStatuses;
+  final bool intakeRecorded;
   final int parcelCount;
 
   factory LogisticsIncomingParcel.fromJson(Object? value) {
@@ -146,8 +148,147 @@ class LogisticsIncomingParcel {
     return LogisticsIncomingParcel(
       waybill: _string(map['waybill']),
       purpose: _string(map['purpose']),
-      status: _string(map['status']),
+      parcelStatuses: _stringList(map['parcel_statuses']),
+      intakeRecorded: map['intake_recorded'] == true,
       parcelCount: _integer(map['parcel_count']),
+    );
+  }
+}
+
+class LogisticsWaybillLookup {
+  const LogisticsWaybillLookup({
+    required this.waybill,
+    required this.shipmentReference,
+    required this.shipmentStatus,
+    required this.purpose,
+    required this.destination,
+    required this.logisticsProvider,
+    required this.currentSortingCenter,
+    required this.handoff,
+    required this.parcels,
+    required this.terminal,
+    required this.guidance,
+  });
+
+  final String waybill;
+  final String shipmentReference;
+  final String shipmentStatus;
+  final String purpose;
+  final LogisticsDestination destination;
+  final String logisticsProvider;
+  final LogisticsSortingCenter? currentSortingCenter;
+  final LogisticsWaybillHandoff? handoff;
+  final List<LogisticsLookupParcel> parcels;
+  final bool terminal;
+  final String guidance;
+
+  factory LogisticsWaybillLookup.fromResponse(Object? value) {
+    final root = _map(value, 'response');
+    final data = _map(root['data'], 'data');
+    final shipment = _map(data['shipment'], 'shipment');
+    final destination = _map(data['destination'], 'destination');
+    final provider = _map(data['logistics_provider'], 'logistics_provider');
+    final centerValue = data['current_sorting_center'];
+    final handoffValue = data['handoff'];
+    final guidance = _map(data['next_step_guidance'], 'next_step_guidance');
+    final parcelList = _list(data['parcels'], 'parcels');
+
+    return LogisticsWaybillLookup(
+      waybill: _string(data['waybill']),
+      shipmentReference: _string(shipment['reference']),
+      shipmentStatus: _string(shipment['status']),
+      purpose: _string(shipment['purpose']),
+      destination: LogisticsDestination.fromJson(destination),
+      logisticsProvider: _string(provider['name']),
+      currentSortingCenter: centerValue == null
+          ? null
+          : LogisticsSortingCenter.fromJson(centerValue),
+      handoff: handoffValue == null
+          ? null
+          : LogisticsWaybillHandoff.fromJson(handoffValue),
+      parcels: parcelList
+          .map(LogisticsLookupParcel.fromJson)
+          .toList(growable: false),
+      terminal: data['terminal'] == true,
+      guidance: _string(guidance['message']),
+    );
+  }
+}
+
+class LogisticsDestination {
+  const LogisticsDestination({
+    required this.barangay,
+    required this.city,
+    required this.province,
+  });
+
+  final String barangay;
+  final String city;
+  final String province;
+
+  factory LogisticsDestination.fromJson(Object? value) {
+    final map = _map(value, 'destination');
+    return LogisticsDestination(
+      barangay: _string(map['barangay']),
+      city: _string(map['city']),
+      province: _string(map['province']),
+    );
+  }
+}
+
+class LogisticsWaybillHandoff {
+  const LogisticsWaybillHandoff({
+    required this.status,
+    required this.fromProvider,
+    required this.toProvider,
+  });
+
+  final String status;
+  final String fromProvider;
+  final String toProvider;
+
+  factory LogisticsWaybillHandoff.fromJson(Object? value) {
+    final map = _map(value, 'handoff');
+    return LogisticsWaybillHandoff(
+      status: _string(map['status']),
+      fromProvider: _string(map['from_provider']),
+      toProvider: _string(map['to_provider']),
+    );
+  }
+}
+
+class LogisticsLookupParcel {
+  const LogisticsLookupParcel({
+    required this.reference,
+    required this.status,
+    required this.terminal,
+    required this.currentSortingCenter,
+    required this.lastRecordedCenter,
+    required this.centerIntakeRecordedAt,
+  });
+
+  final String reference;
+  final String status;
+  final bool terminal;
+  final LogisticsSortingCenter? currentSortingCenter;
+  final LogisticsSortingCenter? lastRecordedCenter;
+  final String centerIntakeRecordedAt;
+
+  factory LogisticsLookupParcel.fromJson(Object? value) {
+    final map = _map(value, 'parcel');
+    final currentCenter = map['current_sorting_center'];
+    final lastCenter = map['last_recorded_center'];
+    return LogisticsLookupParcel(
+      reference: _string(map['reference']),
+      status: _string(map['status']),
+      terminal: map['terminal'] == true,
+      currentSortingCenter: currentCenter == null
+          ? null
+          : LogisticsSortingCenter.fromJson(currentCenter),
+      lastRecordedCenter: lastCenter == null
+          ? null
+          : LogisticsSortingCenter.fromJson(lastCenter),
+      centerIntakeRecordedAt: _string(map['center_intake_recorded_at']),
     );
   }
 }
@@ -163,6 +304,13 @@ List _list(Object? value, String path) {
 }
 
 String _string(Object? value) => value is String ? value.trim() : '';
+
+List<String> _stringList(Object? value) => value is List
+    ? value
+          .whereType<String>()
+          .map((item) => item.trim())
+          .toList(growable: false)
+    : const [];
 
 int _integer(Object? value) {
   if (value is int && value >= 0) return value;

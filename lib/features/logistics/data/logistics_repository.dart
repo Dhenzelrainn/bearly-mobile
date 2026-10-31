@@ -11,4 +11,12 @@ class LogisticsRepository {
       LogisticsDashboard.fromResponse(
         await _authService.getWithSession('/api/mobile/logistics/dashboard'),
       );
+
+  Future<LogisticsWaybillLookup> lookupWaybill(
+    String identifier,
+  ) async => LogisticsWaybillLookup.fromResponse(
+    await _authService.getWithSession(
+      '/api/mobile/logistics/waybills/${Uri.encodeComponent(identifier.trim())}',
+    ),
+  );
 }

@@ -58,6 +58,79 @@ void main() {
     );
   });
 
+  testWidgets('dashboard opens the read-only waybill lookup page', (
+    tester,
+  ) async {
+    final auth = _authService(
+      (_) async => http.Response(jsonEncode(_dashboard()), 200),
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: LogisticsHomePage(
+          authService: auth,
+          repository: LogisticsRepository(authService: auth),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(
+      find.byKey(const ValueKey('logistics-open-waybill-lookup')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Read-only parcel lookup'), findsOneWidget);
+    expect(find.text('Scan with camera'), findsOneWidget);
+    expect(find.text('Look up'), findsOneWidget);
+  });
+
+  testWidgets(
+    'dashboard labels current status separately from historical intake',
+    (tester) async {
+      final auth = _authService(
+        (_) async => http.Response(
+          jsonEncode(
+            _dashboard(
+              parcels: const [
+                {
+                  'waybill': 'BRLY-DELIVERED-HISTORY',
+                  'purpose': 'buyer_delivery',
+                  'parcel_statuses': ['delivered'],
+                  'intake_recorded': true,
+                  'parcel_count': 1,
+                },
+              ],
+            ),
+          ),
+          200,
+        ),
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: LogisticsHomePage(
+            authService: auth,
+            repository: LogisticsRepository(authService: auth),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.scrollUntilVisible(
+        find.text('BRLY-DELIVERED-HISTORY'),
+        250,
+        scrollable: find.byType(Scrollable).first,
+      );
+      expect(find.text('Parcel records at this center'), findsOneWidget);
+      expect(find.textContaining('Delivered · 1 parcel(s)'), findsOneWidget);
+      expect(
+        find.textContaining('center intake recorded previously'),
+        findsOneWidget,
+      );
+    },
+  );
+
   testWidgets(
     'shows setup-required and empty states when no active center exists',
     (tester) async {
@@ -93,12 +166,12 @@ void main() {
       );
       expect(find.text('No incoming handoffs are waiting.'), findsOneWidget);
       await tester.scrollUntilVisible(
-        find.text('No parcels are currently listed at your center.'),
+        find.text('No parcel records are currently listed at your center.'),
         250,
         scrollable: find.byType(Scrollable).first,
       );
       expect(
-        find.text('No parcels are currently listed at your center.'),
+        find.text('No parcel records are currently listed at your center.'),
         findsOneWidget,
       );
     },
@@ -191,7 +264,8 @@ Map<String, Object?> _dashboard({
     {
       'waybill': 'BRLY-TEST-002',
       'purpose': 'buyer_delivery',
-      'status': 'received',
+      'parcel_statuses': ['received'],
+      'intake_recorded': true,
       'parcel_count': 1,
     },
   ],
