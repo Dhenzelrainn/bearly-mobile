@@ -8,6 +8,7 @@ import 'package:bearly_mobile/features/logistics/data/logistics_repository.dart'
 import 'package:bearly_mobile/features/logistics/presentation/logistics_dispatch_page.dart';
 import 'package:bearly_mobile/features/logistics/presentation/logistics_home_page.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -213,7 +214,32 @@ void main() {
         await tester.tap(find.text(riderLabel));
         await tester.pumpAndSettle();
         expect(tester.takeException(), isNull);
-        expect(find.textContaining(riderName), findsOneWidget);
+        final selectedNameFinder = find.byKey(
+          const ValueKey('logistics-dispatch-rider-name-2-9'),
+        );
+        final selectedName = tester.widget<Text>(selectedNameFinder);
+        expect(selectedName.data, riderName);
+        expect(selectedName.maxLines, 1);
+        expect(selectedName.overflow, TextOverflow.ellipsis);
+        expect(selectedName.semanticsLabel, riderName);
+        final selectedParagraphFinder = find.descendant(
+          of: selectedNameFinder,
+          matching: find.byType(RichText),
+        );
+        expect(
+          tester
+              .renderObject<RenderParagraph>(selectedParagraphFinder)
+              .didExceedMaxLines,
+          isTrue,
+        );
+        final capacityFinder = find.byKey(
+          const ValueKey('logistics-dispatch-rider-capacity-2'),
+        );
+        expect(find.text('3 of 10 capacity available'), findsOneWidget);
+        expect(
+          tester.getTopLeft(capacityFinder).dy,
+          greaterThanOrEqualTo(tester.getBottomLeft(riderField).dy),
+        );
 
         final reviewButton = find.byKey(
           const ValueKey('logistics-dispatch-zone-2'),

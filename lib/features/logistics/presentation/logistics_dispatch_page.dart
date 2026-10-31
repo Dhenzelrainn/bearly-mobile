@@ -288,122 +288,161 @@ class _LogisticsDispatchPageState extends State<LogisticsDispatchPage> {
     ),
   );
 
-  Widget _zoneCard(LogisticsDispatchZone zone) => Card(
-    key: ValueKey('logistics-dispatch-zone-card-${zone.id}'),
-    margin: const EdgeInsets.only(bottom: 12),
-    child: Padding(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            '${zone.code} · ${zone.name}',
-            style: Theme.of(context).textTheme.titleMedium,
-          ),
-          const SizedBox(height: 4),
-          Text('${zone.readyCount} ready parcel(s) · ${zone.coverage}'),
-          if (zone.routingIssues > 0)
+  Widget _zoneCard(LogisticsDispatchZone zone) {
+    final selectedRider = zone.riders
+        .where((rider) => rider.id == _selectedRiders[zone.id])
+        .firstOrNull;
+
+    return Card(
+      key: ValueKey('logistics-dispatch-zone-card-${zone.id}'),
+      margin: const EdgeInsets.only(bottom: 12),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
             Text(
-              '${zone.routingIssues} sorted parcel(s) do not match this zone.',
+              '${zone.code} · ${zone.name}',
+              style: Theme.of(context).textTheme.titleMedium,
             ),
-          const SizedBox(height: 8),
-          ...zone.parcels.map(
-            (parcel) => Padding(
-              padding: const EdgeInsets.symmetric(vertical: 6),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Padding(
-                    padding: EdgeInsets.only(top: 2),
-                    child: Icon(Icons.local_shipping_outlined),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(parcel.waybill, softWrap: true),
-                        const SizedBox(height: 2),
-                        Text(
-                          '${parcel.reference} · ${parcel.shipmentReference} · ${parcel.status}',
-                          softWrap: true,
-                          style: Theme.of(context).textTheme.bodySmall,
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
+            const SizedBox(height: 4),
+            Text('${zone.readyCount} ready parcel(s) · ${zone.coverage}'),
+            if (zone.routingIssues > 0)
+              Text(
+                '${zone.routingIssues} sorted parcel(s) do not match this zone.',
               ),
-            ),
-          ),
-          if (zone.riders.isEmpty)
-            const Padding(
-              padding: EdgeInsets.only(top: 8),
-              child: Text(
-                'No eligible Rider has capacity for this entire zone batch.',
-              ),
-            )
-          else ...[
             const SizedBox(height: 8),
-            DropdownButtonFormField<int>(
-              key: ValueKey('logistics-dispatch-rider-${zone.id}'),
-              initialValue: _selectedRiders[zone.id],
-              isExpanded: true,
-              itemHeight: null,
-              decoration: const InputDecoration(
-                labelText: 'Eligible Rider',
-                border: OutlineInputBorder(),
-              ),
-              items: zone.riders
-                  .map(
-                    (rider) => DropdownMenuItem<int>(
-                      value: rider.id,
-                      child: ConstrainedBox(
-                        constraints: BoxConstraints(
-                          maxWidth: MediaQuery.sizeOf(context).width - 176,
-                        ),
-                        child: Text(
-                          '${rider.name} · ${rider.remaining} of ${rider.capacity} capacity available',
-                          softWrap: true,
-                        ),
+            ...zone.parcels.map(
+              (parcel) => Padding(
+                padding: const EdgeInsets.symmetric(vertical: 6),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Padding(
+                      padding: EdgeInsets.only(top: 2),
+                      child: Icon(Icons.local_shipping_outlined),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(parcel.waybill, softWrap: true),
+                          const SizedBox(height: 2),
+                          Text(
+                            '${parcel.reference} · ${parcel.shipmentReference} · ${parcel.status}',
+                            softWrap: true,
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
+                        ],
                       ),
                     ),
-                  )
-                  .toList(growable: false),
-              onChanged: _submittingZoneId == null && !_needsReconciliation
-                  ? (value) => setState(() => _selectedRiders[zone.id] = value)
-                  : null,
-            ),
-            const SizedBox(height: 10),
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton.icon(
-                key: ValueKey('logistics-dispatch-zone-${zone.id}'),
-                onPressed:
-                    _selectedRiders[zone.id] != null &&
-                        _submittingZoneId == null &&
-                        !_needsReconciliation &&
-                        zone.readyCount == zone.parcels.length
-                    ? () => _confirmDispatch(zone)
-                    : null,
-                icon: _submittingZoneId == zone.id
-                    ? const SizedBox.square(
-                        dimension: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.outbox_outlined),
-                label: Text(
-                  _submittingZoneId == zone.id
-                      ? 'Dispatching…'
-                      : 'Review dispatch',
+                  ],
                 ),
               ),
             ),
+            if (zone.riders.isEmpty)
+              const Padding(
+                padding: EdgeInsets.only(top: 8),
+                child: Text(
+                  'No eligible Rider has capacity for this entire zone batch.',
+                ),
+              )
+            else ...[
+              const SizedBox(height: 8),
+              DropdownButtonFormField<int>(
+                key: ValueKey('logistics-dispatch-rider-${zone.id}'),
+                initialValue: _selectedRiders[zone.id],
+                isExpanded: true,
+                itemHeight: null,
+                selectedItemBuilder: (context) => zone.riders
+                    .map(
+                      (rider) => Align(
+                        alignment: Alignment.centerLeft,
+                        child: Tooltip(
+                          message: rider.name,
+                          child: Text(
+                            rider.name,
+                            key: ValueKey(
+                              'logistics-dispatch-rider-name-${zone.id}-${rider.id}',
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            softWrap: false,
+                            semanticsLabel: rider.name,
+                          ),
+                        ),
+                      ),
+                    )
+                    .toList(growable: false),
+                decoration: const InputDecoration(
+                  labelText: 'Eligible Rider',
+                  border: OutlineInputBorder(),
+                ),
+                items: zone.riders
+                    .map(
+                      (rider) => DropdownMenuItem<int>(
+                        value: rider.id,
+                        child: ConstrainedBox(
+                          constraints: BoxConstraints(
+                            maxWidth: MediaQuery.sizeOf(context).width - 176,
+                          ),
+                          child: Text(
+                            '${rider.name} · ${rider.remaining} of ${rider.capacity} capacity available',
+                            softWrap: true,
+                          ),
+                        ),
+                      ),
+                    )
+                    .toList(growable: false),
+                onChanged: _submittingZoneId == null && !_needsReconciliation
+                    ? (value) =>
+                          setState(() => _selectedRiders[zone.id] = value)
+                    : null,
+              ),
+              if (selectedRider != null) ...[
+                const SizedBox(height: 4),
+                Padding(
+                  key: ValueKey('logistics-dispatch-rider-capacity-${zone.id}'),
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  child: Text(
+                    '${selectedRider.remaining} of ${selectedRider.capacity} capacity available',
+                    softWrap: true,
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ),
+              ],
+              const SizedBox(height: 10),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  key: ValueKey('logistics-dispatch-zone-${zone.id}'),
+                  onPressed:
+                      _selectedRiders[zone.id] != null &&
+                          _submittingZoneId == null &&
+                          !_needsReconciliation &&
+                          zone.readyCount == zone.parcels.length
+                      ? () => _confirmDispatch(zone)
+                      : null,
+                  icon: _submittingZoneId == zone.id
+                      ? const SizedBox.square(
+                          dimension: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.outbox_outlined),
+                  label: Text(
+                    _submittingZoneId == zone.id
+                        ? 'Dispatching…'
+                        : 'Review dispatch',
+                  ),
+                ),
+              ),
+            ],
           ],
-        ],
+        ),
       ),
-    ),
-  );
+    );
+  }
 
   Widget _notice(String text, {required bool isError}) => Container(
     padding: const EdgeInsets.all(12),
