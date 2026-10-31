@@ -29,6 +29,8 @@ import '../../features/rider/models/rider_assignment.dart';
 import '../../features/rider/presentation/rider_module_page.dart';
 import '../../features/rider/presentation/rider_pending_page.dart';
 import '../../features/rider/presentation/rider_register_page.dart';
+import '../../features/logistics/data/logistics_repository.dart';
+import '../../features/logistics/presentation/logistics_home_page.dart';
 
 class AppRoutes {
   const AppRoutes._();
@@ -43,6 +45,7 @@ class AppRoutes {
     BuyerCheckoutRepository? checkoutRepository,
   }) {
     final riderRepository = RiderRepository(authService: authService);
+    final logisticsRepository = LogisticsRepository(authService: authService);
     BuyerAddressController? fallbackAddressController;
     BuyerLocationRepository? fallbackLocationRepository;
     BuyerCheckoutRepository? fallbackCheckoutRepository;
@@ -71,20 +74,27 @@ class AppRoutes {
         );
       }
 
-      final route = sessionRole == AccountRole.buyer
-          ? AppRouteNames.buyer
-          : AppRouteNames.rider;
+      final route = switch (sessionRole) {
+        AccountRole.buyer => AppRouteNames.buyer,
+        AccountRole.rider => AppRouteNames.rider,
+        AccountRole.logistics => AppRouteNames.logisticsDashboard,
+      };
       return MaterialPageRoute(
-        builder: (_) => sessionRole == AccountRole.buyer
-            ? BuyerHomePage(
-                authService: authService,
-                cartController: cartController,
-                wishlistController: wishlistController,
-                checkoutRepository: resolveCheckoutRepository(),
-                addressController: addressController,
-                locationRepository: locationRepository,
-              )
-            : RiderHomePage(repository: riderRepository),
+        builder: (_) => switch (sessionRole) {
+          AccountRole.buyer => BuyerHomePage(
+            authService: authService,
+            cartController: cartController,
+            wishlistController: wishlistController,
+            checkoutRepository: resolveCheckoutRepository(),
+            addressController: addressController,
+            locationRepository: locationRepository,
+          ),
+          AccountRole.rider => RiderHomePage(repository: riderRepository),
+          AccountRole.logistics => LogisticsHomePage(
+            authService: authService,
+            repository: logisticsRepository,
+          ),
+        },
         settings: RouteSettings(name: route),
       );
     }
@@ -227,6 +237,14 @@ class AppRoutes {
           builder: (_) => RiderHomePage(repository: riderRepository),
           settings: settings,
         );
+      case AppRouteNames.logisticsDashboard:
+        return MaterialPageRoute(
+          builder: (_) => LogisticsHomePage(
+            authService: authService,
+            repository: logisticsRepository,
+          ),
+          settings: settings,
+        );
       case AppRouteNames.riderRegister:
         return MaterialPageRoute(
           builder: (_) => const RiderRegisterPage(),
@@ -349,6 +367,10 @@ class AppRoutes {
       AppRouteNames.riderAccount,
     }.contains(name)) {
       return AccountRole.rider;
+    }
+
+    if ({AppRouteNames.logisticsDashboard}.contains(name)) {
+      return AccountRole.logistics;
     }
 
     return null;

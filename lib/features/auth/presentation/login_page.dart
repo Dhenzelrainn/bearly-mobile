@@ -43,27 +43,16 @@ class _LoginPageState extends State<LoginPage> {
       final session = await widget.authService.login(
         email: _email.text,
         password: _password.text,
+        role: selectedRole,
         rememberMe: _remember,
       );
       if (!mounted) return;
 
-      if (session.role != selectedRole) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'This account is ${session.role.label}. Opening the ${session.role.label} account.',
-            ),
-          ),
-        );
-      }
-
-      Navigator.pushNamedAndRemoveUntil(
-        context,
-        session.role == AccountRole.buyer
-            ? AppRouteNames.buyer
-            : AppRouteNames.rider,
-        (_) => false,
-      );
+      Navigator.pushNamedAndRemoveUntil(context, switch (session.role) {
+        AccountRole.buyer => AppRouteNames.buyer,
+        AccountRole.rider => AppRouteNames.rider,
+        AccountRole.logistics => AppRouteNames.logisticsDashboard,
+      }, (_) => false);
     } on AuthException catch (error) {
       if (mounted) _showSignInMessage(error.message);
     } catch (_) {
@@ -109,7 +98,7 @@ class _LoginPageState extends State<LoginPage> {
                   ),
                   const SizedBox(height: 9),
                   Text(
-                    'Sign in to continue shopping or delivering with Bearly.',
+                    'Sign in to your Bearly account.',
                     style: Theme.of(
                       context,
                     ).textTheme.bodyLarge?.copyWith(color: BearlyColors.muted),
@@ -124,6 +113,7 @@ class _LoginPageState extends State<LoginPage> {
                     children: [
                       Expanded(
                         child: RoleCard(
+                          key: const ValueKey('login-role-buyer'),
                           role: AccountRole.buyer,
                           selected: _role == AccountRole.buyer,
                           onTap: () =>
@@ -133,6 +123,7 @@ class _LoginPageState extends State<LoginPage> {
                       const SizedBox(width: 10),
                       Expanded(
                         child: RoleCard(
+                          key: const ValueKey('login-role-rider'),
                           role: AccountRole.rider,
                           selected: _role == AccountRole.rider,
                           onTap: () =>
@@ -140,6 +131,13 @@ class _LoginPageState extends State<LoginPage> {
                         ),
                       ),
                     ],
+                  ),
+                  const SizedBox(height: 10),
+                  RoleCard(
+                    key: const ValueKey('login-role-logistics'),
+                    role: AccountRole.logistics,
+                    selected: _role == AccountRole.logistics,
+                    onTap: () => setState(() => _role = AccountRole.logistics),
                   ),
                   const SizedBox(height: 22),
                   Form(
@@ -159,8 +157,9 @@ class _LoginPageState extends State<LoginPage> {
                           ),
                           validator: (value) {
                             final text = value?.trim() ?? '';
-                            if (text.isEmpty)
+                            if (text.isEmpty) {
                               return 'Enter your email address.';
+                            }
                             if (!RegExp(
                               r'^[^@\s]+@[^@\s]+\.[^@\s]+$',
                             ).hasMatch(text)) {
@@ -249,10 +248,11 @@ class _LoginPageState extends State<LoginPage> {
                             'assets/images/auth/google-icon.png',
                             width: 20,
                             height: 20,
-                            errorBuilder: (_, __, ___) => const Icon(
-                              Icons.g_mobiledata_rounded,
-                              size: 24,
-                            ),
+                            errorBuilder: (context, error, stackTrace) =>
+                                const Icon(
+                                  Icons.g_mobiledata_rounded,
+                                  size: 24,
+                                ),
                           ),
                           label: const Text('Continue with Google'),
                         ),
@@ -291,7 +291,7 @@ class _LoginPageState extends State<LoginPage> {
                         const SizedBox(width: 9),
                         Expanded(
                           child: Text(
-                            'One login for Buyer and Rider accounts. Choose the approved role you want to open.',
+                            'One login for Buyer, Rider, and Logistics accounts. Choose the approved role you want to open.',
                             style: Theme.of(context).textTheme.bodySmall,
                           ),
                         ),

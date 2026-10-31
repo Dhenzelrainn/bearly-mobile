@@ -34,9 +34,11 @@ class _SessionStartupPageState extends State<SessionStartupPage> {
       final session = await widget.authService.restoreSession();
       if (!mounted) return;
       if (session != null) {
-        final route = session.role == AccountRole.buyer
-            ? AppRouteNames.buyer
-            : AppRouteNames.rider;
+        final route = switch (session.role) {
+          AccountRole.buyer => AppRouteNames.buyer,
+          AccountRole.rider => AppRouteNames.rider,
+          AccountRole.logistics => AppRouteNames.logisticsDashboard,
+        };
         Navigator.pushNamedAndRemoveUntil(context, route, (_) => false);
         return;
       }

@@ -58,6 +58,90 @@ void main() {
     );
 
     test(
+      'login sends the selected Logistics role and accepts the verified role',
+      () async {
+        late http.Request request;
+        final service = AuthService(
+          apiClient: ApiClient(
+            httpClient: MockClient((incoming) async {
+              request = incoming;
+              return http.Response(
+                jsonEncode({
+                  'token': 'logistics-token',
+                  'user': {
+                    'id': 19,
+                    'name': 'Logistics Operator',
+                    'email': 'operator@example.test',
+                    'role': 'logistics',
+                    'status': 'active',
+                  },
+                }),
+                200,
+              );
+            }),
+            baseUri: Uri.parse('https://api.example.test'),
+          ),
+          tokenStore: MemoryTokenStore(),
+        );
+
+        final session = await service.login(
+          email: 'operator@example.test',
+          password: 'password',
+          role: AccountRole.logistics,
+        );
+
+        expect(jsonDecode(request.body)['role'], 'logistics');
+        expect(session.role, AccountRole.logistics);
+      },
+    );
+
+    test(
+      'login rejects and revokes a server role that differs from selection',
+      () async {
+        final requestedPaths = <String>[];
+        final store = MemoryTokenStore();
+        final service = AuthService(
+          apiClient: ApiClient(
+            httpClient: MockClient((request) async {
+              requestedPaths.add(request.url.path);
+              if (request.url.path.endsWith('/mobile/login')) {
+                return http.Response(
+                  jsonEncode({
+                    'token': 'mismatched-token',
+                    'user': {
+                      'id': 8,
+                      'name': 'Buyer Account',
+                      'email': 'buyer@example.test',
+                      'role': 'buyer',
+                      'status': 'active',
+                    },
+                  }),
+                  200,
+                );
+              }
+              return http.Response('', 204);
+            }),
+            baseUri: Uri.parse('https://api.example.test'),
+          ),
+          tokenStore: store,
+        );
+
+        await expectLater(
+          service.login(
+            email: 'buyer@example.test',
+            password: 'password',
+            role: AccountRole.logistics,
+          ),
+          throwsA(isA<AuthException>()),
+        );
+
+        expect(requestedPaths, ['/api/mobile/login', '/api/mobile/logout']);
+        expect(store.token, isNull);
+        expect(service.currentSession, isNull);
+      },
+    );
+
+    test(
       'unchecked remember me keeps the token in memory for logout only',
       () async {
         final store = MemoryTokenStore()..token = 'previous-persistent-token';

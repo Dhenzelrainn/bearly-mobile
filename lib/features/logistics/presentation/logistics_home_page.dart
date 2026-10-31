@@ -1,0 +1,341 @@
+import 'package:flutter/material.dart';
+
+import '../../../core/network/api_client.dart';
+import '../../../core/routes/app_route_names.dart';
+import '../../../core/theme/bearly_theme.dart';
+import '../../../core/widgets/bearly_logo.dart';
+import '../../auth/data/auth_service.dart';
+import '../data/logistics_repository.dart';
+import '../models/logistics_dashboard.dart';
+
+class LogisticsHomePage extends StatefulWidget {
+  const LogisticsHomePage({
+    super.key,
+    required this.authService,
+    required this.repository,
+  });
+
+  final AuthService authService;
+  final LogisticsRepository repository;
+
+  @override
+  State<LogisticsHomePage> createState() => _LogisticsHomePageState();
+}
+
+class _LogisticsHomePageState extends State<LogisticsHomePage> {
+  late Future<LogisticsDashboard> _dashboard;
+
+  @override
+  void initState() {
+    super.initState();
+    _dashboard = widget.repository.dashboard();
+  }
+
+  Future<void> _refresh() async {
+    final next = widget.repository.dashboard();
+    setState(() {
+      _dashboard = next;
+    });
+    try {
+      await next;
+    } catch (_) {
+      // FutureBuilder presents the request failure and keeps Retry available.
+    }
+  }
+
+  void _openLogin() => Navigator.pushNamedAndRemoveUntil(
+    context,
+    AppRouteNames.login,
+    (_) => false,
+  );
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(
+      title: const BearlyLogo(height: 34, width: 102),
+      actions: [
+        IconButton(
+          onPressed: _refresh,
+          tooltip: 'Refresh dashboard',
+          icon: const Icon(Icons.refresh_rounded),
+        ),
+        IconButton(
+          onPressed: () => Navigator.pushNamedAndRemoveUntil(
+            context,
+            AppRouteNames.logout,
+            (_) => false,
+          ),
+          tooltip: 'Log out',
+          icon: const Icon(Icons.logout_rounded),
+        ),
+      ],
+    ),
+    body: FutureBuilder<LogisticsDashboard>(
+      future: _dashboard,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        if (snapshot.hasError) {
+          final unauthorized =
+              snapshot.error is ApiHttpException &&
+              ((snapshot.error! as ApiHttpException).statusCode == 401 ||
+                  (snapshot.error! as ApiHttpException).statusCode == 403);
+          return _problem(
+            unauthorized
+                ? 'Your Logistics session is no longer authorized. Sign in again.'
+                : 'Could not load your Logistics dashboard. Check your connection and retry.',
+            unauthorized: unauthorized,
+          );
+        }
+
+        final dashboard = snapshot.data;
+        if (dashboard == null) {
+          return _problem('The Logistics dashboard is unavailable.');
+        }
+        return _dashboardBody(dashboard);
+      },
+    ),
+  );
+
+  Widget _problem(String message, {bool unauthorized = false}) => Center(
+    child: Padding(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            unauthorized
+                ? Icons.lock_outline_rounded
+                : Icons.cloud_off_outlined,
+            size: 40,
+          ),
+          const SizedBox(height: 12),
+          Text(message, textAlign: TextAlign.center),
+          const SizedBox(height: 12),
+          TextButton.icon(
+            onPressed: unauthorized ? _openLogin : _refresh,
+            icon: Icon(
+              unauthorized ? Icons.login_rounded : Icons.refresh_rounded,
+            ),
+            label: Text(unauthorized ? 'Sign in again' : 'Retry'),
+          ),
+        ],
+      ),
+    ),
+  );
+
+  Widget _dashboardBody(LogisticsDashboard dashboard) => RefreshIndicator(
+    onRefresh: _refresh,
+    child: ListView(
+      physics: const AlwaysScrollableScrollPhysics(),
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 24),
+      children: [
+        Text(
+          'Logistics dashboard',
+          style: Theme.of(context).textTheme.headlineMedium,
+        ),
+        const SizedBox(height: 4),
+        Text(
+          'Welcome, ${widget.authService.currentSession?.name ?? dashboard.providerName}',
+          style: Theme.of(context).textTheme.titleMedium,
+        ),
+        const SizedBox(height: 4),
+        Text(
+          'Read-only overview for ${dashboard.providerName}.',
+          style: Theme.of(
+            context,
+          ).textTheme.bodyMedium?.copyWith(color: BearlyColors.muted),
+        ),
+        const SizedBox(height: 16),
+        _providerCard(dashboard),
+        const SizedBox(height: 12),
+        _centerCard(dashboard),
+        const SizedBox(height: 18),
+        Text('Operations', style: Theme.of(context).textTheme.titleLarge),
+        const SizedBox(height: 10),
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final cardWidth = (constraints.maxWidth - 10) / 2;
+            return Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              children: [
+                _metric(
+                  cardWidth,
+                  'Received today',
+                  dashboard.metrics.receivedToday,
+                ),
+                _metric(
+                  cardWidth,
+                  'Awaiting sorting',
+                  dashboard.metrics.awaitingSorting,
+                ),
+                _metric(
+                  cardWidth,
+                  'Sorted and ready',
+                  dashboard.metrics.sortedReady,
+                ),
+                _metric(
+                  cardWidth,
+                  'Dispatched shipments',
+                  dashboard.metrics.dispatchedShipments,
+                ),
+                _metric(
+                  cardWidth,
+                  'Active routes',
+                  dashboard.metrics.activeRoutes,
+                ),
+                _metric(
+                  cardWidth,
+                  'Sorting exceptions',
+                  dashboard.metrics.sortingExceptions,
+                ),
+                _metric(
+                  cardWidth,
+                  'Pickup requests',
+                  dashboard.metrics.pendingPickupRequests,
+                ),
+                _metric(
+                  cardWidth,
+                  'Incoming handoffs',
+                  dashboard.metrics.incomingHandoffs,
+                ),
+              ],
+            );
+          },
+        ),
+        const SizedBox(height: 18),
+        _handoffsSection(dashboard.incomingHandoffs),
+        const SizedBox(height: 14),
+        _parcelsSection(dashboard.incomingParcels),
+      ],
+    ),
+  );
+
+  Widget _providerCard(LogisticsDashboard dashboard) => Card(
+    child: ListTile(
+      leading: const CircleAvatar(child: Icon(Icons.local_shipping_outlined)),
+      title: Text(dashboard.providerName),
+      subtitle: const Text('Logistics provider'),
+      trailing: _status(dashboard.providerStatus),
+    ),
+  );
+
+  Widget _centerCard(LogisticsDashboard dashboard) {
+    final center = dashboard.sortingCenter;
+    if (center == null || dashboard.setupRequired) {
+      return Card(
+        child: ListTile(
+          leading: const Icon(Icons.warehouse_outlined),
+          title: const Text('Sorting center setup required'),
+          subtitle: const Text(
+            'No active sorting center is assigned to this provider.',
+          ),
+        ),
+      );
+    }
+
+    return Card(
+      child: ListTile(
+        leading: const Icon(Icons.warehouse_outlined),
+        title: Text(center.name),
+        subtitle: Text(
+          [
+            center.code,
+            center.address,
+          ].where((value) => value.isNotEmpty).join(' · '),
+        ),
+        trailing: _status(center.status),
+      ),
+    );
+  }
+
+  Widget _status(String value) => Chip(
+    label: Text(value.isEmpty ? 'Unknown' : value),
+    visualDensity: VisualDensity.compact,
+  );
+
+  Widget _metric(double width, String label, int value) => SizedBox(
+    width: width,
+    child: Card(
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '$value',
+              style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                color: BearlyColors.brown900,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(label, style: Theme.of(context).textTheme.bodySmall),
+          ],
+        ),
+      ),
+    ),
+  );
+
+  Widget _handoffsSection(List<LogisticsIncomingHandoff> handoffs) =>
+      _summarySection(
+        title: 'Incoming handoffs',
+        empty: 'No incoming handoffs are waiting.',
+        children: handoffs
+            .map(
+              (handoff) => ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.move_to_inbox_outlined),
+                title: Text(handoff.waybill),
+                subtitle: Text(
+                  '${handoff.fromProvider} · ${handoff.parcelCount} parcel(s)',
+                ),
+              ),
+            )
+            .toList(growable: false),
+      );
+
+  Widget _parcelsSection(List<LogisticsIncomingParcel> parcels) =>
+      _summarySection(
+        title: 'Incoming parcels',
+        empty: 'No parcels are currently listed at your center.',
+        children: parcels
+            .map(
+              (parcel) => ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.inventory_2_outlined),
+                title: Text(parcel.waybill),
+                subtitle: Text(
+                  '${parcel.status} · ${parcel.parcelCount} parcel(s)',
+                ),
+              ),
+            )
+            .toList(growable: false),
+      );
+
+  Widget _summarySection({
+    required String title,
+    required String empty,
+    required List<Widget> children,
+  }) => Card(
+    child: Padding(
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(title, style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 6),
+          if (children.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              child: Text(empty, style: Theme.of(context).textTheme.bodyMedium),
+            )
+          else
+            ...children,
+        ],
+      ),
+    ),
+  );
+}

@@ -58,7 +58,10 @@ class AuthSession {
     final email = value['email'];
     final name = value['name'];
 
-    if (status != 'active' || (roleValue != 'buyer' && roleValue != 'rider')) {
+    if (status != 'active' ||
+        (roleValue != 'buyer' &&
+            roleValue != 'rider' &&
+            roleValue != 'logistics')) {
       throw const AuthException(
         'This account is not eligible to use the Bearly mobile app.',
         clearSession: true,
@@ -80,7 +83,15 @@ class AuthSession {
       id: id,
       name: name.trim(),
       email: email.trim(),
-      role: roleValue == 'buyer' ? AccountRole.buyer : AccountRole.rider,
+      role: switch (roleValue) {
+        'buyer' => AccountRole.buyer,
+        'rider' => AccountRole.rider,
+        'logistics' => AccountRole.logistics,
+        _ => throw const AuthException(
+          'This account is not eligible to use the Bearly mobile app.',
+          clearSession: true,
+        ),
+      },
     );
   }
 }
@@ -134,13 +145,18 @@ class AuthService extends ChangeNotifier {
   Future<AuthSession> login({
     required String email,
     required String password,
+    AccountRole? role,
     bool rememberMe = true,
   }) async {
     final Object? response;
     try {
       response = await _apiClient.post(
         '/api/mobile/login',
-        body: {'email': email.trim(), 'password': password},
+        body: {
+          'email': email.trim(),
+          'password': password,
+          if (role != null) 'role': role.apiValue,
+        },
       );
     } on ApiException catch (error) {
       throw AuthException(_loginErrorMessage(error));
@@ -155,6 +171,12 @@ class AuthService extends ChangeNotifier {
     late final AuthSession session;
     try {
       session = AuthSession.fromJson(payload['user']);
+      if (role != null && session.role != role) {
+        throw const AuthException(
+          'The selected account type does not match this account.',
+          clearSession: true,
+        );
+      }
     } on AuthException {
       await _revokeUnstoredToken(token);
       rethrow;
