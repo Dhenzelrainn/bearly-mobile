@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:bearly_mobile/core/network/api_client.dart';
@@ -205,6 +206,210 @@ void main() {
       expect(account.workType, 'unknown');
       expect(account.supportsLocalFulfillment, isFalse);
     });
+
+    test(
+      'reuses recent server capability and force refreshes changes',
+      () async {
+        final paths = <String>[];
+        var accountWorkType = 'courier';
+        final service = _authService((request) async {
+          paths.add(request.url.path);
+          if (request.url.path.endsWith('/dashboard')) {
+            return http.Response(
+              jsonEncode({
+                'rider': {
+                  'work_type': 'local',
+                  'capabilities': {
+                    'local_pickup': true,
+                    'local_delivery': true,
+                  },
+                },
+                'metrics': {},
+              }),
+              200,
+            );
+          }
+          return http.Response(
+            jsonEncode({
+              'data': {
+                'name': 'Ria Rider',
+                'email': 'ria@example.test',
+                'account_status': 'active',
+                'verification_status': 'approved',
+                'availability_status': 'available',
+                'work_type': accountWorkType,
+                'capabilities': {
+                  'local_pickup': accountWorkType == 'local',
+                  'local_delivery': accountWorkType == 'local',
+                },
+                'vehicle': {},
+                'logistics_provider': {},
+                'sorting': {},
+                'addresses': [],
+                'documents': {},
+              },
+            }),
+            200,
+          );
+        });
+        final firstRepository = RiderRepository(authService: service);
+        final routeRepository = RiderRepository(authService: service);
+
+        final dashboard = await firstRepository.dashboard();
+        final cached = await routeRepository.workAccess();
+
+        expect(dashboard.supportsLocalFulfillment, isTrue);
+        expect(cached.supportsLocalFulfillment, isTrue);
+        expect(paths, ['/api/mobile/rider/dashboard']);
+
+        accountWorkType = 'courier';
+        final refreshed = await routeRepository.workAccess(forceRefresh: true);
+
+        expect(refreshed.workType, 'courier');
+        expect(refreshed.supportsLocalFulfillment, isFalse);
+        expect(routeRepository.verifiedWorkAccess?.workType, 'courier');
+        expect(paths, [
+          '/api/mobile/rider/dashboard',
+          '/api/mobile/rider/account',
+        ]);
+      },
+    );
+
+    test('session switch and expiry invalidate cached work access', () async {
+      var rejectAccount = false;
+      final service = _authService((request) async {
+        if (request.url.path.endsWith('/dashboard')) {
+          return http.Response(
+            jsonEncode({
+              'rider': {
+                'work_type': 'local',
+                'capabilities': {'local_pickup': true, 'local_delivery': true},
+              },
+              'metrics': {},
+            }),
+            200,
+          );
+        }
+        return rejectAccount
+            ? http.Response('Unauthenticated', 401)
+            : http.Response(
+                jsonEncode({
+                  'data': {
+                    'name': 'Updated Rider',
+                    'email': 'updated@example.test',
+                    'account_status': 'active',
+                    'verification_status': 'approved',
+                    'availability_status': 'available',
+                    'work_type': 'local',
+                    'capabilities': {
+                      'local_pickup': true,
+                      'local_delivery': true,
+                    },
+                    'vehicle': {},
+                    'logistics_provider': {},
+                    'sorting': {},
+                    'addresses': [],
+                    'documents': {},
+                  },
+                }),
+                200,
+              );
+      });
+      final repository = RiderRepository(authService: service);
+      await repository.dashboard();
+      expect(repository.verifiedWorkAccess?.supportsLocalFulfillment, isTrue);
+
+      service.currentSession = const AuthSession(
+        id: 2,
+        name: 'Different Rider',
+        email: 'different@example.test',
+        role: AccountRole.rider,
+      );
+      expect(repository.lastKnownWorkAccess, isNull);
+      final switchedAccess = await repository.workAccess();
+      expect(switchedAccess.supportsLocalFulfillment, isTrue);
+
+      rejectAccount = true;
+      await expectLater(
+        repository.workAccess(forceRefresh: true),
+        throwsA(isA<ApiHttpException>()),
+      );
+      expect(service.currentSession, isNull);
+      expect(repository.lastKnownWorkAccess, isNull);
+      expect(repository.verifiedWorkAccess, isNull);
+    });
+
+    test(
+      'joins concurrent capability verification for the same session',
+      () async {
+        final accountResponse = Completer<http.Response>();
+        final paths = <String>[];
+        final service = _authService((request) async {
+          paths.add(request.url.path);
+          if (request.url.path.endsWith('/dashboard')) {
+            return http.Response(
+              jsonEncode({
+                'rider': {
+                  'work_type': 'local',
+                  'capabilities': {
+                    'local_pickup': true,
+                    'local_delivery': true,
+                  },
+                },
+                'metrics': {},
+              }),
+              200,
+            );
+          }
+          return accountResponse.future;
+        });
+        final repository = RiderRepository(authService: service);
+        await repository.dashboard();
+
+        final first = repository.workAccess(forceRefresh: true);
+        final second = repository.workAccess(forceRefresh: true);
+      await Future<void>.delayed(Duration.zero);
+        expect(paths, [
+          '/api/mobile/rider/dashboard',
+          '/api/mobile/rider/account',
+        ]);
+
+        accountResponse.complete(
+          http.Response(
+            jsonEncode({
+              'data': {
+                'name': 'Ria Rider',
+                'email': 'ria@example.test',
+                'account_status': 'active',
+                'verification_status': 'approved',
+                'availability_status': 'available',
+                'work_type': 'courier',
+                'capabilities': {
+                  'local_pickup': false,
+                  'local_delivery': false,
+                },
+                'vehicle': {'type': 'Van'},
+                'logistics_provider': {},
+                'sorting': {},
+                'addresses': [],
+                'documents': {},
+              },
+            }),
+            200,
+          ),
+        );
+        final results = await Future.wait([first, second]);
+
+        expect(results.map((access) => access.workType), [
+          'courier',
+          'courier',
+        ]);
+        expect(
+          paths.where((path) => path == '/api/mobile/rider/account'),
+          hasLength(1),
+        );
+      },
+    );
 
     test('loads read-only pickup and delivery details', () async {
       final requestedPaths = <String>[];

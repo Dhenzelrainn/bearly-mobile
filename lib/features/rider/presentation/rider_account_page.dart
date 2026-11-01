@@ -32,7 +32,10 @@ class _RiderAccountPageState extends State<RiderAccountPage> {
       currentRoute: AppRouteNames.riderAccount,
       title: 'Rider Account',
       subtitle: 'Your approved profile and registered Rider details.',
-      supportsLocalFulfillment: snapshot.data?.supportsLocalFulfillment == true,
+      supportsLocalFulfillment:
+          snapshot.data?.supportsLocalFulfillment ??
+          widget.repository.lastKnownWorkAccess?.supportsLocalFulfillment ==
+              true,
       child: _accountContent(context, snapshot),
     ),
   );

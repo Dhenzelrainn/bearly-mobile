@@ -47,6 +47,112 @@ void main() {
   );
 
   testWidgets(
+    'Local Rider navigation stays stable when opening protected tabs',
+    (tester) async {
+      final requestedPaths = <String>[];
+      await tester.pumpWidget(
+        _navigationApp(
+          requestedPaths: requestedPaths,
+          useProductionRoutes: true,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      _expectPrimaryTabs(tester, selectedIndex: 0);
+      expect(
+        requestedPaths.where((path) => path == '/api/mobile/rider/account'),
+        isEmpty,
+      );
+
+      await tester.tap(find.text('Pickups').last);
+      await tester.pump();
+      final navigationBars = tester.widgetList<NavigationBar>(
+        find.byType(NavigationBar),
+      );
+      expect(navigationBars, isNotEmpty);
+      expect(
+        navigationBars.every((bar) => bar.destinations.length == 5),
+        isTrue,
+      );
+      expect(find.text('Checking Rider access'), findsNothing);
+      await tester.pumpAndSettle();
+      expect(find.text('Assigned Pickups'), findsOneWidget);
+      _expectPrimaryTabs(tester, selectedIndex: 1);
+
+      await tester.tap(find.text('Deliveries').last);
+      await tester.pumpAndSettle();
+      expect(find.text('Assigned Deliveries'), findsOneWidget);
+      _expectPrimaryTabs(tester, selectedIndex: 2);
+
+      expect(
+        requestedPaths.where((path) => path == '/api/mobile/rider/account'),
+        isEmpty,
+      );
+    },
+  );
+
+  testWidgets('local actions stay hidden until access is server verified', (
+    tester,
+  ) async {
+    final accountResponse = Completer<http.Response>();
+    final authService =
+        AuthService(
+            apiClient: ApiClient(
+              httpClient: MockClient((request) => accountResponse.future),
+              baseUri: Uri.parse('http://127.0.0.1:8000'),
+            ),
+            tokenStore: _MemoryTokenStore()..token = 'test-token',
+          )
+          ..currentSession = const AuthSession(
+            id: 18,
+            name: 'Mark Rider',
+            email: 'mark@example.test',
+            role: AccountRole.rider,
+          );
+    final repository = RiderRepository(authService: authService);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: RiderLocalFulfillmentGuard(
+          repository: repository,
+          currentRoute: AppRouteNames.riderRequests,
+          child: const Scaffold(body: Text('Protected pickup actions')),
+        ),
+      ),
+    );
+
+    expect(find.text('Checking Rider access'), findsOneWidget);
+    expect(find.text('Protected pickup actions'), findsNothing);
+
+    accountResponse.complete(
+      http.Response(
+        jsonEncode({
+          'data': {
+            'name': 'Mark Rider',
+            'email': 'mark@example.test',
+            'account_status': 'active',
+            'verification_status': 'approved',
+            'availability_status': 'available',
+            'work_type': 'courier',
+            'capabilities': {'local_pickup': false, 'local_delivery': false},
+            'vehicle': {'type': 'Van'},
+            'logistics_provider': {},
+            'sorting': {},
+            'addresses': [],
+            'documents': {},
+          },
+        }),
+        200,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Local work unavailable'), findsOneWidget);
+    expect(find.text('Protected pickup actions'), findsNothing);
+    _expectCourierTabs(tester, selectedIndex: 0);
+  });
+
+  testWidgets(
     'Courier uses shared navigation and account without local fulfillment tabs',
     (tester) async {
       await tester.pumpWidget(_navigationApp(workType: 'courier'));
@@ -384,11 +490,13 @@ Widget _navigationApp({
   NavigatorObserver? observer,
   String workType = 'local',
   bool useProductionRoutes = false,
+  List<String>? requestedPaths,
 }) {
   final authService =
       AuthService(
           apiClient: ApiClient(
             httpClient: MockClient((request) async {
+              requestedPaths?.add(request.url.path);
               return switch (request.url.path) {
                 '/api/mobile/rider/dashboard' => http.Response(
                   jsonEncode({
