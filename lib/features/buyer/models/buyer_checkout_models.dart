@@ -82,27 +82,79 @@ class BuyerCheckoutVoucherSelection {
       Object.hash(platformVoucherId, storeVoucherId, voucherCode);
 }
 
+/// A product selection for direct checkout. Display labels stay on the local
+/// navigation request; only identifiers and quantity are sent to Laravel.
+class BuyerCheckoutBuyNowSelection {
+  const BuyerCheckoutBuyNowSelection({
+    required this.productId,
+    required this.productVariantId,
+    required this.quantity,
+    this.productName,
+    this.variantName,
+  });
+
+  final int productId;
+  final int productVariantId;
+  final int quantity;
+  final String? productName;
+  final String? variantName;
+
+  Map<String, Object?> toJson() => {
+    'product_id': productId,
+    'product_variant_id': productVariantId,
+    'quantity': quantity,
+  };
+
+  factory BuyerCheckoutBuyNowSelection.fromJson(Object? value) {
+    final json = buyerCheckoutMap(value, 'buy_now');
+    final selection = BuyerCheckoutBuyNowSelection(
+      productId: buyerCheckoutInt(json, 'product_id', 'buy_now'),
+      productVariantId: buyerCheckoutInt(json, 'product_variant_id', 'buy_now'),
+      quantity: buyerCheckoutInt(json, 'quantity', 'buy_now'),
+    );
+    if (selection.productId < 1 ||
+        selection.productVariantId < 1 ||
+        selection.quantity < 1) {
+      throw const BuyerCheckoutFormatException('buy_now');
+    }
+    return selection;
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      other is BuyerCheckoutBuyNowSelection &&
+      other.productId == productId &&
+      other.productVariantId == productVariantId &&
+      other.quantity == quantity;
+
+  @override
+  int get hashCode => Object.hash(productId, productVariantId, quantity);
+}
+
 /// The exact client selection sent to Laravel for a fresh quote.
 ///
 /// Totals and prices are intentionally absent; Laravel calculates them.
 class BuyerCheckoutQuoteRequest {
   BuyerCheckoutQuoteRequest({
     required this.addressId,
-    required List<int> cartItemIds,
+    List<int> cartItemIds = const [],
+    this.buyNow,
     BuyerCheckoutVoucherSelection? vouchers,
   }) : cartItemIds = List.unmodifiable(cartItemIds),
        vouchers = vouchers ?? BuyerCheckoutVoucherSelection() {
-    _validateSelection(addressId, this.cartItemIds);
+    _validateCheckoutSource(addressId, this.cartItemIds, buyNow);
   }
 
   final int addressId;
   final List<int> cartItemIds;
+  final BuyerCheckoutBuyNowSelection? buyNow;
   final BuyerCheckoutVoucherSelection vouchers;
   String get paymentMethod => 'cod';
 
   Map<String, Object?> toJson() => {
     'address_id': addressId,
-    'cart_item_ids': cartItemIds,
+    if (buyNow == null) 'cart_item_ids': cartItemIds,
+    if (buyNow != null) 'buy_now': buyNow!.toJson(),
     'payment_method': paymentMethod,
     ...vouchers.toJson(),
   };
@@ -115,7 +167,8 @@ class BuyerCheckoutPlacementRequest {
     required this.checkoutRequestKey,
     required this.quoteToken,
     required this.addressId,
-    required List<int> cartItemIds,
+    List<int> cartItemIds = const [],
+    this.buyNow,
     BuyerCheckoutVoucherSelection? vouchers,
     String? sellerNote,
   }) : cartItemIds = List.unmodifiable(cartItemIds),
@@ -127,7 +180,7 @@ class BuyerCheckoutPlacementRequest {
     if (quoteToken.trim().isEmpty) {
       throw ArgumentError.value(quoteToken, 'quoteToken');
     }
-    _validateSelection(addressId, this.cartItemIds);
+    _validateCheckoutSource(addressId, this.cartItemIds, buyNow);
     if ((this.sellerNote?.length ?? 0) > 120) {
       throw ArgumentError.value(sellerNote, 'sellerNote');
     }
@@ -137,6 +190,7 @@ class BuyerCheckoutPlacementRequest {
   final String quoteToken;
   final int addressId;
   final List<int> cartItemIds;
+  final BuyerCheckoutBuyNowSelection? buyNow;
   final BuyerCheckoutVoucherSelection vouchers;
   final String? sellerNote;
 
@@ -144,7 +198,8 @@ class BuyerCheckoutPlacementRequest {
     'checkout_request_key': checkoutRequestKey,
     'quote_token': quoteToken,
     'address_id': addressId,
-    'cart_item_ids': cartItemIds,
+    if (buyNow == null) 'cart_item_ids': cartItemIds,
+    if (buyNow != null) 'buy_now': buyNow!.toJson(),
     'payment_method': 'cod',
     ...vouchers.toJson(),
     if (sellerNote != null) 'seller_note': sellerNote,
@@ -152,7 +207,10 @@ class BuyerCheckoutPlacementRequest {
 
   factory BuyerCheckoutPlacementRequest.fromJson(Object? value) {
     final json = buyerCheckoutMap(value, 'placement_request');
-    final ids = buyerCheckoutList(json['cart_item_ids'], 'cart_item_ids');
+    final rawIds = json['cart_item_ids'];
+    final ids = rawIds == null
+        ? const <Object?>[]
+        : buyerCheckoutList(rawIds, 'cart_item_ids');
     if (ids.any((id) => id is! int)) {
       throw const BuyerCheckoutFormatException('cart_item_ids');
     }
@@ -165,6 +223,9 @@ class BuyerCheckoutPlacementRequest {
       quoteToken: buyerCheckoutString(json, 'quote_token', 'placement_request'),
       addressId: buyerCheckoutInt(json, 'address_id', 'placement_request'),
       cartItemIds: ids.cast<int>(),
+      buyNow: json['buy_now'] == null
+          ? null
+          : BuyerCheckoutBuyNowSelection.fromJson(json['buy_now']),
       vouchers: BuyerCheckoutVoucherSelection.fromJson(json),
       sellerNote: buyerCheckoutOptionalString(
         json,
@@ -280,16 +341,24 @@ class BuyerCheckoutQuote {
       throw const BuyerCheckoutFormatException('data');
     }
 
-    if (sourceRequest != null &&
-        (deliveryAddress.id != sourceRequest.addressId ||
-            items.length != sourceRequest.cartItemIds.length ||
-            items.map((item) => item.cartItemId).toSet().length !=
-                sourceRequest.cartItemIds.toSet().length ||
-            !items
-                .map((item) => item.cartItemId)
-                .toSet()
-                .containsAll(sourceRequest.cartItemIds))) {
-      throw const BuyerCheckoutFormatException('data.selection');
+    if (sourceRequest != null) {
+      final buyNow = sourceRequest.buyNow;
+      final selectionMatches = buyNow != null
+          ? items.length == 1 &&
+                items.single.cartItemId == null &&
+                items.single.variantId == buyNow.productVariantId &&
+                items.single.quantity == buyNow.quantity
+          : items.length == sourceRequest.cartItemIds.length &&
+                items.every((item) => item.cartItemId != null) &&
+                items.map((item) => item.cartItemId).toSet().length ==
+                    sourceRequest.cartItemIds.toSet().length &&
+                items
+                    .map((item) => item.cartItemId)
+                    .toSet()
+                    .containsAll(sourceRequest.cartItemIds);
+      if (deliveryAddress.id != sourceRequest.addressId || !selectionMatches) {
+        throw const BuyerCheckoutFormatException('data.selection');
+      }
     }
 
     return BuyerCheckoutQuote(
@@ -353,7 +422,7 @@ class BuyerCheckoutQuoteItem {
     required this.totalMinor,
   }) : options = Map.unmodifiable(options);
 
-  final int cartItemId;
+  final int? cartItemId;
   final int productId;
   final String productName;
   final int variantId;
@@ -371,7 +440,7 @@ class BuyerCheckoutQuoteItem {
     final json = buyerCheckoutMap(value, 'data.items[]');
     final options = buyerCheckoutMap(json['options'], 'data.items[].options');
     final item = BuyerCheckoutQuoteItem(
-      cartItemId: buyerCheckoutInt(json, 'cart_item_id', 'quote_item'),
+      cartItemId: buyerCheckoutOptionalInt(json, 'cart_item_id', 'quote_item'),
       productId: buyerCheckoutInt(json, 'product_id', 'quote_item'),
       productName: buyerCheckoutString(json, 'product_name', 'quote_item'),
       variantId: buyerCheckoutInt(json, 'variant_id', 'quote_item'),
@@ -402,7 +471,7 @@ class BuyerCheckoutQuoteItem {
       ),
       totalMinor: buyerCheckoutInt(json, 'total_minor', 'quote_item'),
     );
-    if (item.cartItemId < 1 ||
+    if ((item.cartItemId != null && item.cartItemId! < 1) ||
         item.productId < 1 ||
         item.variantId < 1 ||
         item.quantity < 1 ||
@@ -586,6 +655,24 @@ void _validateSelection(int addressId, List<int> cartItemIds) {
       cartItemIds.any((id) => id < 1) ||
       cartItemIds.toSet().length != cartItemIds.length) {
     throw ArgumentError('Choose 1 to 100 distinct positive cart-item IDs.');
+  }
+}
+
+void _validateCheckoutSource(
+  int addressId,
+  List<int> cartItemIds,
+  BuyerCheckoutBuyNowSelection? buyNow,
+) {
+  if (addressId < 1) throw RangeError.value(addressId, 'addressId');
+  if (buyNow == null) {
+    _validateSelection(addressId, cartItemIds);
+    return;
+  }
+  if (cartItemIds.isNotEmpty ||
+      buyNow.productId < 1 ||
+      buyNow.productVariantId < 1 ||
+      buyNow.quantity < 1) {
+    throw ArgumentError('Choose either Cart items or one Buy Now selection.');
   }
 }
 

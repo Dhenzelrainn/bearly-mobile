@@ -129,6 +129,7 @@ class BuyerCheckoutRepository {
         quoteToken: quote.quoteToken,
         addressId: selection.addressId,
         cartItemIds: selection.cartItemIds,
+        buyNow: selection.buyNow,
         vouchers: selection.vouchers,
         sellerNote: sellerNote,
       );

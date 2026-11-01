@@ -86,6 +86,76 @@ void main() {
       );
     });
 
+    testWidgets(
+      'Buy Now quotes and places only its exact selection without changing Cart',
+      (tester) async {
+        final h = _Harness();
+        const direct = BuyerCheckoutBuyNowSelection(
+          productId: 41,
+          productVariantId: 701,
+          quantity: 3,
+          productName: 'Product 41',
+          variantName: 'Blue / Small',
+        );
+        await _pumpDirectReview(tester, h, direct);
+
+        final quoteRequest = h.requests.singleWhere(
+          (request) => request.url.path.endsWith('/checkout/quote'),
+        );
+        expect(jsonDecode(quoteRequest.body), {
+          'address_id': 31,
+          'buy_now': {
+            'product_id': 41,
+            'product_variant_id': 701,
+            'quantity': 3,
+          },
+          'payment_method': 'cod',
+        });
+        expect(find.text('Buy Now item'), findsOneWidget);
+        expect(
+          find.text(
+            'Only this selected variation and quantity will be checked out. Other Cart items remain saved.',
+          ),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(const ValueKey('buyer-checkout-buy-now-product')),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(const ValueKey('buyer-checkout-place-order')),
+          findsOneWidget,
+        );
+        expect(h.cart.selectedCount, 0);
+
+        await tester.ensureVisible(
+          find.byKey(const ValueKey('buyer-checkout-place-order')),
+        );
+        await tester.tap(
+          find.byKey(const ValueKey('buyer-checkout-place-order')),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const ValueKey('buyer-checkout-confirm-placement')),
+        );
+        await tester.pumpAndSettle();
+
+        final placementRequest = h.requests.singleWhere(
+          (request) => request.url.path.endsWith('/checkout/place'),
+        );
+        final body = jsonDecode(placementRequest.body) as Map<String, Object?>;
+        expect(body['buy_now'], {
+          'product_id': 41,
+          'product_variant_id': 701,
+          'quantity': 3,
+        });
+        expect(body.containsKey('cart_item_ids'), isFalse);
+        expect(body['payment_method'], 'cod');
+        expect(h.cart.cart?.items.map((item) => item.quantity), [1, 1]);
+        expect(find.byType(BuyerOrderConfirmationPage), findsOneWidget);
+      },
+    );
+
     testWidgets('no address blocks quotation and offers Add Address', (
       tester,
     ) async {
@@ -988,14 +1058,18 @@ Future<void> _enterReview(
   await tester.pumpAndSettle();
 }
 
-Future<void> _pumpReview(WidgetTester tester, _Harness h) async {
+Future<void> _pumpReview(
+  WidgetTester tester,
+  _Harness h, {
+  BuyerCheckoutBuyNowSelection? buyNowSelection,
+}) async {
   tester.view.devicePixelRatio = 1;
   tester.view.physicalSize = const Size(430, 1200);
   addTearDown(tester.view.resetPhysicalSize);
   await tester.pumpWidget(
     MaterialApp(
       home: BuyerCheckoutReviewPage(
-        reviewController: h.reviewController(),
+        reviewController: h.reviewController(buyNowSelection: buyNowSelection),
         placementController: h.placementController(),
         addressController: h.addresses,
         locationRepository: h.locations,
@@ -1004,6 +1078,12 @@ Future<void> _pumpReview(WidgetTester tester, _Harness h) async {
   );
   await tester.pumpAndSettle();
 }
+
+Future<void> _pumpDirectReview(
+  WidgetTester tester,
+  _Harness h,
+  BuyerCheckoutBuyNowSelection selection,
+) => _pumpReview(tester, h, buyNowSelection: selection);
 
 Future<void> _pumpCart(WidgetTester tester, _Harness h) async {
   tester.view.devicePixelRatio = 1;
@@ -1078,6 +1158,13 @@ class _Harness {
         attemptStore.events.add('post');
         if (placeHandler != null) return placeHandler(request);
         final body = jsonDecode(request.body) as Map<String, dynamic>;
+        if (body['buy_now'] is Map<String, dynamic>) {
+          return _json(
+            _placedOrderResponse([
+              _buyNowLine(body['buy_now'] as Map<String, dynamic>),
+            ]),
+          );
+        }
         final ids = (body['cart_item_ids'] as List).cast<int>();
         final purchased = _cartItems
             .where((item) => ids.contains(item['id']))
@@ -1144,13 +1231,15 @@ class _Harness {
     _addresses.removeWhere((address) => address['id'] == addressId);
   }
 
-  BuyerCheckoutReviewController reviewController() =>
-      BuyerCheckoutReviewController(
-        authService: auth,
-        cartController: cart,
-        addressController: addresses,
-        checkoutRepository: checkout,
-      );
+  BuyerCheckoutReviewController reviewController({
+    BuyerCheckoutBuyNowSelection? buyNowSelection,
+  }) => BuyerCheckoutReviewController(
+    authService: auth,
+    cartController: cart,
+    addressController: addresses,
+    checkoutRepository: checkout,
+    buyNowSelection: buyNowSelection,
+  );
 
   BuyerCheckoutPlacementController placementController() =>
       BuyerCheckoutPlacementController(
@@ -1161,6 +1250,14 @@ class _Harness {
 
   Map<String, Object?> _quoteFromRequest(http.Request request) {
     final body = jsonDecode(request.body) as Map<String, dynamic>;
+    if (body['buy_now'] is Map<String, dynamic>) {
+      return _buyNowQuoteResponse(
+        body['buy_now'] as Map<String, dynamic>,
+        addressId: body['address_id'] as int,
+        addresses: _addresses,
+        lifetime: quoteLifetime,
+      );
+    }
     final ids = (body['cart_item_ids'] as List).cast<int>();
     return quoteResponse(ids, addressId: body['address_id'] as int);
   }
@@ -1322,6 +1419,98 @@ Map<String, Object?> _address(int id, {bool isDefault = false}) => {
   'latitude': null,
   'longitude': null,
 };
+
+Map<String, Object?> _buyNowLine(Map<String, dynamic> selection) {
+  final quantity = selection['quantity'] as int;
+  const unitPrice = 10000;
+  return {
+    'store_id': 1,
+    'store_name': 'Alpha Shop',
+    'product_id': selection['product_id'],
+    'product_variant_id': selection['product_variant_id'],
+    'name': 'Product ${selection['product_id']}',
+    'variant_name': 'Blue / Small',
+    'options': {'Color': 'Blue', 'Size': 'Small'},
+    'quantity': quantity,
+    'unit_price_minor': unitPrice,
+  };
+}
+
+Map<String, Object?> _buyNowQuoteResponse(
+  Map<String, dynamic> selection, {
+  required int addressId,
+  required List<Map<String, Object?>> addresses,
+  required Duration lifetime,
+}) {
+  final line = _buyNowLine(selection);
+  final quantity = line['quantity']! as int;
+  final subtotal = (line['unit_price_minor']! as int) * quantity;
+  final address = addresses.firstWhere((item) => item['id'] == addressId);
+  return {
+    'data': {
+      'currency': 'PHP',
+      'items': [
+        {
+          'cart_item_id': null,
+          'product_id': line['product_id'],
+          'product_name': line['name'],
+          'variant_id': line['product_variant_id'],
+          'variant_name': line['variant_name'],
+          'options': line['options'],
+          'quantity': quantity,
+          'unit_price_minor': line['unit_price_minor'],
+          'subtotal_minor': subtotal,
+          'seller_discount_minor': 0,
+          'platform_discount_minor': 0,
+          'total_discount_minor': 0,
+          'total_minor': subtotal,
+        },
+      ],
+      'seller_orders': [
+        {
+          'store_id': 1,
+          'store_name': 'Alpha Shop',
+          'item_count': quantity,
+          'subtotal_minor': subtotal,
+          'seller_discount_minor': 0,
+          'platform_discount_minor': 0,
+          'shipping_fee_minor': 1000,
+          'shipping_discount_minor': 0,
+          'total_discount_minor': 0,
+          'total_minor': subtotal + 1000,
+        },
+      ],
+      'delivery_address': {
+        'id': address['id'],
+        'name': address['name'],
+        'phone': address['phone'],
+        'street': address['street'],
+        'barangay': address['barangay'],
+        'city': address['city'],
+        'province': address['province'],
+        'postal': address['postal'],
+        'isDefault': address['isDefault'],
+      },
+      'subtotal_minor': subtotal,
+      'shipping_fee_minor': 1000,
+      'seller_discount_minor': 0,
+      'platform_discount_minor': 0,
+      'shipping_discount_minor': 0,
+      'discount_minor': 0,
+      'total_discount_minor': 0,
+      'total_minor': subtotal + 1000,
+      'payment_method': 'cod',
+      'available_payment_methods': ['cod'],
+      'promotion_selection': <String, Object?>{},
+      'applied_promotions': <Object?>[],
+      'quote_token': 'mock-buy-now-quote-token',
+      'quote_expires_at': DateTime.now()
+          .add(lifetime)
+          .toUtc()
+          .toIso8601String(),
+    },
+  };
+}
 
 AuthSession _session(int id) => AuthSession(
   id: id,

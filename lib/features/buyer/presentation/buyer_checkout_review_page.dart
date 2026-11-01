@@ -123,7 +123,9 @@ class _BuyerCheckoutReviewPageState extends State<BuyerCheckoutReviewPage> {
       appBar: AppBar(
         leading: IconButton(
           key: const ValueKey('buyer-checkout-review-back'),
-          tooltip: 'Back to cart',
+          tooltip: controller.buyNowSelection == null
+              ? 'Back to cart'
+              : 'Back to product',
           onPressed: placement.isSubmitting ? null : _returnToCart,
           icon: const Icon(Icons.arrow_back_rounded),
         ),
@@ -599,6 +601,35 @@ class _BuyerCheckoutReviewPageState extends State<BuyerCheckoutReviewPage> {
   }
 
   Widget _selectionSection() {
+    final direct = controller.buyNowSelection;
+    if (direct != null) {
+      return _sectionCard(
+        title: 'Buy Now item',
+        trailing: TextButton(
+          key: const ValueKey('buyer-checkout-change-items'),
+          onPressed: placement.isSubmitting ? null : _returnToCart,
+          child: const Text('Back to product'),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              direct.productName ?? 'Selected product',
+              key: const ValueKey('buyer-checkout-buy-now-product'),
+              style: Theme.of(context).textTheme.titleSmall,
+            ),
+            if ((direct.variantName ?? '').isNotEmpty)
+              Text(direct.variantName!),
+            Text('Quantity ${direct.quantity}'),
+            const SizedBox(height: 4),
+            Text(
+              'Only this selected variation and quantity will be checked out. Other Cart items remain saved.',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ],
+        ),
+      );
+    }
     final cart = controller.cartController.cart;
     final selectedItems = controller.cartController.selectedItems;
     if (selectedItems.isEmpty) {
@@ -652,7 +683,7 @@ class _BuyerCheckoutReviewPageState extends State<BuyerCheckoutReviewPage> {
     final itemsByStore = <int, List<BuyerCheckoutQuoteItem>>{};
     final unassigned = <BuyerCheckoutQuoteItem>[];
     for (final item in quote.items) {
-      final cartItem = cartItems[item.cartItemId];
+      final cartItem = _cartItemForQuote(item, cartItems);
       final matchingGroups = cartItem?.storeName == null
           ? null
           : groupsByName[_normalize(cartItem!.storeName!)];
@@ -798,7 +829,9 @@ class _BuyerCheckoutReviewPageState extends State<BuyerCheckoutReviewPage> {
               ),
               const SizedBox(height: 10),
               Text(
-                '${quote.items.length} selected ${quote.items.length == 1 ? 'Cart item' : 'Cart items'} · Cash on Delivery',
+                controller.buyNowSelection == null
+                    ? '${quote.items.length} selected ${quote.items.length == 1 ? 'Cart item' : 'Cart items'} · Cash on Delivery'
+                    : 'Buy Now · Quantity ${controller.buyNowSelection!.quantity} · Cash on Delivery',
                 key: const ValueKey('buyer-checkout-final-summary'),
                 style: Theme.of(context).textTheme.bodySmall,
               ),
@@ -807,7 +840,7 @@ class _BuyerCheckoutReviewPageState extends State<BuyerCheckoutReviewPage> {
         ),
         const SizedBox(height: 8),
         Text(
-          'This quote is for review only. Order placement is not available yet.',
+          'Bearly will recheck stock and current checkout terms when you place the order.',
           textAlign: TextAlign.center,
           style: Theme.of(
             context,
@@ -815,6 +848,14 @@ class _BuyerCheckoutReviewPageState extends State<BuyerCheckoutReviewPage> {
         ),
       ],
     );
+  }
+
+  BuyerCartItem? _cartItemForQuote(
+    BuyerCheckoutQuoteItem item,
+    Map<int, BuyerCartItem> cartItems,
+  ) {
+    final cartItemId = item.cartItemId;
+    return cartItemId == null ? null : cartItems[cartItemId];
   }
 
   Widget _sellerGroup(
@@ -849,7 +890,7 @@ class _BuyerCheckoutReviewPageState extends State<BuyerCheckoutReviewPage> {
         )
       else
         for (final item in items)
-          _quoteItem(item, cartItems[item.cartItemId], currency),
+          _quoteItem(item, _cartItemForQuote(item, cartItems), currency),
       const SizedBox(height: 8),
       _amountRow('Seller item subtotal', group.subtotalMinor, currency),
       _amountRow('Seller discounts', group.sellerDiscountMinor, currency),
@@ -871,11 +912,11 @@ class _BuyerCheckoutReviewPageState extends State<BuyerCheckoutReviewPage> {
       const Padding(
         padding: EdgeInsets.only(top: 5),
         child: Text(
-          'The quote did not provide an unambiguous Seller match for these Cart lines. Server totals below remain authoritative.',
+          'The quote did not provide an unambiguous Seller match for these selected products. Server totals below remain authoritative.',
         ),
       ),
       for (final item in items)
-        _quoteItem(item, cartItems[item.cartItemId], currency),
+        _quoteItem(item, _cartItemForQuote(item, cartItems), currency),
     ],
   );
 
@@ -1188,7 +1229,11 @@ class _BuyerCheckoutReviewPageState extends State<BuyerCheckoutReviewPage> {
           TextButton(
             key: const ValueKey('buyer-checkout-return-to-cart'),
             onPressed: placement.isSubmitting ? null : _returnToCart,
-            child: const Text('Return to Cart'),
+            child: Text(
+              controller.buyNowSelection == null
+                  ? 'Return to Cart'
+                  : 'Return to product',
+            ),
           ),
         ],
       ),

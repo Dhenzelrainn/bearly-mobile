@@ -20,6 +20,7 @@ class BuyerCheckoutReviewController extends ChangeNotifier {
     required this.cartController,
     required this.addressController,
     required BuyerCheckoutRepository checkoutRepository,
+    this.buyNowSelection,
     DateTime Function()? clock,
   }) : _authService = authService,
        _checkoutRepository = checkoutRepository,
@@ -35,6 +36,7 @@ class BuyerCheckoutReviewController extends ChangeNotifier {
   final DateTime Function() _clock;
   final BuyerCartController cartController;
   final BuyerAddressController addressController;
+  final BuyerCheckoutBuyNowSelection? buyNowSelection;
 
   int? _selectedAddressId;
   BuyerCheckoutQuote? _quote;
@@ -84,6 +86,14 @@ class BuyerCheckoutReviewController extends ChangeNotifier {
   }
 
   bool get canRequestQuote {
+    final direct = buyNowSelection;
+    if (direct != null) {
+      return !_isQuoting &&
+          direct.productId > 0 &&
+          direct.productVariantId > 0 &&
+          direct.quantity > 0 &&
+          selectedAddress != null;
+    }
     final items = cartController.selectedItems;
     return !_isQuoting &&
         items.isNotEmpty &&
@@ -99,6 +109,18 @@ class BuyerCheckoutReviewController extends ChangeNotifier {
     final selection = currentQuote?.sourceRequest;
     final selected = cartController.selectedItems;
     final address = selectedAddress;
+    final direct = buyNowSelection;
+    final selectionMatches = direct != null
+        ? selection?.buyNow == direct && selection?.cartItemIds.isEmpty == true
+        : selection?.buyNow == null &&
+              selected.isNotEmpty &&
+              selected.length <= 100 &&
+              selected.every((item) => item.id > 0 && item.isAvailable) &&
+              selection != null &&
+              listEquals(
+                selection.cartItemIds,
+                selected.map((item) => item.id).toList(growable: false),
+              );
     return hasBuyerSession &&
         _isInitialized &&
         !_isQuoting &&
@@ -107,15 +129,9 @@ class BuyerCheckoutReviewController extends ChangeNotifier {
         currentQuote.paymentMethod == 'cod' &&
         currentQuote.availablePaymentMethods.contains('cod') &&
         selection != null &&
-        selected.isNotEmpty &&
-        selected.length <= 100 &&
-        selected.every((item) => item.id > 0 && item.isAvailable) &&
+        selectionMatches &&
         address != null &&
-        selection.addressId == address.id &&
-        listEquals(
-          selection.cartItemIds,
-          selected.map((item) => item.id).toList(growable: false),
-        );
+        selection.addressId == address.id;
   }
 
   /// Refreshes the server Cart and saved addresses in sequence, then obtains
@@ -187,20 +203,22 @@ class BuyerCheckoutReviewController extends ChangeNotifier {
   Future<void> requestQuote() async {
     if (_isQuoting) return;
     final address = selectedAddress;
-    final items = cartController.selectedItems;
     if (address == null) {
       _localError = 'Choose a saved delivery address to continue.';
       _clearQuote();
       notifyListeners();
       return;
     }
-    if (items.isEmpty) {
+    final direct = buyNowSelection;
+    final items = cartController.selectedItems;
+    if (direct == null && items.isEmpty) {
       _localError = 'Select at least one available Cart item to continue.';
       _clearQuote();
       notifyListeners();
       return;
     }
-    if (items.length > 100 || items.any((item) => !item.isAvailable)) {
+    if (direct == null &&
+        (items.length > 100 || items.any((item) => !item.isAvailable))) {
       _localError = 'Choose up to 100 available Cart items and try again.';
       _clearQuote();
       notifyListeners();
@@ -209,7 +227,10 @@ class BuyerCheckoutReviewController extends ChangeNotifier {
 
     final request = BuyerCheckoutQuoteRequest(
       addressId: address.id,
-      cartItemIds: items.map((item) => item.id).toList(growable: false),
+      cartItemIds: direct == null
+          ? items.map((item) => item.id).toList(growable: false)
+          : const [],
+      buyNow: direct,
     );
     final fingerprint = _contextFingerprint;
     final sessionKey = _sessionKey;
@@ -381,24 +402,27 @@ class BuyerCheckoutReviewController extends ChangeNotifier {
     return jsonEncode([
       session?.role == AccountRole.buyer ? session?.id : null,
       _authService.sessionEpoch,
-      for (final item in cartController.selectedItems)
-        [
-          item.id,
-          item.productId,
-          item.productVariantId,
-          item.quantity,
-          item.unitPriceMinor,
-          item.lineSubtotalMinor,
-          item.regularPriceMinor,
-          item.discountPercent,
-          item.campaignName,
-          item.availableStock,
-          item.isAvailable,
-          item.name,
-          item.variantName,
-          jsonEncode(item.options),
-          item.storeName,
-        ],
+      if (buyNowSelection case final direct?)
+        ['buy_now', direct.productId, direct.productVariantId, direct.quantity]
+      else
+        for (final item in cartController.selectedItems)
+          [
+            item.id,
+            item.productId,
+            item.productVariantId,
+            item.quantity,
+            item.unitPriceMinor,
+            item.lineSubtotalMinor,
+            item.regularPriceMinor,
+            item.discountPercent,
+            item.campaignName,
+            item.availableStock,
+            item.isAvailable,
+            item.name,
+            item.variantName,
+            jsonEncode(item.options),
+            item.storeName,
+          ],
       address == null
           ? null
           : [

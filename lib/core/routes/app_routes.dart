@@ -17,6 +17,7 @@ import '../../features/buyer/data/buyer_checkout_placement_controller.dart';
 import '../../features/buyer/data/buyer_checkout_review_controller.dart';
 import '../../features/buyer/data/buyer_location_repository.dart';
 import '../../features/buyer/data/buyer_wishlist_controller.dart';
+import '../../features/buyer/models/buyer_checkout_models.dart';
 import '../../features/buyer/presentation/buyer_home_page.dart';
 import '../../features/buyer/presentation/buyer_cart_page.dart';
 import '../../features/buyer/presentation/buyer_checkout_review_page.dart';
@@ -164,6 +165,10 @@ class AppRoutes {
           builder: (_) {
             final resolvedAddressController = resolveAddressController();
             final resolvedCheckoutRepository = resolveCheckoutRepository();
+            final buyNowSelection =
+                settings.arguments is BuyerCheckoutBuyNowSelection
+                ? settings.arguments! as BuyerCheckoutBuyNowSelection
+                : null;
             return BuyerCheckoutReviewPage(
               addressController: resolvedAddressController,
               locationRepository: resolveLocationRepository(),
@@ -172,6 +177,7 @@ class AppRoutes {
                 cartController: cartController,
                 addressController: resolvedAddressController,
                 checkoutRepository: resolvedCheckoutRepository,
+                buyNowSelection: buyNowSelection,
               ),
               placementController: BuyerCheckoutPlacementController(
                 authService: authService,

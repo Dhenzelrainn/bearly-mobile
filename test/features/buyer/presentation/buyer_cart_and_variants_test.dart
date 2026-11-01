@@ -7,6 +7,7 @@ import 'package:bearly_mobile/features/auth/data/auth_service.dart';
 import 'package:bearly_mobile/features/auth/models/account_role.dart';
 import 'package:bearly_mobile/features/buyer/data/buyer_cart_controller.dart';
 import 'package:bearly_mobile/features/buyer/data/buyer_wishlist_controller.dart';
+import 'package:bearly_mobile/features/buyer/models/buyer_checkout_models.dart';
 import 'package:bearly_mobile/features/buyer/presentation/buyer_home_page.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -57,6 +58,64 @@ void main() {
       expect(jsonDecode(add.body), {'product_variant_id': 73, 'quantity': 1});
       expect(find.text('Added to your cart.'), findsOneWidget);
     });
+
+    testWidgets(
+      'Buy Now carries the selected variant and quantity without adding to Cart',
+      (tester) async {
+        final requests = <http.Request>[];
+        final h = _Harness((request) async {
+          requests.add(request);
+          if (_isProductDetail(request)) {
+            return _json({
+              'data': _product(variants: [_variant(73)]),
+            });
+          }
+          if (_isCart(request)) {
+            return _json(_cart([_cartItem(990, variantId: 73)]));
+          }
+          return _catalogResponse(request);
+        });
+        await h.cartController.refresh(force: true);
+        BuyerCheckoutBuyNowSelection? selection;
+        await _pumpHome(
+          tester,
+          h,
+          routeOverride: (settings) {
+            if (settings.name == '/buyer/checkout/review') {
+              selection = settings.arguments as BuyerCheckoutBuyNowSelection;
+              return MaterialPageRoute<void>(
+                builder: (_) => const Scaffold(body: Text('Buy Now review')),
+                settings: settings,
+              );
+            }
+            return null;
+          },
+        );
+        await tester.tap(find.byKey(const ValueKey('buyer-product-41')));
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const ValueKey('buyer-detail-quantity-plus')),
+        );
+        await tester.tap(
+          find.byKey(const ValueKey('buyer-detail-quantity-plus')),
+        );
+        final buyNow = find.byKey(const ValueKey('buyer-detail-buy-now'));
+        await tester.ensureVisible(buyNow);
+        await tester.tap(buyNow);
+        await tester.pumpAndSettle();
+
+        expect(find.text('Buy Now review'), findsOneWidget);
+        expect(selection?.productId, 41);
+        expect(selection?.productVariantId, 73);
+        expect(selection?.quantity, 3);
+        expect(
+          requests.where((request) => request.method == 'POST'),
+          isEmpty,
+          reason: 'Buy Now must not add to Cart or place an order here.',
+        );
+        expect(h.cartController.cart?.items.single.quantity, 1);
+      },
+    );
 
     testWidgets('Color and Size resolve the exact existing variant', (
       tester,
@@ -131,6 +190,14 @@ void main() {
         tester
             .widget<OutlinedButton>(
               find.byKey(const ValueKey('buyer-detail-add-to-cart')),
+            )
+            .onPressed,
+        isNull,
+      );
+      expect(
+        tester
+            .widget<FilledButton>(
+              find.byKey(const ValueKey('buyer-detail-buy-now')),
             )
             .onPressed,
         isNull,
@@ -684,7 +751,11 @@ class _Harness {
   int accountId = 8;
 }
 
-Future<void> _pumpHome(WidgetTester tester, _Harness h) async {
+Future<void> _pumpHome(
+  WidgetTester tester,
+  _Harness h, {
+  Route<dynamic>? Function(RouteSettings)? routeOverride,
+}) async {
   tester.view.devicePixelRatio = 1;
   tester.view.physicalSize = const Size(430, 2400);
   addTearDown(tester.view.resetPhysicalSize);
@@ -696,12 +767,14 @@ Future<void> _pumpHome(WidgetTester tester, _Harness h) async {
         cartController: h.cartController,
         wishlistController: h.wishlistController,
       ),
-      onGenerateRoute: (settings) => AppRoutes.onGenerateRoute(
-        settings,
-        authService: h.auth,
-        cartController: h.cartController,
-        wishlistController: h.wishlistController,
-      ),
+      onGenerateRoute: (settings) =>
+          routeOverride?.call(settings) ??
+          AppRoutes.onGenerateRoute(
+            settings,
+            authService: h.auth,
+            cartController: h.cartController,
+            wishlistController: h.wishlistController,
+          ),
     ),
   );
   await tester.pumpAndSettle();

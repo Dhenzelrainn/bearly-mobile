@@ -11,6 +11,7 @@ import '../data/buyer_cart_controller.dart';
 import '../data/buyer_catalog_repository.dart';
 import '../data/buyer_wishlist_controller.dart';
 import '../models/buyer_catalog_models.dart';
+import '../models/buyer_checkout_models.dart';
 import 'buyer_wishlist_heart_button.dart';
 
 class BuyerProductDetailPage extends StatefulWidget {
@@ -41,6 +42,7 @@ class _BuyerProductDetailPageState extends State<BuyerProductDetailPage> {
   int _quantity = 1;
   bool _loading = true;
   bool _addingToCart = false;
+  bool _startingBuyNow = false;
 
   bool get _compact => MediaQuery.sizeOf(context).width < 600;
 
@@ -272,6 +274,31 @@ class _BuyerProductDetailPageState extends State<BuyerProductDetailPage> {
       }
     } finally {
       if (mounted) setState(() => _addingToCart = false);
+    }
+  }
+
+  Future<void> _buyNow(BuyerCatalogProduct product) async {
+    final variant = _selectedVariant;
+    if (_startingBuyNow ||
+        variant == null ||
+        !variant.inStock ||
+        product.variants.isEmpty) {
+      return;
+    }
+    setState(() => _startingBuyNow = true);
+    try {
+      await Navigator.of(context).pushNamed(
+        AppRouteNames.buyerCheckoutReview,
+        arguments: BuyerCheckoutBuyNowSelection(
+          productId: product.id,
+          productVariantId: variant.id,
+          quantity: _quantity,
+          productName: product.name,
+          variantName: _variantLabel(variant),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _startingBuyNow = false);
     }
   }
 
@@ -726,14 +753,17 @@ class _BuyerProductDetailPageState extends State<BuyerProductDetailPage> {
             const SizedBox(width: 8),
             Expanded(
               child: FilledButton(
-                onPressed: () => _showUnavailableAction('Buy Now'),
+                key: const ValueKey('buyer-detail-buy-now'),
+                onPressed: _variantCanBeAdded(product) && !_startingBuyNow
+                    ? () => _buyNow(product)
+                    : null,
                 style: _compact
                     ? FilledButton.styleFrom(
                         minimumSize: const Size(0, 44),
                         padding: const EdgeInsets.symmetric(horizontal: 8),
                       )
                     : null,
-                child: const Text('Buy Now'),
+                child: Text(_startingBuyNow ? 'Opening checkout…' : 'Buy Now'),
               ),
             ),
           ],
@@ -750,7 +780,7 @@ class _BuyerProductDetailPageState extends State<BuyerProductDetailPage> {
             const SizedBox(width: 6),
             Expanded(
               child: Text(
-                'Price and availability come from the marketplace. Checkout will be available in a later phase.',
+                'Choose an available variation and quantity. Bearly confirms price, stock, shipping, and promotions at checkout.',
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                   fontSize: _compact ? 10 : 11,
                   height: 1.35,
