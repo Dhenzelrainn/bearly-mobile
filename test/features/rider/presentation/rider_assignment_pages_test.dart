@@ -167,6 +167,8 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Start Delivery'), findsOneWidget);
+    await tester.drag(find.byType(ListView).first, const Offset(0, -250));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Start Delivery'));
     await tester.pumpAndSettle();
 
@@ -206,6 +208,8 @@ void main() {
           ),
         ),
       );
+      await tester.pumpAndSettle();
+      await tester.drag(find.byType(ListView).first, const Offset(0, -250));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Start Delivery'));
       await tester.pump();
@@ -726,6 +730,8 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
+      await tester.drag(find.byType(ListView).first, const Offset(0, -250));
+      await tester.pumpAndSettle();
       await tester.tap(find.text('Start Delivery'));
       await tester.pumpAndSettle();
 
@@ -768,6 +774,8 @@ void main() {
           ),
         ),
       );
+      await tester.pumpAndSettle();
+      await tester.drag(find.byType(ListView).first, const Offset(0, -250));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Start Delivery'));
       await tester.pumpAndSettle();

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../core/routes/app_route_names.dart';
 import '../widgets/rider_shared_widgets.dart';
 
 class RiderMessagesPage extends StatelessWidget {
@@ -7,6 +8,8 @@ class RiderMessagesPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => RiderPageScaffold(
+    currentRoute: AppRouteNames.riderMessages,
+    showBottomNavigationBar: false,
     title: 'Chat / Messaging',
     subtitle: 'Rider messaging is not connected to the mobile API yet.',
     child: const Card(

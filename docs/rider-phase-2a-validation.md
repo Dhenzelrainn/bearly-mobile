@@ -129,3 +129,29 @@ Event timestamps as stored in MySQL were 2026-10-30 16:37:12 for the failure and
 ### Result
 
 **PASS** for the controlled failure and single retry state transitions. Shipment #10 remains active and out for delivery; this test did not complete delivery, collect COD, create a return, or issue a refund. This section records the reported UI results separately from the database findings above.
+
+## U2-C2 integrated candidate Samsung smoke test — November 1, 2026
+
+The operator reported these results while signed in to the isolated integrated Laravel candidate at `http://127.0.0.1:8014` using rehearsal database `bearly_u2_rehearsal_20261101`:
+
+- Buyer Mobile: **5/5 PASS**
+- Rider Mobile: **5/5 PASS**
+- Logistics Mobile: **5/5 PASS**
+
+The operator described the checks as authenticated navigation and existing read-only screens. This is an operator report, not a fresh database inspection, full operational regression, financial validation, or complete API contract verification. No shipment or financial mutation was part of this smoke test.
+
+### Rider navigation consistency cleanup
+
+The code audit found two separately maintained hamburger menus. The Dashboard menu duplicated its five bottom-navigation destinations, while the shared page menu also exposed legacy registration/pending links and context-free shortcuts (`Requests`, `Pick up order`, `Deliver order`, and `Complete delivery`). The latter routes were adapters to current lists rather than selected-assignment actions. The Dashboard additionally linked to the unimplemented Rider Messages placeholder.
+
+The Rider screens now share the five primary destinations: Home, Pickups, Deliveries, Earnings, and Account. Their shared secondary menu contains Delivery History and Sign Out. The obsolete menu shortcuts and Dashboard Messages link were removed from normal navigation; route names and the general registration-to-application-review flow remain available. Tab changes return to the Dashboard root before opening a different tab, and Back returns to the Dashboard when a secondary screen is the root. Delivery History highlights Deliveries. The Dashboard zone separator is now rendered as ` · ` without changing API location values.
+
+This cleanup has automated validation only; it was not part of the operator's earlier November 1 smoke test. The focused Rider suite passed **45 tests**, the full Flutter suite passed **310 tests**, targeted Rider analysis found no issues, and the Android debug APK built. No Laravel code or staging/rehearsal records were changed.
+
+### Courier compatibility observation
+
+The integrated candidate's Mobile Rider dashboard/account responses do not expose `work_type`, and Flutter has no Courier-specific mobile navigation or line-haul screen. As a result, an approved Courier account would still see the ordinary Pickup and Delivery tabs. The inspected Web dispatch path excludes Courier profiles, and the existing pickup and delivery services reject Courier profiles for local assignment mutations; no Courier mobile fulfillment implementation was found. This does not block the local Rider flows, but Courier users should not be enabled for these mobile workflows until the API exposes the work type and server-side Mobile route eligibility is explicitly reviewed. Hiding these tabs alone would not be an authorization control.
+
+### Remaining Samsung verification
+
+The operator should verify the navigation cleanup on Samsung: Dashboard ↔ Account, selected tabs for Pickups and Deliveries, the Delivery History menu/back path, Sign Out, and the corrected zone separator. These checks are pending and do not change the earlier operator-reported 5/5 results.

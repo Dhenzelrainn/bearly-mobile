@@ -5,6 +5,7 @@ import '../../../core/theme/bearly_theme.dart';
 import '../../../core/widgets/bearly_logo.dart';
 import '../data/rider_repository.dart';
 import '../models/rider_assignment.dart';
+import '../widgets/rider_shared_widgets.dart';
 
 class RiderHomePage extends StatefulWidget {
   const RiderHomePage({super.key, required this.repository});
@@ -42,53 +43,11 @@ class _RiderHomePageState extends State<RiderHomePage> {
       title: const BearlyLogo(height: 34, width: 102),
       actions: [
         IconButton(
-          onPressed: () => _open(AppRouteNames.riderMessages),
-          tooltip: 'Messages',
-          icon: const Icon(Icons.chat_bubble_outline_rounded),
-        ),
-        IconButton(
           onPressed: _refresh,
           tooltip: 'Refresh dashboard',
           icon: const Icon(Icons.refresh_rounded),
         ),
-        PopupMenuButton<String>(
-          onSelected: _open,
-          itemBuilder: (_) => const [
-            PopupMenuItem(
-              value: AppRouteNames.riderRequests,
-              child: Text('Assigned pickups'),
-            ),
-            PopupMenuItem(
-              value: AppRouteNames.riderTransit,
-              child: Text('Assigned deliveries'),
-            ),
-            PopupMenuItem(
-              value: AppRouteNames.riderEarnings,
-              child: Text('Earnings'),
-            ),
-            PopupMenuItem(
-              value: AppRouteNames.riderHistory,
-              child: Text('Delivery history'),
-            ),
-            PopupMenuItem(
-              value: AppRouteNames.riderMessages,
-              child: Text('Messages'),
-            ),
-            PopupMenuItem(
-              value: AppRouteNames.riderAccount,
-              child: Text('Account'),
-            ),
-          ],
-        ),
-        IconButton(
-          onPressed: () => Navigator.pushNamedAndRemoveUntil(
-            context,
-            AppRouteNames.logout,
-            (_) => false,
-          ),
-          tooltip: 'Log out',
-          icon: const Icon(Icons.logout_rounded),
-        ),
+        const RiderSecondaryMenuButton(currentRoute: AppRouteNames.rider),
       ],
     ),
     body: FutureBuilder<RiderDashboard>(
@@ -128,46 +87,9 @@ class _RiderHomePageState extends State<RiderHomePage> {
         return _dashboardBody(dashboard);
       },
     ),
-    bottomNavigationBar: NavigationBar(
-      height: 72,
-      selectedIndex: 0,
-      onDestinationSelected: (index) {
-        const routes = [
-          AppRouteNames.rider,
-          AppRouteNames.riderRequests,
-          AppRouteNames.riderTransit,
-          AppRouteNames.riderEarnings,
-          AppRouteNames.riderAccount,
-        ];
-        if (index != 0) _open(routes[index]);
-      },
-      destinations: const [
-        NavigationDestination(
-          icon: Icon(Icons.dashboard_outlined),
-          selectedIcon: Icon(Icons.dashboard_rounded),
-          label: 'Home',
-        ),
-        NavigationDestination(
-          icon: Icon(Icons.radar_outlined),
-          selectedIcon: Icon(Icons.radar_rounded),
-          label: 'Pickups',
-        ),
-        NavigationDestination(
-          icon: Icon(Icons.navigation_outlined),
-          selectedIcon: Icon(Icons.navigation_rounded),
-          label: 'Deliveries',
-        ),
-        NavigationDestination(
-          icon: Icon(Icons.payments_outlined),
-          selectedIcon: Icon(Icons.payments_rounded),
-          label: 'Earnings',
-        ),
-        NavigationDestination(
-          icon: Icon(Icons.person_outline_rounded),
-          selectedIcon: Icon(Icons.person_rounded),
-          label: 'Account',
-        ),
-      ],
+    bottomNavigationBar: RiderBottomNavigationBar(
+      currentRoute: AppRouteNames.rider,
+      onNavigate: _open,
     ),
   );
 
@@ -258,7 +180,7 @@ class _RiderHomePageState extends State<RiderHomePage> {
                       : [
                           dashboard.currentZone,
                           dashboard.currentZoneCenter,
-                        ].where((value) => value.isNotEmpty).join(' Â· '),
+                        ].where((value) => value.isNotEmpty).join(' · '),
                 ),
               ),
             ],

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../core/routes/app_route_names.dart';
 import '../widgets/rider_shared_widgets.dart';
 
 class RiderEarningsPage extends StatelessWidget {
@@ -7,6 +8,7 @@ class RiderEarningsPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => RiderPageScaffold(
+    currentRoute: AppRouteNames.riderEarnings,
     title: 'Earnings',
     subtitle: 'Earnings are not available in the Rider app yet.',
     child: const Card(

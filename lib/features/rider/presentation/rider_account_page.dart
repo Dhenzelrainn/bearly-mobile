@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../core/routes/app_route_names.dart';
 import '../data/rider_repository.dart';
 import '../models/rider_account.dart';
 import '../widgets/rider_shared_widgets.dart';
@@ -26,6 +27,7 @@ class _RiderAccountPageState extends State<RiderAccountPage> {
 
   @override
   Widget build(BuildContext context) => RiderPageScaffold(
+    currentRoute: AppRouteNames.riderAccount,
     title: 'Rider Account',
     subtitle: 'Your approved profile and registered Rider details.',
     child: FutureBuilder<RiderAccount>(

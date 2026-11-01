@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../core/routes/app_route_names.dart';
 import '../data/rider_repository.dart';
 import '../models/rider_history.dart';
 import '../widgets/rider_shared_widgets.dart';
@@ -66,6 +67,7 @@ class _RiderHistoryPageState extends State<RiderHistoryPage> {
 
   @override
   Widget build(BuildContext context) => RiderPageScaffold(
+    currentRoute: AppRouteNames.riderHistory,
     title: 'Delivery History',
     subtitle: 'Completed, canceled, returned, and failed Rider assignments.',
     child: Column(

@@ -141,3 +141,9 @@ These test results are automated evidence. No new Samsung device test was perfor
 ### Remaining physical-device check
 
 On Samsung, during a separately approved ordinary receipt, handoff acceptance, sort, or dispatch operation, confirm the dashboard counts refresh when returning from that workflow. Do not create or perform a staging operation solely for L7 validation. Open an existing monitoring batch detail and confirm an `out_for_delivery` parcel/shipment reads “Out for Delivery”; this status-label check is read-only. Previously recorded L1–L6 operator validations remain unchanged.
+
+## U2-C2 integrated candidate Samsung smoke test — November 1, 2026
+
+The operator reported **Logistics Mobile 5/5 PASS** while using the isolated candidate API at `http://127.0.0.1:8014` and rehearsal database `bearly_u2_rehearsal_20261101`. The reported checks covered authenticated navigation and existing read-only screens. No fresh database inspection or Logistics mutation is claimed here. The integrated Buyer, Rider, and Logistics results are recorded in [Rider Mobile validation](rider-phase-2a-validation.md).
+
+This operator-reported smoke test predates the separate Rider navigation cleanup documented there; it does not constitute physical verification of that change.

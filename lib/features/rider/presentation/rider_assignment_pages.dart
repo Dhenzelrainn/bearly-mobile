@@ -48,6 +48,9 @@ class _RiderAssignmentListPageState extends State<RiderAssignmentListPage> {
 
   @override
   Widget build(BuildContext context) => RiderPageScaffold(
+    currentRoute: _isPickup
+        ? AppRouteNames.riderRequests
+        : AppRouteNames.riderTransit,
     title: _isPickup ? 'Assigned Pickups' : 'Assigned Deliveries',
     subtitle: _isPickup
         ? 'Pickup assignments selected by your Logistics provider.'
@@ -844,6 +847,9 @@ class _RiderJobDetailPageState extends State<RiderJobDetailPage> {
 
   @override
   Widget build(BuildContext context) => RiderPageScaffold(
+    currentRoute: _isPickup
+        ? AppRouteNames.riderRequests
+        : AppRouteNames.riderTransit,
     title: _isPickup ? 'Pickup Details' : 'Delivery Details',
     subtitle: 'Assignment ${widget.jobId}',
     child: FutureBuilder<RiderAssignment>(

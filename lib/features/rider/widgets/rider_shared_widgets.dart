@@ -10,80 +10,27 @@ class RiderPageScaffold extends StatelessWidget {
     required this.title,
     required this.subtitle,
     required this.child,
+    this.currentRoute,
+    this.showBottomNavigationBar = true,
   });
 
   final String title;
   final String subtitle;
   final Widget child;
+  final String? currentRoute;
+  final bool showBottomNavigationBar;
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         leading: IconButton(
-          onPressed: () => Navigator.pop(context),
+          onPressed: () => _returnToDashboard(context),
+          tooltip: 'Back',
           icon: const Icon(Icons.arrow_back_rounded),
         ),
         title: const BearlyLogo(height: 34, width: 102),
-        actions: [
-          PopupMenuButton<String>(
-            onSelected: (route) => Navigator.pushNamed(context, route),
-            itemBuilder: (_) => const [
-              PopupMenuItem(
-                value: AppRouteNames.rider,
-                child: Text('Rider dashboard'),
-              ),
-              PopupMenuItem(
-                value: AppRouteNames.riderRegister,
-                child: Text('Rider registration'),
-              ),
-              PopupMenuItem(
-                value: AppRouteNames.riderPending,
-                child: Text('Application pending'),
-              ),
-              PopupMenuItem(
-                value: AppRouteNames.riderRequests,
-                child: Text('Requests'),
-              ),
-              PopupMenuItem(
-                value: AppRouteNames.riderPickup,
-                child: Text('Pick up order'),
-              ),
-              PopupMenuItem(
-                value: AppRouteNames.riderTransit,
-                child: Text('Deliver order'),
-              ),
-              PopupMenuItem(
-                value: AppRouteNames.riderComplete,
-                child: Text('Complete delivery'),
-              ),
-              PopupMenuItem(
-                value: AppRouteNames.riderEarnings,
-                child: Text('Earnings'),
-              ),
-              PopupMenuItem(
-                value: AppRouteNames.riderHistory,
-                child: Text('Delivery history'),
-              ),
-              PopupMenuItem(
-                value: AppRouteNames.riderMessages,
-                child: Text('Messages'),
-              ),
-              PopupMenuItem(
-                value: AppRouteNames.riderAccount,
-                child: Text('Account'),
-              ),
-            ],
-          ),
-          IconButton(
-            onPressed: () => Navigator.pushNamedAndRemoveUntil(
-              context,
-              AppRouteNames.logout,
-              (_) => false,
-            ),
-            icon: const Icon(Icons.logout_rounded),
-          ),
-        ],
+        actions: [RiderSecondaryMenuButton(currentRoute: currentRoute)],
       ),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
@@ -100,8 +47,148 @@ class RiderPageScaffold extends StatelessWidget {
           child,
         ],
       ),
+      bottomNavigationBar: showBottomNavigationBar
+          ? RiderBottomNavigationBar(currentRoute: currentRoute)
+          : null,
     );
   }
+
+  void _returnToDashboard(BuildContext context) {
+    final navigator = Navigator.of(context);
+    if (navigator.canPop()) {
+      navigator.pop();
+    } else if (currentRoute != AppRouteNames.rider) {
+      navigator.pushReplacementNamed(AppRouteNames.rider);
+    }
+  }
+}
+
+/// The five primary Rider destinations, shared by every operational screen.
+class RiderBottomNavigationBar extends StatelessWidget {
+  const RiderBottomNavigationBar({
+    super.key,
+    required this.currentRoute,
+    this.onNavigate,
+  });
+
+  final String? currentRoute;
+  final Future<void> Function(String route)? onNavigate;
+
+  static const _routes = <String>[
+    AppRouteNames.rider,
+    AppRouteNames.riderRequests,
+    AppRouteNames.riderTransit,
+    AppRouteNames.riderEarnings,
+    AppRouteNames.riderAccount,
+  ];
+
+  static const _destinations = <NavigationDestination>[
+    NavigationDestination(
+      icon: Icon(Icons.dashboard_outlined),
+      selectedIcon: Icon(Icons.dashboard_rounded),
+      label: 'Home',
+    ),
+    NavigationDestination(
+      icon: Icon(Icons.radar_outlined),
+      selectedIcon: Icon(Icons.radar_rounded),
+      label: 'Pickups',
+    ),
+    NavigationDestination(
+      icon: Icon(Icons.navigation_outlined),
+      selectedIcon: Icon(Icons.navigation_rounded),
+      label: 'Deliveries',
+    ),
+    NavigationDestination(
+      icon: Icon(Icons.payments_outlined),
+      selectedIcon: Icon(Icons.payments_rounded),
+      label: 'Earnings',
+    ),
+    NavigationDestination(
+      icon: Icon(Icons.person_outline_rounded),
+      selectedIcon: Icon(Icons.person_rounded),
+      label: 'Account',
+    ),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    final effectiveRoute = currentRoute == AppRouteNames.riderHistory
+        ? AppRouteNames.riderTransit
+        : currentRoute;
+    final selectedIndex = _routes.indexOf(effectiveRoute ?? '');
+    return NavigationBar(
+      height: 72,
+      selectedIndex: selectedIndex < 0 ? 0 : selectedIndex,
+      onDestinationSelected: (index) async {
+        final route = _routes[index];
+        if (route == currentRoute) return;
+        if (onNavigate case final navigate?) {
+          await navigate(route);
+        } else {
+          _navigateToPrimaryDestination(context, route);
+        }
+      },
+      destinations: _destinations,
+    );
+  }
+
+  void _navigateToPrimaryDestination(BuildContext context, String route) {
+    final navigator = Navigator.of(context);
+    var dashboardIsInStack = false;
+    navigator.popUntil((entry) {
+      if (entry.settings.name == AppRouteNames.rider) {
+        dashboardIsInStack = true;
+        return true;
+      }
+      return entry.isFirst;
+    });
+
+    if (route == AppRouteNames.rider) {
+      if (dashboardIsInStack) return;
+      if (currentRoute != AppRouteNames.rider) {
+        navigator.pushReplacementNamed(AppRouteNames.rider);
+      }
+      return;
+    }
+
+    if (dashboardIsInStack) {
+      // The dashboard is the single root beneath whichever tab is open.
+      navigator.pushNamed(route);
+    } else if (currentRoute == AppRouteNames.rider) {
+      // Supports embedded/test roots whose route name is not `/rider`.
+      navigator.pushNamedAndRemoveUntil(route, (entry) => entry.isFirst);
+    } else {
+      // A deep-linked secondary screen has no dashboard beneath it, so replace
+      // its stack instead of leaving an unrelated page behind a selected tab.
+      navigator.pushNamedAndRemoveUntil(route, (_) => false);
+    }
+  }
+}
+
+/// Secondary destinations are deliberately limited to history and sign-out.
+/// Primary tabs and unfinished messaging/onboarding shortcuts do not belong here.
+class RiderSecondaryMenuButton extends StatelessWidget {
+  const RiderSecondaryMenuButton({super.key, this.currentRoute});
+
+  final String? currentRoute;
+
+  static const _items = <(String, String)>[
+    (AppRouteNames.riderHistory, 'Delivery history'),
+    (AppRouteNames.logout, 'Sign out'),
+  ];
+
+  @override
+  Widget build(BuildContext context) => PopupMenuButton<String>(
+    tooltip: 'More Rider options',
+    onSelected: (route) {
+      if (route == currentRoute) return;
+      Navigator.of(context).pushNamedAndRemoveUntil(route, (_) => false);
+    },
+    itemBuilder: (_) => [
+      for (final (route, label) in _items)
+        PopupMenuItem(value: route, child: Text(label)),
+    ],
+  );
 }
 
 Widget riderSummary(
