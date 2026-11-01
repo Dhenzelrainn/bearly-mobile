@@ -45,6 +45,32 @@ void main() {
   );
 
   testWidgets(
+    'Courier dashboard explains unsupported features and hides local navigation',
+    (tester) async {
+      await tester.pumpWidget(_navigationApp(workType: 'courier'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Courier account'), findsOneWidget);
+      expect(
+        find.textContaining('Courier line-haul features are not available'),
+        findsOneWidget,
+      );
+      expect(find.byType(NavigationBar), findsNothing);
+      expect(find.text('Pickup assignments'), findsNothing);
+      expect(find.text('Delivery assignments'), findsNothing);
+
+      await _openSecondaryMenu(tester);
+      final menuItems = tester
+          .widgetList<PopupMenuItem<String>>(find.byType(PopupMenuItem<String>))
+          .map((item) => item.child)
+          .whereType<Text>()
+          .map((item) => item.data)
+          .toList();
+      expect(menuItems, ['Sign out']);
+    },
+  );
+
+  testWidgets(
     'dashboard to account to dashboard replaces tab stack and back works',
     (tester) async {
       final observer = _RouteStackObserver();
@@ -301,7 +327,10 @@ void _expectSecondaryMenu(WidgetTester tester) {
   expect(menuItems, ['Delivery history', 'Sign out']);
 }
 
-Widget _navigationApp({NavigatorObserver? observer}) {
+Widget _navigationApp({
+  NavigatorObserver? observer,
+  String workType = 'local',
+}) {
   final authService =
       AuthService(
           apiClient: ApiClient(
@@ -311,6 +340,11 @@ Widget _navigationApp({NavigatorObserver? observer}) {
                   jsonEncode({
                     'rider': {
                       'name': 'Mark Rider',
+                      'work_type': workType,
+                      'capabilities': {
+                        'local_pickup': workType != 'courier',
+                        'local_delivery': workType != 'courier',
+                      },
                       'vehicle_type': 'Motorcycle',
                       'plate_number': 'TEST-1',
                       'availability_status': 'available',

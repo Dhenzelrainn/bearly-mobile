@@ -117,6 +117,59 @@ void main() {
       );
     });
 
+    test('parses Courier work type and local workflow capability', () async {
+      final repository = RiderRepository(
+        authService: _authService((request) async {
+          if (request.url.path.endsWith('/dashboard')) {
+            return http.Response(
+              jsonEncode({
+                'rider': {
+                  'name': 'Courier Rider',
+                  'work_type': 'courier',
+                  'capabilities': {
+                    'local_pickup': false,
+                    'local_delivery': false,
+                  },
+                },
+                'metrics': {
+                  'assigned_pickups': 0,
+                  'pickup_in_progress': 0,
+                  'assigned_deliveries': 0,
+                  'out_for_delivery': 0,
+                },
+              }),
+              200,
+            );
+          }
+          return http.Response(
+            jsonEncode({
+              'data': {
+                'name': 'Courier Rider',
+                'work_type': 'courier',
+                'capabilities': {
+                  'local_pickup': false,
+                  'local_delivery': false,
+                },
+                'vehicle': {'type': 'Van'},
+                'logistics_provider': {},
+                'sorting': {},
+                'documents': {},
+              },
+            }),
+            200,
+          );
+        }),
+      );
+
+      final dashboard = await repository.dashboard();
+      final account = await repository.account();
+
+      expect(dashboard.workType, 'courier');
+      expect(dashboard.supportsLocalFulfillment, isFalse);
+      expect(account.workType, 'courier');
+      expect(account.supportsLocalFulfillment, isFalse);
+    });
+
     test('loads read-only pickup and delivery details', () async {
       final requestedPaths = <String>[];
       final service = _authService((request) async {

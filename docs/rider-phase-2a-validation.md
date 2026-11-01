@@ -155,3 +155,25 @@ The integrated candidate's Mobile Rider dashboard/account responses do not expos
 ### Remaining Samsung verification
 
 The operator should verify the navigation cleanup on Samsung: Dashboard ↔ Account, selected tabs for Pickups and Deliveries, the Delivery History menu/back path, Sign Out, and the corrected zone separator. These checks are pending and do not change the earlier operator-reported 5/5 results.
+
+## U2-C2D Courier eligibility and communications readiness — November 1, 2026
+
+### Earlier operator-reported Samsung checks
+
+The November 1 operator report recorded authenticated Buyer, Rider, and Logistics navigation/read-only smoke checks on the isolated integration candidate as **5/5 PASS per role**. These are operator-reported results; no new screenshots or database inspection were produced during this follow-up. The checks do not establish Courier Mobile support or validate any write workflow.
+
+### Courier Mobile eligibility safeguard
+
+The candidate now includes the approved Rider profile's `work_type` and explicit local-pickup/local-delivery capabilities in its Mobile dashboard and account responses. Approved Couriers retain the existing Rider sign-in path and can view the informational dashboard/account. The Mobile API rejects local Rider history, pickup, and delivery routes for non-local work types with a stable `403` response; the ordinary Rider dashboard does not expose local assignment counts to Couriers. Flutter hides local pickup/delivery navigation and presents an explanation that Courier line-haul workflows remain in the approved Logistics Web process. Legacy profiles with a null work type retain the existing local compatibility behavior. This safeguard was verified by automated isolated tests; no physical Courier login or live workflow is claimed.
+
+### Communications readiness audit
+
+The Laravel Web candidate has authenticated Rider and Logistics inbox/thread routes, participant-scoped message access, read receipts, message sending, and protected attachment downloads. These use the existing `Conversation`, `Message`, `MessageReceipt`, and `MessageAttachment` records and `ConversationService`; Logistics conversation creation and Rider/Logistics thread operations remain Web workflows. The Mobile API currently exposes chat endpoints for Buyers only. It has no Rider or Logistics Mobile inbox, thread, read-receipt, send, or attachment API, and this task adds none.
+
+The shared Web Notification Center reads each authenticated user's own database notifications, supports role-aware categories/preferences, and provides mark-read/read-all operations. Rider categories cover pickup assignments, delivery assignments, refund cash, and announcements; Logistics categories include pickup, handoff, cash, Rider, message, and announcement events. There are no corresponding Rider or Logistics Mobile notification endpoints in the candidate. Existing private broadcast channels authorize the user channel to its owner and conversation/presence channels to conversation participants; their existence does not mean a Reverb server or a Mobile WebSocket client is configured for this validation.
+
+### Validation and next step
+
+The Courier API contract test verifies an approved Courier can sign in, sees `work_type=courier` and disabled local capabilities, and is denied by all local Rider history/pickup/delivery routes. Flutter tests verify Courier parsing and that local navigation is hidden while the explanation is shown. The focused Rider suite passed **47 tests**, the full Flutter suite passed **312 tests**, targeted Rider analysis reported no issues, and the Android debug APK built. Laravel Rider/auth/Buyer/Logistics API tests passed under isolated in-memory SQLite; the test runner emitted missing-candidate-`.env` warnings, but reported no failures. No staging database, database migrations, operational workflows, or messaging/notification functionality were changed or tested live.
+
+The next communications work should add role-scoped Sanctum APIs that reuse existing conversation/notification services, enforce exact participant and user ownership, retain the current attachment privacy rules, and add focused authorization/read-receipt tests before exposing Mobile navigation. Do not add clickable Mobile destinations until those screens are implemented. Courier line-haul Mobile support remains separate future work.

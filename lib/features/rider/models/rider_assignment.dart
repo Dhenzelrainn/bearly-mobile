@@ -11,6 +11,8 @@ class RiderDashboard {
     this.homeSortingCenter = '',
     this.currentZone = '',
     this.currentZoneCenter = '',
+    this.workType = 'local',
+    this.supportsLocalFulfillment = true,
     required this.assignedPickups,
     required this.pickupsInProgress,
     required this.assignedDeliveries,
@@ -26,6 +28,8 @@ class RiderDashboard {
   final String homeSortingCenter;
   final String currentZone;
   final String currentZoneCenter;
+  final String workType;
+  final bool supportsLocalFulfillment;
   final int assignedPickups;
   final int pickupsInProgress;
   final int assignedDeliveries;
@@ -35,6 +39,18 @@ class RiderDashboard {
     final map = _jsonMap(value, 'dashboard');
     final rider = _jsonMap(map['rider'], 'rider');
     final metrics = _jsonMap(map['metrics'], 'metrics');
+    final capabilities = rider['capabilities'] is Map
+        ? _jsonMap(rider['capabilities'], 'capabilities')
+        : const <String, Object?>{};
+    final workType = _string(rider['work_type']).isEmpty
+        ? 'local'
+        : _string(rider['work_type']);
+    final supportsLocalFulfillment =
+        capabilities['local_pickup'] is bool &&
+            capabilities['local_delivery'] is bool
+        ? capabilities['local_pickup'] == true &&
+              capabilities['local_delivery'] == true
+        : workType != 'courier';
 
     return RiderDashboard(
       name: _string(rider['name']),
@@ -46,6 +62,8 @@ class RiderDashboard {
       homeSortingCenter: _string(rider['home_sorting_center']),
       currentZone: _string(rider['current_zone']),
       currentZoneCenter: _string(rider['current_zone_center']),
+      workType: workType,
+      supportsLocalFulfillment: supportsLocalFulfillment,
       assignedPickups: _integer(metrics['assigned_pickups']),
       pickupsInProgress: _integer(metrics['pickup_in_progress']),
       assignedDeliveries: _integer(metrics['assigned_deliveries']),

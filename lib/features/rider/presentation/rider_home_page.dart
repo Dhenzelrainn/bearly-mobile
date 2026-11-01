@@ -38,58 +38,97 @@ class _RiderHomePageState extends State<RiderHomePage> {
   }
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(
-      title: const BearlyLogo(height: 34, width: 102),
-      actions: [
-        IconButton(
-          onPressed: _refresh,
-          tooltip: 'Refresh dashboard',
-          icon: const Icon(Icons.refresh_rounded),
-        ),
-        const RiderSecondaryMenuButton(currentRoute: AppRouteNames.rider),
-      ],
-    ),
-    body: FutureBuilder<RiderDashboard>(
-      future: _dashboard,
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
-        }
-        if (snapshot.hasError) {
-          return Center(
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(Icons.cloud_off_outlined, size: 40),
-                  const SizedBox(height: 10),
-                  const Text(
-                    'Could not load your Rider dashboard. Check your connection and retry.',
-                    textAlign: TextAlign.center,
-                  ),
-                  TextButton.icon(
-                    onPressed: _refresh,
-                    icon: const Icon(Icons.refresh_rounded),
-                    label: const Text('Retry'),
-                  ),
-                ],
-              ),
-            ),
-          );
-        }
+  Widget build(BuildContext context) => FutureBuilder<RiderDashboard>(
+    future: _dashboard,
+    builder: (context, snapshot) {
+      final dashboard = snapshot.data;
+      final supportsLocalFulfillment =
+          dashboard?.supportsLocalFulfillment == true;
 
-        final dashboard = snapshot.data;
-        if (dashboard == null) {
-          return const Center(child: Text('Rider dashboard is unavailable.'));
-        }
-        return _dashboardBody(dashboard);
-      },
-    ),
-    bottomNavigationBar: RiderBottomNavigationBar(
-      currentRoute: AppRouteNames.rider,
-      onNavigate: _open,
+      return Scaffold(
+        appBar: AppBar(
+          title: const BearlyLogo(height: 34, width: 102),
+          actions: [
+            IconButton(
+              onPressed: _refresh,
+              tooltip: 'Refresh dashboard',
+              icon: const Icon(Icons.refresh_rounded),
+            ),
+            RiderSecondaryMenuButton(
+              currentRoute: AppRouteNames.rider,
+              showDeliveryHistory: supportsLocalFulfillment,
+            ),
+          ],
+        ),
+        body: _dashboardContent(snapshot),
+        bottomNavigationBar: supportsLocalFulfillment
+            ? RiderBottomNavigationBar(
+                currentRoute: AppRouteNames.rider,
+                onNavigate: _open,
+              )
+            : null,
+      );
+    },
+  );
+
+  Widget _dashboardContent(AsyncSnapshot<RiderDashboard> snapshot) {
+    if (snapshot.connectionState == ConnectionState.waiting) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (snapshot.hasError) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.cloud_off_outlined, size: 40),
+              const SizedBox(height: 10),
+              const Text(
+                'Could not load your Rider dashboard. Check your connection and retry.',
+                textAlign: TextAlign.center,
+              ),
+              TextButton.icon(
+                onPressed: _refresh,
+                icon: const Icon(Icons.refresh_rounded),
+                label: const Text('Retry'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    final dashboard = snapshot.data;
+    if (dashboard == null) {
+      return const Center(child: Text('Rider dashboard is unavailable.'));
+    }
+    if (!dashboard.supportsLocalFulfillment) {
+      return _courierDashboardBody(dashboard);
+    }
+    return _dashboardBody(dashboard);
+  }
+
+  Widget _courierDashboardBody(RiderDashboard dashboard) => RefreshIndicator(
+    onRefresh: () async => _refresh(),
+    child: ListView(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+      children: [
+        Text(
+          'Welcome, ${dashboard.name}',
+          style: Theme.of(context).textTheme.headlineMedium,
+        ),
+        const SizedBox(height: 14),
+        Card(
+          child: ListTile(
+            leading: const Icon(Icons.local_shipping_outlined),
+            title: const Text('Courier account'),
+            subtitle: const Text(
+              'Courier line-haul features are not available in Bearly Mobile yet. Local pickup and delivery tools are only available to local Riders. Please use your Logistics provider’s approved Web workflow until Courier Mobile support is ready.',
+            ),
+          ),
+        ),
+      ],
     ),
   );
 

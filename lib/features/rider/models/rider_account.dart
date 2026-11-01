@@ -5,6 +5,8 @@ class RiderAccount {
     required this.accountStatus,
     required this.verificationStatus,
     required this.availabilityStatus,
+    this.workType = 'local',
+    this.supportsLocalFulfillment = true,
     required this.vehicleType,
     required this.vehicleModel,
     required this.plateNumber,
@@ -22,6 +24,8 @@ class RiderAccount {
   final String accountStatus;
   final String verificationStatus;
   final String availabilityStatus;
+  final String workType;
+  final bool supportsLocalFulfillment;
   final String vehicleType;
   final String vehicleModel;
   final String plateNumber;
@@ -39,6 +43,18 @@ class RiderAccount {
     final provider = _map(data['logistics_provider'], 'Logistics provider');
     final sorting = _map(data['sorting'], 'sorting assignments');
     final documentValues = _map(data['documents'], 'documents');
+    final capabilities = data['capabilities'] is Map
+        ? _map(data['capabilities'], 'capabilities')
+        : const <String, Object?>{};
+    final workType = _string(data['work_type']).isEmpty
+        ? 'local'
+        : _string(data['work_type']);
+    final supportsLocalFulfillment =
+        capabilities['local_pickup'] is bool &&
+            capabilities['local_delivery'] is bool
+        ? capabilities['local_pickup'] == true &&
+              capabilities['local_delivery'] == true
+        : workType != 'courier';
 
     return RiderAccount(
       name: _string(data['name']),
@@ -46,6 +62,8 @@ class RiderAccount {
       accountStatus: _string(data['account_status']),
       verificationStatus: _string(data['verification_status']),
       availabilityStatus: _string(data['availability_status']),
+      workType: workType,
+      supportsLocalFulfillment: supportsLocalFulfillment,
       vehicleType: _string(vehicle['type']),
       vehicleModel: _string(vehicle['model']),
       plateNumber: _string(vehicle['plate_number']),

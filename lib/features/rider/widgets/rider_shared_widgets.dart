@@ -12,6 +12,7 @@ class RiderPageScaffold extends StatelessWidget {
     required this.child,
     this.currentRoute,
     this.showBottomNavigationBar = true,
+    this.supportsLocalFulfillment = true,
   });
 
   final String title;
@@ -19,6 +20,7 @@ class RiderPageScaffold extends StatelessWidget {
   final Widget child;
   final String? currentRoute;
   final bool showBottomNavigationBar;
+  final bool supportsLocalFulfillment;
 
   @override
   Widget build(BuildContext context) {
@@ -30,7 +32,12 @@ class RiderPageScaffold extends StatelessWidget {
           icon: const Icon(Icons.arrow_back_rounded),
         ),
         title: const BearlyLogo(height: 34, width: 102),
-        actions: [RiderSecondaryMenuButton(currentRoute: currentRoute)],
+        actions: [
+          RiderSecondaryMenuButton(
+            currentRoute: currentRoute,
+            showDeliveryHistory: supportsLocalFulfillment,
+          ),
+        ],
       ),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
@@ -47,7 +54,7 @@ class RiderPageScaffold extends StatelessWidget {
           child,
         ],
       ),
-      bottomNavigationBar: showBottomNavigationBar
+      bottomNavigationBar: showBottomNavigationBar && supportsLocalFulfillment
           ? RiderBottomNavigationBar(currentRoute: currentRoute)
           : null,
     );
@@ -168,9 +175,14 @@ class RiderBottomNavigationBar extends StatelessWidget {
 /// Secondary destinations are deliberately limited to history and sign-out.
 /// Primary tabs and unfinished messaging/onboarding shortcuts do not belong here.
 class RiderSecondaryMenuButton extends StatelessWidget {
-  const RiderSecondaryMenuButton({super.key, this.currentRoute});
+  const RiderSecondaryMenuButton({
+    super.key,
+    this.currentRoute,
+    this.showDeliveryHistory = true,
+  });
 
   final String? currentRoute;
+  final bool showDeliveryHistory;
 
   static const _items = <(String, String)>[
     (AppRouteNames.riderHistory, 'Delivery history'),
@@ -185,7 +197,9 @@ class RiderSecondaryMenuButton extends StatelessWidget {
       Navigator.of(context).pushNamedAndRemoveUntil(route, (_) => false);
     },
     itemBuilder: (_) => [
-      for (final (route, label) in _items)
+      for (final (route, label) in _items.where(
+        (item) => showDeliveryHistory || item.$1 != AppRouteNames.riderHistory,
+      ))
         PopupMenuItem(value: route, child: Text(label)),
     ],
   );

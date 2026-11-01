@@ -26,102 +26,108 @@ class _RiderAccountPageState extends State<RiderAccountPage> {
   void _retry() => setState(() => _account = widget.repository.account());
 
   @override
-  Widget build(BuildContext context) => RiderPageScaffold(
-    currentRoute: AppRouteNames.riderAccount,
-    title: 'Rider Account',
-    subtitle: 'Your approved profile and registered Rider details.',
-    child: FutureBuilder<RiderAccount>(
-      future: _account,
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(
-            child: Padding(
-              padding: EdgeInsets.all(32),
-              child: CircularProgressIndicator(),
-            ),
-          );
-        }
-        if (snapshot.hasError) {
-          return _message(
-            context,
-            'Could not load your Rider account. Check your connection and retry.',
-            onRetry: _retry,
-          );
-        }
-
-        final account = snapshot.data;
-        if (account == null) {
-          return _message(context, 'Rider account details are unavailable.');
-        }
-
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Card(
-              color: Colors.white,
-              child: ListTile(
-                contentPadding: const EdgeInsets.all(12),
-                leading: const CircleAvatar(
-                  radius: 24,
-                  child: Icon(Icons.delivery_dining_rounded),
-                ),
-                title: Text(account.name),
-                subtitle: Text(account.email),
-              ),
-            ),
-            _section(context, 'Account', Icons.verified_user_outlined, [
-              _line('Account status', _label(account.accountStatus)),
-              _line('Rider approval', _label(account.verificationStatus)),
-              _line('Availability', _label(account.availabilityStatus)),
-            ]),
-            _section(context, 'Vehicle', Icons.two_wheeler_outlined, [
-              _line('Type', _value(account.vehicleType)),
-              _line('Model', _value(account.vehicleModel)),
-              _line('Plate number', _value(account.plateNumber)),
-              _line(
-                'Parcel capacity',
-                account.parcelCapacity?.toString() ?? 'Not provided',
-              ),
-            ]),
-            _section(
-              context,
-              'Logistics provider',
-              Icons.local_shipping_outlined,
-              [
-                _line('Provider', _value(account.logisticsProvider)),
-                _line('Home sorting center', _value(account.homeSortingCenter)),
-                _line('Current zone', _value(account.currentZone)),
-                _line('Zone sorting center', _value(account.currentZoneCenter)),
-              ],
-            ),
-            _section(context, 'Documents', Icons.folder_shared_outlined, [
-              _line('Valid ID', _document(account.documents['valid_id'])),
-              _line('OR / CR', _document(account.documents['or_cr'])),
-              _line(
-                'Driver license',
-                _document(account.documents['driver_license']),
-              ),
-            ]),
-            _section(
-              context,
-              'Registered addresses',
-              Icons.location_on_outlined,
-              account.addresses.isEmpty
-                  ? [_line('Address', 'No address on file')]
-                  : account.addresses
-                        .map(
-                          (address) => _line(
-                            _value(address.label),
-                            _value(address.address),
-                          ),
-                        )
-                        .toList(growable: false),
-            ),
-          ],
-        );
-      },
+  Widget build(BuildContext context) => FutureBuilder<RiderAccount>(
+    future: _account,
+    builder: (context, snapshot) => RiderPageScaffold(
+      currentRoute: AppRouteNames.riderAccount,
+      title: 'Rider Account',
+      subtitle: 'Your approved profile and registered Rider details.',
+      supportsLocalFulfillment: snapshot.data?.supportsLocalFulfillment == true,
+      child: _accountContent(context, snapshot),
     ),
   );
+
+  Widget _accountContent(
+    BuildContext context,
+    AsyncSnapshot<RiderAccount> snapshot,
+  ) {
+    if (snapshot.connectionState == ConnectionState.waiting) {
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.all(32),
+          child: CircularProgressIndicator(),
+        ),
+      );
+    }
+    if (snapshot.hasError) {
+      return _message(
+        context,
+        'Could not load your Rider account. Check your connection and retry.',
+        onRetry: _retry,
+      );
+    }
+
+    final account = snapshot.data;
+    if (account == null) {
+      return _message(context, 'Rider account details are unavailable.');
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Card(
+          color: Colors.white,
+          child: ListTile(
+            contentPadding: const EdgeInsets.all(12),
+            leading: const CircleAvatar(
+              radius: 24,
+              child: Icon(Icons.delivery_dining_rounded),
+            ),
+            title: Text(account.name),
+            subtitle: Text(account.email),
+          ),
+        ),
+        _section(context, 'Account', Icons.verified_user_outlined, [
+          _line('Account status', _label(account.accountStatus)),
+          _line('Rider approval', _label(account.verificationStatus)),
+          _line('Availability', _label(account.availabilityStatus)),
+          _line('Work type', _label(account.workType)),
+          _line(
+            'Local pickup and delivery',
+            account.supportsLocalFulfillment
+                ? 'Available'
+                : 'Not available on Mobile',
+          ),
+        ]),
+        _section(context, 'Vehicle', Icons.two_wheeler_outlined, [
+          _line('Type', _value(account.vehicleType)),
+          _line('Model', _value(account.vehicleModel)),
+          _line('Plate number', _value(account.plateNumber)),
+          _line(
+            'Parcel capacity',
+            account.parcelCapacity?.toString() ?? 'Not provided',
+          ),
+        ]),
+        _section(context, 'Logistics provider', Icons.local_shipping_outlined, [
+          _line('Provider', _value(account.logisticsProvider)),
+          _line('Home sorting center', _value(account.homeSortingCenter)),
+          _line('Current zone', _value(account.currentZone)),
+          _line('Zone sorting center', _value(account.currentZoneCenter)),
+        ]),
+        _section(context, 'Documents', Icons.folder_shared_outlined, [
+          _line('Valid ID', _document(account.documents['valid_id'])),
+          _line('OR / CR', _document(account.documents['or_cr'])),
+          _line(
+            'Driver license',
+            _document(account.documents['driver_license']),
+          ),
+        ]),
+        _section(
+          context,
+          'Registered addresses',
+          Icons.location_on_outlined,
+          account.addresses.isEmpty
+              ? [_line('Address', 'No address on file')]
+              : account.addresses
+                    .map(
+                      (address) =>
+                          _line(_value(address.label), _value(address.address)),
+                    )
+                    .toList(growable: false),
+        ),
+      ],
+    );
+  }
 
   Widget _section(
     BuildContext context,
