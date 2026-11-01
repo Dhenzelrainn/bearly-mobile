@@ -202,6 +202,80 @@ void main() {
       expect(find.text('Out of stock'), findsWidgets);
     });
 
+    testWidgets(
+      'Chat Seller resolves the shared conversation and opens its thread',
+      (tester) async {
+        final requested = <String>[];
+        final auth = _authService((request) async {
+          requested.add(request.url.path);
+          if (request.url.path.endsWith('/categories')) {
+            return _jsonResponse({'data': []});
+          }
+          if (request.url.path == '/api/mobile/buyer/products/41') {
+            return _jsonResponse({
+              'data': _product(
+                detail: true,
+                variants: [_variant(id: 9, price: 12500, inStock: true)],
+              ),
+            });
+          }
+          if (request.url.path == '/api/mobile/buyer/chat/product') {
+            expect(jsonDecode(request.body), {'product_id': 41});
+            return _jsonResponse({
+              'data': {'conversation_id': 71, 'title': 'Bearly Studio'},
+              'message': 'Conversation ready.',
+            }, 201);
+          }
+          if (request.url.path ==
+              '/api/mobile/buyer/chat/conversations/71/messages') {
+            return _jsonResponse({
+              'data': {
+                'conversation': {
+                  'id': 71,
+                  'status': 'open',
+                  'title': 'Bearly Studio',
+                  'context': 'Handmade Bear',
+                },
+                'messages': [],
+                'receipt_updates': [],
+              },
+            });
+          }
+          if (request.url.path.endsWith('/conversations/71/read')) {
+            return _jsonResponse({
+              'data': {'unread': 0},
+            });
+          }
+          if (request.url.path.endsWith('/wishlist')) {
+            return _wishlistPage([]);
+          }
+          return _jsonResponse(_page([_product()]));
+        });
+
+        await _pumpApp(tester, auth);
+        await tester.pumpAndSettle();
+        await tester.ensureVisible(
+          find.byKey(const ValueKey('buyer-product-41')),
+        );
+        await tester.tap(find.byKey(const ValueKey('buyer-product-41')));
+        await tester.pumpAndSettle();
+        await tester.ensureVisible(find.text('Chat Seller'));
+        await tester.tap(find.text('Chat Seller'));
+        await tester.pumpAndSettle();
+
+        expect(requested, contains('/api/mobile/buyer/chat/product'));
+        expect(
+          requested,
+          contains('/api/mobile/buyer/chat/conversations/71/messages'),
+        );
+        expect(find.text('Bearly Studio'), findsOneWidget);
+        expect(
+          find.text('Start the conversation with the Seller.'),
+          findsOneWidget,
+        );
+      },
+    );
+
     testWidgets('missing catalog images render a safe placeholder', (
       tester,
     ) async {

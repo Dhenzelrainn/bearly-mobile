@@ -151,6 +151,12 @@ class _BuyerHomePageState extends State<BuyerHomePage> {
         title: const BearlyLogo(height: 34, width: 102),
         actions: [
           IconButton(
+            tooltip: 'Messages',
+            onPressed: () =>
+                Navigator.pushNamed(context, AppRouteNames.buyerMessages),
+            icon: const Icon(Icons.forum_outlined),
+          ),
+          IconButton(
             tooltip: 'Cart',
             onPressed: () =>
                 Navigator.pushNamed(context, AppRouteNames.buyerCart),

@@ -32,4 +32,6 @@ class AppRouteNames {
   static const buyerCheckoutReview = '/buyer/checkout/review';
   static const buyerOrderDetails = '/buyer/orders/details';
   static const buyerProduct = '/buyer/product';
+  static const buyerMessages = '/buyer/messages';
+  static const buyerChatThread = '/buyer/messages/thread';
 }

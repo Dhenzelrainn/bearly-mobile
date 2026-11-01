@@ -21,12 +21,14 @@ class BuyerProductDetailPage extends StatefulWidget {
     required this.repository,
     required this.cartController,
     required this.wishlistController,
+    this.onChatSeller,
   });
 
   final int productId;
   final BuyerCatalogRepository repository;
   final BuyerCartController cartController;
   final BuyerWishlistController wishlistController;
+  final Future<int> Function(int productId)? onChatSeller;
 
   @override
   State<BuyerProductDetailPage> createState() => _BuyerProductDetailPageState();
@@ -43,6 +45,7 @@ class _BuyerProductDetailPageState extends State<BuyerProductDetailPage> {
   bool _loading = true;
   bool _addingToCart = false;
   bool _startingBuyNow = false;
+  bool _openingSellerChat = false;
 
   bool get _compact => MediaQuery.sizeOf(context).width < 600;
 
@@ -348,6 +351,39 @@ class _BuyerProductDetailPageState extends State<BuyerProductDetailPage> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('$action will be available in a later phase.')),
       );
+
+  Future<void> _openSellerChat(BuyerCatalogProduct product) async {
+    final startConversation = widget.onChatSeller;
+    if (startConversation == null) {
+      _showUnavailableAction('Contacting the seller');
+      return;
+    }
+    if (_openingSellerChat) return;
+    setState(() => _openingSellerChat = true);
+    try {
+      final conversationId = await startConversation(product.id);
+      if (!mounted) return;
+      await Navigator.of(
+        context,
+      ).pushNamed(AppRouteNames.buyerChatThread, arguments: conversationId);
+    } on ApiException {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'This Seller conversation could not be opened. Refresh the product and try again.',
+          ),
+        ),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Messages are temporarily unavailable.')),
+      );
+    } finally {
+      if (mounted) setState(() => _openingSellerChat = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -975,14 +1011,20 @@ class _BuyerProductDetailPageState extends State<BuyerProductDetailPage> {
           ),
         ),
         OutlinedButton(
-          onPressed: () => _showUnavailableAction('Contacting the seller'),
+          onPressed: _openingSellerChat ? null : () => _openSellerChat(product),
           style: _compact
               ? OutlinedButton.styleFrom(
-                  minimumSize: const Size(70, 42),
+                  minimumSize: const Size(100, 42),
                   padding: const EdgeInsets.symmetric(horizontal: 12),
                 )
               : null,
-          child: const Text('Chat'),
+          child: _openingSellerChat
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Text('Chat Seller'),
         ),
       ],
     ),

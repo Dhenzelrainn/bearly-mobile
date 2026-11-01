@@ -10,6 +10,7 @@ import '../../features/auth/presentation/login_page.dart';
 import '../../features/auth/presentation/pending_page.dart';
 import '../../features/auth/presentation/register_page.dart';
 import '../../features/buyer/data/buyer_catalog_repository.dart';
+import '../../features/buyer/data/buyer_chat_repository.dart';
 import '../../features/buyer/data/buyer_cart_controller.dart';
 import '../../features/buyer/data/buyer_address_controller.dart';
 import '../../features/buyer/data/buyer_checkout_repository.dart';
@@ -23,6 +24,8 @@ import '../../features/buyer/presentation/buyer_cart_page.dart';
 import '../../features/buyer/presentation/buyer_checkout_review_page.dart';
 import '../../features/buyer/presentation/buyer_order_details_page.dart';
 import '../../features/buyer/presentation/buyer_product_detail_page.dart';
+import '../../features/buyer/presentation/buyer_messages_page.dart';
+import '../../features/buyer/presentation/buyer_chat_thread_page.dart';
 import '../../features/rider/presentation/rider_home_page.dart';
 import '../../features/rider/presentation/rider_assignment_pages.dart';
 import '../../features/rider/data/rider_repository.dart';
@@ -218,6 +221,9 @@ class AppRoutes {
               repository: BuyerCatalogRepository(authService: authService),
               cartController: cartController,
               wishlistController: wishlistController,
+              onChatSeller: (id) => BuyerChatRepository(
+                authService: authService,
+              ).startProductConversation(id),
             ),
             settings: settings,
           );
@@ -230,6 +236,37 @@ class AppRoutes {
             checkoutRepository: resolveCheckoutRepository(),
             addressController: addressController,
             locationRepository: locationRepository,
+          ),
+          settings: settings,
+        );
+      case AppRouteNames.buyerMessages:
+        final chatRepository = BuyerChatRepository(authService: authService);
+        return MaterialPageRoute(
+          builder: (context) => BuyerMessagesPage(
+            repository: chatRepository,
+            onOpenConversation: (id) async {
+              await Navigator.of(
+                context,
+              ).pushNamed(AppRouteNames.buyerChatThread, arguments: id);
+            },
+          ),
+          settings: settings,
+        );
+      case AppRouteNames.buyerChatThread:
+        final conversationId = settings.arguments;
+        if (conversationId is int && conversationId > 0) {
+          return MaterialPageRoute(
+            builder: (_) => BuyerChatThreadPage(
+              repository: BuyerChatRepository(authService: authService),
+              conversationId: conversationId,
+            ),
+            settings: settings,
+          );
+        }
+        return MaterialPageRoute(
+          builder: (_) => BuyerMessagesPage(
+            repository: BuyerChatRepository(authService: authService),
+            onOpenConversation: (_) async {},
           ),
           settings: settings,
         );
@@ -354,6 +391,8 @@ class AppRoutes {
       AppRouteNames.buyerCheckoutReview,
       AppRouteNames.buyerOrderDetails,
       AppRouteNames.buyerProduct,
+      AppRouteNames.buyerMessages,
+      AppRouteNames.buyerChatThread,
     }.contains(name)) {
       return AccountRole.buyer;
     }
