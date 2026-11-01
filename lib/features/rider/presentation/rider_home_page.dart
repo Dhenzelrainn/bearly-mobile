@@ -61,10 +61,11 @@ class _RiderHomePageState extends State<RiderHomePage> {
           ],
         ),
         body: _dashboardContent(snapshot),
-        bottomNavigationBar: supportsLocalFulfillment
+        bottomNavigationBar: dashboard != null
             ? RiderBottomNavigationBar(
                 currentRoute: AppRouteNames.rider,
                 onNavigate: _open,
+                supportsLocalFulfillment: supportsLocalFulfillment,
               )
             : null,
       );
@@ -103,34 +104,8 @@ class _RiderHomePageState extends State<RiderHomePage> {
     if (dashboard == null) {
       return const Center(child: Text('Rider dashboard is unavailable.'));
     }
-    if (!dashboard.supportsLocalFulfillment) {
-      return _courierDashboardBody(dashboard);
-    }
     return _dashboardBody(dashboard);
   }
-
-  Widget _courierDashboardBody(RiderDashboard dashboard) => RefreshIndicator(
-    onRefresh: () async => _refresh(),
-    child: ListView(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-      children: [
-        Text(
-          'Welcome, ${dashboard.name}',
-          style: Theme.of(context).textTheme.headlineMedium,
-        ),
-        const SizedBox(height: 14),
-        Card(
-          child: ListTile(
-            leading: const Icon(Icons.local_shipping_outlined),
-            title: const Text('Courier account'),
-            subtitle: const Text(
-              'Courier line-haul features are not available in Bearly Mobile yet. Local pickup and delivery tools are only available to local Riders. Please use your Logistics provider’s approved Web workflow until Courier Mobile support is ready.',
-            ),
-          ),
-        ),
-      ],
-    ),
-  );
 
   Widget _dashboardBody(RiderDashboard dashboard) => RefreshIndicator(
     onRefresh: () async => _refresh(),
@@ -168,6 +143,12 @@ class _RiderHomePageState extends State<RiderHomePage> {
                       style: Theme.of(
                         context,
                       ).textTheme.titleMedium?.copyWith(color: Colors.white),
+                    ),
+                    Text(
+                      'Work type: ${_workTypeLabel(dashboard.workType)}',
+                      style: Theme.of(
+                        context,
+                      ).textTheme.bodySmall?.copyWith(color: Colors.white70),
                     ),
                     Text(
                       [
@@ -225,42 +206,59 @@ class _RiderHomePageState extends State<RiderHomePage> {
             ],
           ),
         ),
-        const SizedBox(height: 14),
-        Row(
-          children: [
-            Expanded(
-              child: _stat('${dashboard.assignedPickups}', 'Assigned pickups'),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: _stat(
-                '${dashboard.assignedDeliveries}',
-                'Assigned deliveries',
+        if (dashboard.supportsLocalFulfillment) ...[
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              Expanded(
+                child: _stat(
+                  '${dashboard.assignedPickups}',
+                  'Assigned pickups',
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _stat(
+                  '${dashboard.assignedDeliveries}',
+                  'Assigned deliveries',
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 18),
+          _section(
+            title: 'Pickup assignments',
+            count: dashboard.assignedPickups,
+            route: AppRouteNames.riderRequests,
+          ),
+          const SizedBox(height: 10),
+          _section(
+            title: 'Delivery assignments',
+            count: dashboard.assignedDeliveries,
+            route: AppRouteNames.riderTransit,
+          ),
+          if (dashboard.assignedPickups == 0 &&
+              dashboard.assignedDeliveries == 0) ...[
+            const SizedBox(height: 14),
+            const Card(
+              child: ListTile(
+                leading: Icon(Icons.inbox_outlined),
+                title: Text('No assigned jobs right now'),
+                subtitle: Text(
+                  'New assignments from Logistics will appear here.',
+                ),
               ),
             ),
           ],
-        ),
-        const SizedBox(height: 18),
-        _section(
-          title: 'Pickup assignments',
-          count: dashboard.assignedPickups,
-          route: AppRouteNames.riderRequests,
-        ),
-        const SizedBox(height: 10),
-        _section(
-          title: 'Delivery assignments',
-          count: dashboard.assignedDeliveries,
-          route: AppRouteNames.riderTransit,
-        ),
-        if (dashboard.assignedPickups == 0 &&
-            dashboard.assignedDeliveries == 0) ...[
-          const SizedBox(height: 14),
+        ] else ...[
+          const SizedBox(height: 18),
           const Card(
+            color: Colors.white,
             child: ListTile(
-              leading: Icon(Icons.inbox_outlined),
-              title: Text('No assigned jobs right now'),
+              leading: Icon(Icons.local_shipping_outlined),
+              title: Text('Courier assignments'),
               subtitle: Text(
-                'New assignments from Logistics will appear here.',
+                'Courier assignment, manifest, scanning, departure, arrival, and handoff actions are not available in Mobile yet. Use your Logistics provider\'s approved Courier Web workflow until Courier Mobile support is ready.',
               ),
             ),
           ),
@@ -283,6 +281,12 @@ class _RiderHomePageState extends State<RiderHomePage> {
       onTap: () => _open(route),
     ),
   );
+
+  String _workTypeLabel(String workType) => switch (workType) {
+    'courier' => 'Courier',
+    'local' => 'Local Rider',
+    _ => 'Unavailable',
+  };
 
   Widget _stat(String value, String label) => Container(
     padding: const EdgeInsets.all(14),

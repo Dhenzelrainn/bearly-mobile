@@ -81,7 +81,7 @@ class _RiderAccountPageState extends State<RiderAccountPage> {
           _line('Account status', _label(account.accountStatus)),
           _line('Rider approval', _label(account.verificationStatus)),
           _line('Availability', _label(account.availabilityStatus)),
-          _line('Work type', _label(account.workType)),
+          _line('Work type', _workTypeLabel(account.workType)),
           _line(
             'Local pickup and delivery',
             account.supportsLocalFulfillment
@@ -191,6 +191,12 @@ class _RiderAccountPageState extends State<RiderAccountPage> {
 
   String _label(String value) =>
       value.trim().isEmpty ? 'Unavailable' : value.replaceAll('_', ' ');
+
+  String _workTypeLabel(String value) => switch (value) {
+    'courier' => 'Courier',
+    'local' => 'Local Rider',
+    _ => _label(value),
+  };
 
   String _document(String? value) => switch (value) {
     'approved' => 'Approved',

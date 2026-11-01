@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:bearly_mobile/core/network/api_client.dart';
@@ -16,6 +17,7 @@ import 'package:bearly_mobile/features/rider/presentation/rider_earnings_page.da
 import 'package:bearly_mobile/features/rider/presentation/rider_history_page.dart';
 import 'package:bearly_mobile/features/rider/presentation/rider_home_page.dart';
 import 'package:bearly_mobile/features/rider/presentation/rider_messages_page.dart';
+import 'package:bearly_mobile/features/rider/presentation/rider_module_page.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -45,19 +47,36 @@ void main() {
   );
 
   testWidgets(
-    'Courier dashboard explains unsupported features and hides local navigation',
+    'Courier uses shared navigation and account without local fulfillment tabs',
     (tester) async {
       await tester.pumpWidget(_navigationApp(workType: 'courier'));
       await tester.pumpAndSettle();
 
-      expect(find.text('Courier account'), findsOneWidget);
+      expect(find.text('Work type: Courier'), findsOneWidget);
+      expect(find.text('Courier assignments'), findsOneWidget);
       expect(
-        find.textContaining('Courier line-haul features are not available'),
+        find.textContaining('Courier assignment, manifest, scanning'),
         findsOneWidget,
       );
-      expect(find.byType(NavigationBar), findsNothing);
+      _expectCourierTabs(tester, selectedIndex: 0);
       expect(find.text('Pickup assignments'), findsNothing);
       expect(find.text('Delivery assignments'), findsNothing);
+
+      await tester.tap(find.text('Account').last);
+      await tester.pumpAndSettle();
+      expect(find.text('Rider Account'), findsOneWidget);
+      expect(find.text('Courier'), findsOneWidget);
+      _expectCourierTabs(tester, selectedIndex: 2);
+
+      await tester.tap(find.text('Earnings').last);
+      await tester.pumpAndSettle();
+      expect(find.text('Earnings unavailable in this version'), findsOneWidget);
+      _expectCourierTabs(tester, selectedIndex: 1);
+      expect(find.text('Pickup assignments'), findsNothing);
+      expect(find.text('Delivery assignments'), findsNothing);
+
+      await tester.tap(find.text('Account').last);
+      await tester.pumpAndSettle();
 
       await _openSecondaryMenu(tester);
       final menuItems = tester
@@ -69,6 +88,27 @@ void main() {
       expect(menuItems, ['Sign out']);
     },
   );
+
+  testWidgets('Courier cannot open a local assignment screen directly', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _navigationApp(workType: 'courier', useProductionRoutes: true),
+    );
+    await tester.pumpAndSettle();
+
+    final context = tester.element(find.byType(RiderHomePage));
+    unawaited(Navigator.of(context).pushNamed(AppRouteNames.riderRequests));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Local work unavailable'), findsOneWidget);
+    expect(find.text('Assigned Pickups'), findsNothing);
+    expect(
+      find.text('There are no pickup assignments for you right now.'),
+      findsNothing,
+    );
+    _expectCourierTabs(tester, selectedIndex: 0);
+  });
 
   testWidgets(
     'dashboard to account to dashboard replaces tab stack and back works',
@@ -312,6 +352,19 @@ void _expectPrimaryTabs(WidgetTester tester, {required int selectedIndex}) {
   expect(navigationBar.selectedIndex, selectedIndex);
 }
 
+void _expectCourierTabs(WidgetTester tester, {required int selectedIndex}) {
+  final navigationBar = tester.widget<NavigationBar>(
+    find.byType(NavigationBar),
+  );
+  expect(
+    navigationBar.destinations.map(
+      (destination) => (destination as NavigationDestination).label,
+    ),
+    ['Home', 'Earnings', 'Account'],
+  );
+  expect(navigationBar.selectedIndex, selectedIndex);
+}
+
 Future<void> _openSecondaryMenu(WidgetTester tester) async {
   await tester.tap(find.byTooltip('More Rider options'));
   await tester.pumpAndSettle();
@@ -330,6 +383,7 @@ void _expectSecondaryMenu(WidgetTester tester) {
 Widget _navigationApp({
   NavigatorObserver? observer,
   String workType = 'local',
+  bool useProductionRoutes = false,
 }) {
   final authService =
       AuthService(
@@ -369,6 +423,11 @@ Widget _navigationApp({
                       'account_status': 'active',
                       'verification_status': 'approved',
                       'availability_status': 'available',
+                      'work_type': workType,
+                      'capabilities': {
+                        'local_pickup': workType != 'courier',
+                        'local_delivery': workType != 'courier',
+                      },
                       'vehicle': {
                         'type': 'Motorcycle',
                         'model': 'Test Model',
@@ -410,32 +469,60 @@ Widget _navigationApp({
           role: AccountRole.rider,
         );
   final repository = RiderRepository(authService: authService);
+  final cartController = BuyerCartController(authService: authService);
+  final wishlistController = BuyerWishlistController(authService: authService);
 
   return MaterialApp(
     navigatorObservers: observer == null ? const [] : [observer],
     home: RiderHomePage(repository: repository),
-    onGenerateRoute: (settings) {
-      final Widget page = switch (settings.name) {
-        AppRouteNames.rider => RiderHomePage(repository: repository),
-        AppRouteNames.riderRequests => RiderAssignmentListPage(
-          repository: repository,
-          kind: RiderAssignmentKind.pickup,
-        ),
-        AppRouteNames.riderTransit => RiderAssignmentListPage(
-          repository: repository,
-          kind: RiderAssignmentKind.delivery,
-        ),
-        AppRouteNames.riderEarnings => const RiderEarningsPage(),
-        AppRouteNames.riderAccount => RiderAccountPage(repository: repository),
-        AppRouteNames.riderHistory => RiderHistoryPage(repository: repository),
-        AppRouteNames.riderMessages => const RiderMessagesPage(),
-        AppRouteNames.logout => const Scaffold(
-          body: Center(child: Text('Sign out route')),
-        ),
-        _ => const Scaffold(body: Text('Unknown route')),
-      };
-      return MaterialPageRoute<void>(settings: settings, builder: (_) => page);
-    },
+    onGenerateRoute: useProductionRoutes
+        ? (settings) => AppRoutes.onGenerateRoute(
+            settings,
+            authService: authService,
+            cartController: cartController,
+            wishlistController: wishlistController,
+          )
+        : (settings) {
+            final Widget page = switch (settings.name) {
+              AppRouteNames.rider => RiderHomePage(repository: repository),
+              AppRouteNames.riderRequests => RiderLocalFulfillmentGuard(
+                repository: repository,
+                currentRoute: settings.name,
+                child: RiderAssignmentListPage(
+                  repository: repository,
+                  kind: RiderAssignmentKind.pickup,
+                ),
+              ),
+              AppRouteNames.riderTransit => RiderLocalFulfillmentGuard(
+                repository: repository,
+                currentRoute: settings.name,
+                child: RiderAssignmentListPage(
+                  repository: repository,
+                  kind: RiderAssignmentKind.delivery,
+                ),
+              ),
+              AppRouteNames.riderEarnings => RiderEarningsPage(
+                repository: repository,
+              ),
+              AppRouteNames.riderAccount => RiderAccountPage(
+                repository: repository,
+              ),
+              AppRouteNames.riderHistory => RiderLocalFulfillmentGuard(
+                repository: repository,
+                currentRoute: settings.name,
+                child: RiderHistoryPage(repository: repository),
+              ),
+              AppRouteNames.riderMessages => const RiderMessagesPage(),
+              AppRouteNames.logout => const Scaffold(
+                body: Center(child: Text('Sign out route')),
+              ),
+              _ => const Scaffold(body: Text('Unknown route')),
+            };
+            return MaterialPageRoute<void>(
+              settings: settings,
+              builder: (_) => page,
+            );
+          },
   );
 }
 

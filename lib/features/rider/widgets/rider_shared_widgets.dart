@@ -54,8 +54,11 @@ class RiderPageScaffold extends StatelessWidget {
           child,
         ],
       ),
-      bottomNavigationBar: showBottomNavigationBar && supportsLocalFulfillment
-          ? RiderBottomNavigationBar(currentRoute: currentRoute)
+      bottomNavigationBar: showBottomNavigationBar
+          ? RiderBottomNavigationBar(
+              currentRoute: currentRoute,
+              supportsLocalFulfillment: supportsLocalFulfillment,
+            )
           : null,
     );
   }
@@ -76,12 +79,14 @@ class RiderBottomNavigationBar extends StatelessWidget {
     super.key,
     required this.currentRoute,
     this.onNavigate,
+    this.supportsLocalFulfillment = true,
   });
 
   final String? currentRoute;
   final Future<void> Function(String route)? onNavigate;
+  final bool supportsLocalFulfillment;
 
-  static const _routes = <String>[
+  static const _localRoutes = <String>[
     AppRouteNames.rider,
     AppRouteNames.riderRequests,
     AppRouteNames.riderTransit,
@@ -89,7 +94,13 @@ class RiderBottomNavigationBar extends StatelessWidget {
     AppRouteNames.riderAccount,
   ];
 
-  static const _destinations = <NavigationDestination>[
+  static const _sharedRoutes = <String>[
+    AppRouteNames.rider,
+    AppRouteNames.riderEarnings,
+    AppRouteNames.riderAccount,
+  ];
+
+  static const _localDestinations = <NavigationDestination>[
     NavigationDestination(
       icon: Icon(Icons.dashboard_outlined),
       selectedIcon: Icon(Icons.dashboard_rounded),
@@ -117,17 +128,39 @@ class RiderBottomNavigationBar extends StatelessWidget {
     ),
   ];
 
+  static const _sharedDestinations = <NavigationDestination>[
+    NavigationDestination(
+      icon: Icon(Icons.dashboard_outlined),
+      selectedIcon: Icon(Icons.dashboard_rounded),
+      label: 'Home',
+    ),
+    NavigationDestination(
+      icon: Icon(Icons.payments_outlined),
+      selectedIcon: Icon(Icons.payments_rounded),
+      label: 'Earnings',
+    ),
+    NavigationDestination(
+      icon: Icon(Icons.person_outline_rounded),
+      selectedIcon: Icon(Icons.person_rounded),
+      label: 'Account',
+    ),
+  ];
+
   @override
   Widget build(BuildContext context) {
+    final routes = supportsLocalFulfillment ? _localRoutes : _sharedRoutes;
+    final destinations = supportsLocalFulfillment
+        ? _localDestinations
+        : _sharedDestinations;
     final effectiveRoute = currentRoute == AppRouteNames.riderHistory
         ? AppRouteNames.riderTransit
         : currentRoute;
-    final selectedIndex = _routes.indexOf(effectiveRoute ?? '');
+    final selectedIndex = routes.indexOf(effectiveRoute ?? '');
     return NavigationBar(
       height: 72,
       selectedIndex: selectedIndex < 0 ? 0 : selectedIndex,
       onDestinationSelected: (index) async {
-        final route = _routes[index];
+        final route = routes[index];
         if (route == currentRoute) return;
         if (onNavigate case final navigate?) {
           await navigate(route);
@@ -135,7 +168,7 @@ class RiderBottomNavigationBar extends StatelessWidget {
           _navigateToPrimaryDestination(context, route);
         }
       },
-      destinations: _destinations,
+      destinations: destinations,
     );
   }
 

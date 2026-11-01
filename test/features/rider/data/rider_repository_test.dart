@@ -170,6 +170,42 @@ void main() {
       expect(account.supportsLocalFulfillment, isFalse);
     });
 
+    test('missing work type and capabilities fail closed', () async {
+      final repository = RiderRepository(
+        authService: _authService((request) async {
+          if (request.url.path.endsWith('/dashboard')) {
+            return http.Response(
+              jsonEncode({
+                'rider': {'name': 'Unclassified Rider'},
+                'metrics': {},
+              }),
+              200,
+            );
+          }
+          return http.Response(
+            jsonEncode({
+              'data': {
+                'name': 'Unclassified Rider',
+                'vehicle': {},
+                'logistics_provider': {},
+                'sorting': {},
+                'documents': {},
+              },
+            }),
+            200,
+          );
+        }),
+      );
+
+      final dashboard = await repository.dashboard();
+      final account = await repository.account();
+
+      expect(dashboard.workType, 'unknown');
+      expect(dashboard.supportsLocalFulfillment, isFalse);
+      expect(account.workType, 'unknown');
+      expect(account.supportsLocalFulfillment, isFalse);
+    });
+
     test('loads read-only pickup and delivery details', () async {
       final requestedPaths = <String>[];
       final service = _authService((request) async {
@@ -367,32 +403,35 @@ void main() {
       },
     );
 
-    test('posts a retry to the authenticated delivery retry endpoint', () async {
-      late http.Request submitted;
-      final service = _authService((request) async {
-        submitted = request;
-        return http.Response(
-          jsonEncode({
-            'message': 'Delivery retry started.',
-            'data': {
-              ..._deliveryPayload('Out for Delivery', canStart: false),
-              'status_raw': 'out_for_delivery',
-              'can_retry': false,
-            },
-          }),
-          200,
-        );
-      });
-      final repository = RiderRepository(authService: service);
+    test(
+      'posts a retry to the authenticated delivery retry endpoint',
+      () async {
+        late http.Request submitted;
+        final service = _authService((request) async {
+          submitted = request;
+          return http.Response(
+            jsonEncode({
+              'message': 'Delivery retry started.',
+              'data': {
+                ..._deliveryPayload('Out for Delivery', canStart: false),
+                'status_raw': 'out_for_delivery',
+                'can_retry': false,
+              },
+            }),
+            200,
+          );
+        });
+        final repository = RiderRepository(authService: service);
 
-      final retry = await repository.retryDelivery('SH-200');
+        final retry = await repository.retryDelivery('SH-200');
 
-      expect(retry.statusRaw, 'out_for_delivery');
-      expect(retry.canRetry, isFalse);
-      expect(submitted.method, 'POST');
-      expect(submitted.url.path, '/api/mobile/rider/deliveries/SH-200/retry');
-      expect(submitted.headers['authorization'], 'Bearer rider-token');
-    });
+        expect(retry.statusRaw, 'out_for_delivery');
+        expect(retry.canRetry, isFalse);
+        expect(submitted.method, 'POST');
+        expect(submitted.url.path, '/api/mobile/rider/deliveries/SH-200/retry');
+        expect(submitted.headers['authorization'], 'Bearer rider-token');
+      },
+    );
 
     test('uploads private delivery proof and parses COD completion', () async {
       final requests = <http.Request>[];

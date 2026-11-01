@@ -5,8 +5,8 @@ class RiderAccount {
     required this.accountStatus,
     required this.verificationStatus,
     required this.availabilityStatus,
-    this.workType = 'local',
-    this.supportsLocalFulfillment = true,
+    this.workType = 'unknown',
+    this.supportsLocalFulfillment = false,
     required this.vehicleType,
     required this.vehicleModel,
     required this.plateNumber,
@@ -46,15 +46,13 @@ class RiderAccount {
     final capabilities = data['capabilities'] is Map
         ? _map(data['capabilities'], 'capabilities')
         : const <String, Object?>{};
-    final workType = _string(data['work_type']).isEmpty
-        ? 'local'
-        : _string(data['work_type']);
+    final workType = _string(data['work_type']).trim().toLowerCase();
     final supportsLocalFulfillment =
         capabilities['local_pickup'] is bool &&
             capabilities['local_delivery'] is bool
         ? capabilities['local_pickup'] == true &&
               capabilities['local_delivery'] == true
-        : workType != 'courier';
+        : workType == 'local';
 
     return RiderAccount(
       name: _string(data['name']),
@@ -62,7 +60,7 @@ class RiderAccount {
       accountStatus: _string(data['account_status']),
       verificationStatus: _string(data['verification_status']),
       availabilityStatus: _string(data['availability_status']),
-      workType: workType,
+      workType: workType.isEmpty ? 'unknown' : workType,
       supportsLocalFulfillment: supportsLocalFulfillment,
       vehicleType: _string(vehicle['type']),
       vehicleModel: _string(vehicle['model']),

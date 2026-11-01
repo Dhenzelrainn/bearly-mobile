@@ -27,6 +27,11 @@ void main() {
                   jsonEncode({
                     'rider': {
                       'name': 'Test Rider',
+                      'work_type': 'local',
+                      'capabilities': {
+                        'local_pickup': true,
+                        'local_delivery': true,
+                      },
                       'vehicle_type': 'Motorcycle',
                       'plate_number': 'TEST-1',
                       'availability_status': 'available',

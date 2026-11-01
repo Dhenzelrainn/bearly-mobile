@@ -299,67 +299,81 @@ class AppRoutes {
           settings: settings,
         );
       case AppRouteNames.riderRequests:
-        return MaterialPageRoute(
-          builder: (_) => RiderAssignmentListPage(
+        return _riderLocalRoute(
+          settings,
+          riderRepository,
+          RiderAssignmentListPage(
             repository: riderRepository,
             kind: RiderAssignmentKind.pickup,
           ),
-          settings: settings,
         );
       case AppRouteNames.riderPickup:
-        return _riderModule(RiderModule.pickup, settings, riderRepository);
+        return _riderLocalModule(RiderModule.pickup, settings, riderRepository);
       case AppRouteNames.riderTransit:
-        return MaterialPageRoute(
-          builder: (_) => RiderAssignmentListPage(
+        return _riderLocalRoute(
+          settings,
+          riderRepository,
+          RiderAssignmentListPage(
             repository: riderRepository,
             kind: RiderAssignmentKind.delivery,
           ),
-          settings: settings,
         );
       case AppRouteNames.riderPickupDetail:
         final pickupNo = settings.arguments;
         if (pickupNo is! String || pickupNo.trim().isEmpty) {
-          return MaterialPageRoute(
-            builder: (_) => RiderAssignmentListPage(
+          return _riderLocalRoute(
+            settings,
+            riderRepository,
+            RiderAssignmentListPage(
               repository: riderRepository,
               kind: RiderAssignmentKind.pickup,
             ),
-            settings: settings,
           );
         }
-        return MaterialPageRoute(
-          builder: (_) => RiderJobDetailPage(
+        return _riderLocalRoute(
+          settings,
+          riderRepository,
+          RiderJobDetailPage(
             repository: riderRepository,
             kind: RiderAssignmentKind.pickup,
             jobId: pickupNo,
           ),
-          settings: settings,
         );
       case AppRouteNames.riderDeliveryDetail:
         final shipmentNo = settings.arguments;
         if (shipmentNo is! String || shipmentNo.trim().isEmpty) {
-          return MaterialPageRoute(
-            builder: (_) => RiderAssignmentListPage(
+          return _riderLocalRoute(
+            settings,
+            riderRepository,
+            RiderAssignmentListPage(
               repository: riderRepository,
               kind: RiderAssignmentKind.delivery,
             ),
-            settings: settings,
           );
         }
-        return MaterialPageRoute(
-          builder: (_) => RiderJobDetailPage(
+        return _riderLocalRoute(
+          settings,
+          riderRepository,
+          RiderJobDetailPage(
             repository: riderRepository,
             kind: RiderAssignmentKind.delivery,
             jobId: shipmentNo,
           ),
-          settings: settings,
         );
       case AppRouteNames.riderComplete:
-        return _riderModule(RiderModule.complete, settings, riderRepository);
+        return _riderLocalModule(
+          RiderModule.complete,
+          settings,
+          riderRepository,
+        );
       case AppRouteNames.riderEarnings:
         return _riderModule(RiderModule.earnings, settings, riderRepository);
       case AppRouteNames.riderHistory:
-        return _riderModule(RiderModule.history, settings, riderRepository);
+        return _riderLocalModule(
+          RiderModule.history,
+          settings,
+          riderRepository,
+        );
       case AppRouteNames.riderMessages:
         return _riderModule(RiderModule.messages, settings, riderRepository);
       case AppRouteNames.riderAccount:
@@ -382,6 +396,29 @@ class AppRoutes {
       settings: settings,
     );
   }
+
+  static Route<dynamic> _riderLocalModule(
+    RiderModule module,
+    RouteSettings settings,
+    RiderRepository repository,
+  ) => _riderLocalRoute(
+    settings,
+    repository,
+    RiderModulePage(module: module, repository: repository),
+  );
+
+  static Route<dynamic> _riderLocalRoute(
+    RouteSettings settings,
+    RiderRepository repository,
+    Widget child,
+  ) => MaterialPageRoute(
+    builder: (_) => RiderLocalFulfillmentGuard(
+      repository: repository,
+      currentRoute: settings.name,
+      child: child,
+    ),
+    settings: settings,
+  );
 
   static AccountRole? _requiredRole(String? name) {
     if ({
