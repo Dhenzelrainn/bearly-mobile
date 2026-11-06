@@ -41,7 +41,9 @@ import '../../features/rider/presentation/rider_pending_page.dart';
 import '../../features/rider/presentation/rider_register_page.dart';
 import '../../features/logistics/data/logistics_repository.dart';
 import '../../features/logistics/data/logistics_notifications_repository.dart';
+import '../../features/logistics/data/logistics_messages_repository.dart';
 import '../../features/logistics/presentation/logistics_home_page.dart';
+import '../../features/logistics/presentation/logistics_messages_page.dart';
 
 class AppRoutes {
   const AppRoutes._();
@@ -64,6 +66,9 @@ class AppRoutes {
     );
     final logisticsRepository = LogisticsRepository(authService: authService);
     final logisticsNotificationsRepository = LogisticsNotificationsRepository(
+      authService: authService,
+    );
+    final logisticsMessagesRepository = LogisticsMessagesRepository(
       authService: authService,
     );
     BuyerAddressController? fallbackAddressController;
@@ -117,6 +122,8 @@ class AppRoutes {
           AccountRole.logistics => LogisticsHomePage(
             authService: authService,
             repository: logisticsRepository,
+            notificationsRepository: logisticsNotificationsRepository,
+            messagesRepository: logisticsMessagesRepository,
           ),
         },
         settings: RouteSettings(name: route),
@@ -336,7 +343,14 @@ class AppRoutes {
             authService: authService,
             repository: logisticsRepository,
             notificationsRepository: logisticsNotificationsRepository,
+            messagesRepository: logisticsMessagesRepository,
           ),
+          settings: settings,
+        );
+      case AppRouteNames.logisticsMessages:
+        return MaterialPageRoute(
+          builder: (_) =>
+              LogisticsMessagesPage(repository: logisticsMessagesRepository),
           settings: settings,
         );
       case AppRouteNames.logisticsNotifications:
@@ -527,6 +541,7 @@ class AppRoutes {
 
     if ({
       AppRouteNames.logisticsDashboard,
+      AppRouteNames.logisticsMessages,
       AppRouteNames.logisticsNotifications,
     }.contains(name)) {
       return AccountRole.logistics;

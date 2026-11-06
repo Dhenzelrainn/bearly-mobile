@@ -9,6 +9,7 @@ import '../../../core/widgets/bearly_logo.dart';
 import '../../auth/data/auth_service.dart';
 import '../../notifications/data/mobile_notifications_data_source.dart';
 import '../data/logistics_repository.dart';
+import '../data/logistics_messages_repository.dart';
 import '../models/logistics_dashboard.dart';
 import 'logistics_dispatch_page.dart';
 import 'logistics_delivery_monitoring_page.dart';
@@ -21,11 +22,13 @@ class LogisticsHomePage extends StatefulWidget {
     required this.authService,
     required this.repository,
     this.notificationsRepository,
+    this.messagesRepository,
   });
 
   final AuthService authService;
   final LogisticsRepository repository;
   final MobileNotificationsDataSource? notificationsRepository;
+  final LogisticsMessagesRepository? messagesRepository;
 
   @override
   State<LogisticsHomePage> createState() => _LogisticsHomePageState();
@@ -35,12 +38,15 @@ class _LogisticsHomePageState extends State<LogisticsHomePage> {
   late Future<LogisticsDashboard> _dashboard;
   int _notificationUnreadCount = 0;
   Future<int>? _notificationCountRequest;
+  int _messageUnreadCount = 0;
+  Future<int>? _messageCountRequest;
 
   @override
   void initState() {
     super.initState();
     _dashboard = widget.repository.dashboard();
     unawaited(_refreshNotificationCount());
+    unawaited(_refreshMessageCount());
   }
 
   Future<void> _refresh() async {
@@ -66,6 +72,13 @@ class _LogisticsHomePageState extends State<LogisticsHomePage> {
     await _refreshNotificationCount(force: true);
   }
 
+  Future<void> _openMessages() async {
+    await Navigator.pushNamed(context, AppRouteNames.logisticsMessages);
+    if (!mounted) return;
+    await _refresh();
+    await _refreshMessageCount(force: true);
+  }
+
   Future<void> _refreshNotificationCount({bool force = false}) async {
     final notifications = widget.notificationsRepository;
     if (notifications == null) return;
@@ -87,6 +100,26 @@ class _LogisticsHomePageState extends State<LogisticsHomePage> {
       if (identical(_notificationCountRequest, request)) {
         _notificationCountRequest = null;
       }
+    }
+  }
+
+  Future<void> _refreshMessageCount({bool force = false}) async {
+    final messages = widget.messagesRepository;
+    if (messages == null) return;
+    final pending = _messageCountRequest;
+    if (pending != null) {
+      await pending.catchError((_) => _messageUnreadCount);
+      if (!force) return;
+    }
+    final request = messages.getUnreadCount();
+    _messageCountRequest = request;
+    try {
+      final count = await request;
+      if (mounted) setState(() => _messageUnreadCount = count);
+    } catch (_) {
+      // Keep Logistics operations available if messaging is offline.
+    } finally {
+      if (identical(_messageCountRequest, request)) _messageCountRequest = null;
     }
   }
 
@@ -156,6 +189,19 @@ class _LogisticsHomePageState extends State<LogisticsHomePage> {
                     : '$_notificationUnreadCount',
               ),
               child: const Icon(Icons.notifications_outlined),
+            ),
+          ),
+        if (widget.messagesRepository != null)
+          IconButton(
+            key: const ValueKey('logistics-open-messages'),
+            onPressed: _openMessages,
+            tooltip: 'Messages',
+            icon: Badge(
+              isLabelVisible: _messageUnreadCount > 0,
+              label: Text(
+                _messageUnreadCount > 99 ? '99+' : '$_messageUnreadCount',
+              ),
+              child: const Icon(Icons.chat_bubble_outline_rounded),
             ),
           ),
         IconButton(
