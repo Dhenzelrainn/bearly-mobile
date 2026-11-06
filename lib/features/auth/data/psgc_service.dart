@@ -2,10 +2,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 class LocationOption {
-  const LocationOption({
-    required this.name,
-    required this.code,
-  });
+  const LocationOption({required this.name, required this.code});
 
   final String name;
   final String code;
@@ -34,20 +31,31 @@ class PsgcService {
 
   static const String _baseUrl = 'https://psgc.cloud/api/v2';
 
+  Future<List<LocationOption>> regions() async {
+    final items = await _get('/regions');
+    return items
+        .where((item) => RegExp(r'^\d{10}$').hasMatch(item.code))
+        .toList();
+  }
+
   Future<List<LocationOption>> provinces() {
     return _get('/provinces');
   }
 
+  Future<List<LocationOption>> provincesForRegion(String regionCode) {
+    if (!RegExp(r'^\d{10}$').hasMatch(regionCode)) {
+      throw const PsgcException('Select a valid PSGC region first.');
+    }
+
+    return _get('/regions/$regionCode/provinces');
+  }
+
   Future<List<LocationOption>> cities(String provinceCode) {
-    return _get(
-      '/provinces/$provinceCode/cities-municipalities',
-    );
+    return _get('/provinces/$provinceCode/cities-municipalities');
   }
 
   Future<List<LocationOption>> barangays(String cityCode) {
-    return _get(
-      '/cities-municipalities/$cityCode/barangays',
-    );
+    return _get('/cities-municipalities/$cityCode/barangays');
   }
 
   Future<List<LocationOption>> _get(String path) async {
@@ -57,16 +65,10 @@ class PsgcService {
       final uri = Uri.parse('$_baseUrl$path');
 
       final response = await client
-          .get(
-            uri,
-            headers: const {
-              'Accept': 'application/json',
-            },
-          )
+          .get(uri, headers: const {'Accept': 'application/json'})
           .timeout(const Duration(seconds: 15));
 
-      if (response.statusCode < 200 ||
-          response.statusCode >= 300) {
+      if (response.statusCode < 200 || response.statusCode >= 300) {
         throw PsgcException(
           'Address service returned HTTP ${response.statusCode}.',
         );
@@ -74,27 +76,19 @@ class PsgcService {
 
       final dynamic payload = jsonDecode(response.body);
 
-      final dynamic raw =
-          payload is List ? payload : payload['data'];
+      final dynamic raw = payload is List ? payload : payload['data'];
 
       if (raw is! List) {
-        throw const PsgcException(
-          'Unexpected address service response.',
-        );
+        throw const PsgcException('Unexpected address service response.');
       }
 
-      final items = raw
-          .whereType<Map<String, dynamic>>()
-          .map(LocationOption.fromJson)
-          .where(
-            (item) =>
-                item.name.isNotEmpty &&
-                item.code.isNotEmpty,
-          )
-          .toList()
-        ..sort(
-          (a, b) => a.name.compareTo(b.name),
-        );
+      final items =
+          raw
+              .whereType<Map<String, dynamic>>()
+              .map(LocationOption.fromJson)
+              .where((item) => item.name.isNotEmpty && item.code.isNotEmpty)
+              .toList()
+            ..sort((a, b) => a.name.compareTo(b.name));
 
       return items;
     } catch (error) {
@@ -102,9 +96,7 @@ class PsgcService {
         rethrow;
       }
 
-      throw PsgcException(
-        'Address service is unavailable: $error',
-      );
+      throw PsgcException('Address service is unavailable: $error');
     } finally {
       if (_client == null) {
         client.close();

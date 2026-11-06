@@ -8,6 +8,7 @@ import '../../../core/theme/bearly_theme.dart';
 import '../data/postal_code_service.dart';
 import '../data/psgc_service.dart';
 import '../models/account_role.dart';
+import '../models/registration_region_fields.dart';
 import '../widgets/auth_scaffold.dart';
 import '../widgets/document_source_sheet.dart';
 import '../widgets/document_upload_card.dart';
@@ -50,9 +51,11 @@ class _RegisterPageState extends State<RegisterPage> {
   bool _postalAutoFilled = false;
   String _postalHint = 'Select municipality first';
 
+  List<LocationOption> _regions = const [];
   List<LocationOption> _provinces = const [];
   List<LocationOption> _cities = const [];
   List<LocationOption> _barangays = const [];
+  LocationOption? _region;
   LocationOption? _province;
   LocationOption? _city;
   LocationOption? _barangay;
@@ -73,6 +76,7 @@ class _RegisterPageState extends State<RegisterPage> {
   final password = TextEditingController();
   final confirmPassword = TextEditingController();
 
+  final regionManual = TextEditingController();
   final provinceManual = TextEditingController();
   final cityManual = TextEditingController();
   final barangayManual = TextEditingController();
@@ -90,7 +94,7 @@ class _RegisterPageState extends State<RegisterPage> {
   void initState() {
     super.initState();
     _role = widget.initialRole;
-    _loadProvinces();
+    _loadRegions();
     password.addListener(_refreshPasswordGuidance);
     confirmPassword.addListener(_refreshPasswordGuidance);
   }
@@ -108,6 +112,7 @@ class _RegisterPageState extends State<RegisterPage> {
       contact,
       password,
       confirmPassword,
+      regionManual,
       provinceManual,
       cityManual,
       barangayManual,
@@ -143,17 +148,24 @@ class _RegisterPageState extends State<RegisterPage> {
       _role == AccountRole.buyer ? 'Documents & Review' : 'Vehicle & Documents',
   };
 
-  Future<void> _loadProvinces() async {
+  Future<void> _loadRegions() async {
     setState(() {
       _addressLoading = true;
       _addressError = null;
     });
     try {
-      final data = await _psgc.provinces();
+      final data = await _psgc.regions();
       if (!mounted) return;
       setState(() {
-        _provinces = data;
+        _regions = data;
+        _region = null;
+        _provinces = const [];
+        _cities = const [];
+        _barangays = const [];
         _addressLoading = false;
+        if (data.isEmpty) {
+          _addressError = 'No valid PSGC regions were returned.';
+        }
       });
     } catch (_) {
       if (!mounted) return;
@@ -161,6 +173,42 @@ class _RegisterPageState extends State<RegisterPage> {
         _addressLoading = false;
         _addressError =
             'Address service is unavailable. Retry or enter the address manually.';
+      });
+    }
+  }
+
+  Future<void> _loadProvinces(LocationOption region) async {
+    setState(() {
+      _region = region;
+      _province = null;
+      _city = null;
+      _barangay = null;
+      _provinces = const [];
+      _cities = const [];
+      _barangays = const [];
+      postal.clear();
+      _postalAutoFilled = false;
+      _postalHint = 'Select municipality first';
+      _addressLoading = true;
+      _addressError = null;
+    });
+
+    try {
+      final data = await _psgc.provincesForRegion(region.code);
+      if (!mounted || _region?.code != region.code) return;
+      setState(() {
+        _provinces = data;
+        _addressLoading = false;
+        if (data.isEmpty) {
+          _addressError = 'No provinces were returned for that region.';
+        }
+      });
+    } catch (_) {
+      if (!mounted || _region?.code != region.code) return;
+      setState(() {
+        _addressLoading = false;
+        _addressError =
+            'Unable to load provinces. You can enter them manually.';
       });
     }
   }
@@ -385,11 +433,24 @@ class _RegisterPageState extends State<RegisterPage> {
     final valid = _addressKey.currentState?.validate() ?? false;
     if (!valid) return false;
 
+    if (!_manualAddress && _region == null) {
+      _showMessage('Select your region.');
+      return false;
+    }
+
     if (!_manualAddress &&
         (_province == null || _city == null || _barangay == null)) {
       _showMessage('Complete your province, municipality, and barangay.');
       return false;
     }
+
+    try {
+      _regionFields.toJson();
+    } on ArgumentError catch (error) {
+      _showMessage(error.message.toString());
+      return false;
+    }
+
     return true;
   }
 
@@ -435,7 +496,11 @@ class _RegisterPageState extends State<RegisterPage> {
     if (_currentStep < 2) {
       setState(() => _currentStep++);
     } else {
-      Navigator.pushNamed(context, AppRouteNames.pending, arguments: _role.label);
+      Navigator.pushNamed(
+        context,
+        AppRouteNames.pending,
+        arguments: _role.label,
+      );
     }
   }
 
@@ -446,6 +511,11 @@ class _RegisterPageState extends State<RegisterPage> {
   String _addressValue(TextEditingController manual, LocationOption? option) {
     return _manualAddress ? manual.text.trim() : (option?.name ?? '');
   }
+
+  RegistrationRegionFields get _regionFields => RegistrationRegionFields(
+    region: _manualAddress ? regionManual.text : (_region?.name ?? ''),
+    regionCode: _manualAddress ? null : _region?.code,
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -884,10 +954,18 @@ class _RegisterPageState extends State<RegisterPage> {
           const SizedBox(height: 18),
           if (!_manualAddress) ...[
             LocationPickerField(
+              label: 'Region',
+              value: _region,
+              items: _regions,
+              enabled: !_addressLoading && _regions.isNotEmpty,
+              onSelected: _loadProvinces,
+            ),
+            const SizedBox(height: 12),
+            LocationPickerField(
               label: 'Province',
               value: _province,
               items: _provinces,
-              enabled: !_addressLoading && _provinces.isNotEmpty,
+              enabled: !_addressLoading && _region != null,
               onSelected: _loadCities,
             ),
             const SizedBox(height: 12),
@@ -909,6 +987,13 @@ class _RegisterPageState extends State<RegisterPage> {
             const SizedBox(height: 12),
             _buildAddressStatus(),
           ] else ...[
+            TextFormField(
+              controller: regionManual,
+              textCapitalization: TextCapitalization.words,
+              decoration: const InputDecoration(labelText: 'Region'),
+              validator: RegistrationRegionFields.validateRegion,
+            ),
+            const SizedBox(height: 12),
             TextFormField(
               controller: provinceManual,
               decoration: const InputDecoration(labelText: 'Province'),
@@ -937,7 +1022,7 @@ class _RegisterPageState extends State<RegisterPage> {
                   _postalHint = 'Select municipality first';
                   postal.clear();
                 });
-                _loadProvinces();
+                _loadRegions();
               },
               icon: const Icon(Icons.sync_rounded),
               label: const Text('Try address service again'),
@@ -1038,13 +1123,14 @@ class _RegisterPageState extends State<RegisterPage> {
             Row(
               children: [
                 OutlinedButton(
-                  onPressed: _loadProvinces,
+                  onPressed: _loadRegions,
                   child: const Text('Retry'),
                 ),
                 const SizedBox(width: 8),
                 TextButton(
                   onPressed: () => setState(() {
                     _manualAddress = true;
+                    _region = null;
                     _postalAutoFilled = false;
                     _postalHint = 'Enter postal code';
                     postal.clear();
@@ -1310,6 +1396,7 @@ class _RegisterPageState extends State<RegisterPage> {
       _addressValue(barangayManual, _barangay),
       _addressValue(cityManual, _city),
       _addressValue(provinceManual, _province),
+      _regionFields.toJson()['region'] as String,
       postal.text.trim(),
     ].where((item) => item.isNotEmpty).toList();
     return values.join(', ');
