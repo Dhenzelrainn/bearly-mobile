@@ -33,6 +33,8 @@ import '../../features/rider/presentation/rider_home_page.dart';
 import '../../features/rider/presentation/rider_assignment_pages.dart';
 import '../../features/rider/data/rider_repository.dart';
 import '../../features/rider/data/rider_notifications_repository.dart';
+import '../../features/rider/data/rider_messages_repository.dart';
+import '../../features/messaging/data/mobile_messaging_data_source.dart';
 import '../../features/rider/models/rider_assignment.dart';
 import '../../features/rider/presentation/rider_module_page.dart';
 import '../../features/rider/presentation/rider_pending_page.dart';
@@ -55,6 +57,9 @@ class AppRoutes {
   }) {
     final riderRepository = RiderRepository(authService: authService);
     final riderNotificationsRepository = RiderNotificationsRepository(
+      authService: authService,
+    );
+    final riderMessagesRepository = RiderMessagesRepository(
       authService: authService,
     );
     final logisticsRepository = LogisticsRepository(authService: authService);
@@ -107,6 +112,7 @@ class AppRoutes {
           AccountRole.rider => RiderHomePage(
             repository: riderRepository,
             notificationsRepository: riderNotificationsRepository,
+            messagesRepository: riderMessagesRepository,
           ),
           AccountRole.logistics => LogisticsHomePage(
             authService: authService,
@@ -300,6 +306,7 @@ class AppRoutes {
           builder: (_) => RiderHomePage(
             repository: riderRepository,
             notificationsRepository: riderNotificationsRepository,
+            messagesRepository: riderMessagesRepository,
           ),
           settings: settings,
         );
@@ -308,6 +315,7 @@ class AppRoutes {
           builder: (_) => RiderHomePage(
             repository: riderRepository,
             notificationsRepository: riderNotificationsRepository,
+            messagesRepository: riderMessagesRepository,
           ),
           settings: settings,
         );
@@ -429,7 +437,12 @@ class AppRoutes {
           riderRepository,
         );
       case AppRouteNames.riderMessages:
-        return _riderModule(RiderModule.messages, settings, riderRepository);
+        return _riderModule(
+          RiderModule.messages,
+          settings,
+          riderRepository,
+          messagesRepository: riderMessagesRepository,
+        );
       case AppRouteNames.riderAccount:
         return _riderModule(RiderModule.account, settings, riderRepository);
       default:
@@ -443,10 +456,15 @@ class AppRoutes {
   static Route<dynamic> _riderModule(
     RiderModule module,
     RouteSettings settings,
-    RiderRepository repository,
-  ) {
+    RiderRepository repository, {
+    MobileMessagingDataSource? messagesRepository,
+  }) {
     return MaterialPageRoute(
-      builder: (_) => RiderModulePage(module: module, repository: repository),
+      builder: (_) => RiderModulePage(
+        module: module,
+        repository: repository,
+        messagesRepository: messagesRepository,
+      ),
       settings: settings,
     );
   }

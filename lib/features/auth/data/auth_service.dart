@@ -391,6 +391,52 @@ class AuthService extends ChangeNotifier {
     }
   }
 
+  /// Downloads a protected attachment using the active Sanctum session.
+  Future<ApiBinaryResponse> downloadWithSession({
+    required String path,
+    int? expectedSessionEpoch,
+    int? expectedAccountId,
+  }) async {
+    final requestEpoch = _sessionEpoch;
+    final requestAccountId = currentSession?.id;
+    _checkExpectedSession(
+      expectedSessionEpoch: expectedSessionEpoch,
+      expectedAccountId: expectedAccountId,
+      requestMayHaveReachedServer: false,
+    );
+    final token = _ephemeralToken ?? await _tokenStore.read();
+    _checkRequestSession(
+      requestEpoch,
+      expectedSessionEpoch: expectedSessionEpoch,
+      expectedAccountId: expectedAccountId,
+      requestMayHaveReachedServer: false,
+    );
+    if (token == null || token.trim().isEmpty) {
+      throw const AuthException('Sign in to access this Bearly resource.');
+    }
+
+    try {
+      final response = await _apiClient.getBytes(
+        path,
+        headers: _authorization(token),
+      );
+      _checkRequestSession(
+        requestEpoch,
+        expectedSessionEpoch: expectedSessionEpoch,
+        expectedAccountId: expectedAccountId,
+        requestMayHaveReachedServer: true,
+      );
+      return response;
+    } on ApiHttpException catch (error) {
+      if ((error.statusCode == 401 || error.statusCode == 403) &&
+          _sessionEpoch == requestEpoch &&
+          currentSession?.id == requestAccountId) {
+        await _clearLocalSession();
+      }
+      rethrow;
+    }
+  }
+
   /// Attempts server revocation, then always removes the local credential.
   Future<void> logout() async {
     String? token;

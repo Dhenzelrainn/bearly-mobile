@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../data/rider_repository.dart';
+import '../../messaging/data/mobile_messaging_data_source.dart';
 import '../models/rider_assignment.dart';
 import 'rider_assignment_pages.dart';
 import 'rider_account_page.dart';
@@ -28,10 +29,12 @@ class RiderModulePage extends StatelessWidget {
     super.key,
     required this.module,
     required this.repository,
+    this.messagesRepository,
   });
 
   final RiderModule module;
   final RiderRepository repository;
+  final MobileMessagingDataSource? messagesRepository;
 
   @override
   Widget build(BuildContext context) {
@@ -49,7 +52,7 @@ class RiderModulePage extends StatelessWidget {
     return switch (module) {
       RiderModule.earnings => RiderEarningsPage(repository: repository),
       RiderModule.history => RiderHistoryPage(repository: repository),
-      RiderModule.messages => const RiderMessagesPage(),
+      RiderModule.messages => RiderMessagesPage(repository: messagesRepository),
       RiderModule.account => RiderAccountPage(repository: repository),
       _ => const SizedBox.shrink(),
     };

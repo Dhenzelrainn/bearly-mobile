@@ -6,6 +6,7 @@ import '../../../core/routes/app_route_names.dart';
 import '../../../core/theme/bearly_theme.dart';
 import '../../../core/widgets/bearly_logo.dart';
 import '../../notifications/data/mobile_notifications_data_source.dart';
+import '../../messaging/data/mobile_messaging_data_source.dart';
 import '../data/rider_repository.dart';
 import '../models/rider_assignment.dart';
 import '../widgets/rider_shared_widgets.dart';
@@ -15,10 +16,12 @@ class RiderHomePage extends StatefulWidget {
     super.key,
     required this.repository,
     this.notificationsRepository,
+    this.messagesRepository,
   });
 
   final RiderRepository repository;
   final MobileNotificationsDataSource? notificationsRepository;
+  final MobileMessagingDataSource? messagesRepository;
 
   @override
   State<RiderHomePage> createState() => _RiderHomePageState();
@@ -28,12 +31,15 @@ class _RiderHomePageState extends State<RiderHomePage> {
   late Future<RiderDashboard> _dashboard;
   int _notificationUnreadCount = 0;
   Future<int>? _notificationCountRequest;
+  int _messageUnreadCount = 0;
+  Future<int>? _messageCountRequest;
 
   @override
   void initState() {
     super.initState();
     _dashboard = widget.repository.dashboard();
     unawaited(_refreshNotificationCount());
+    unawaited(_refreshMessageCount());
   }
 
   void _refresh() {
@@ -59,6 +65,13 @@ class _RiderHomePageState extends State<RiderHomePage> {
     await _refreshNotificationCount(force: true);
   }
 
+  Future<void> _openMessages() async {
+    await Navigator.pushNamed(context, AppRouteNames.riderMessages);
+    if (!mounted) return;
+    _refresh();
+    await _refreshMessageCount(force: true);
+  }
+
   Future<void> _refreshNotificationCount({bool force = false}) async {
     final notifications = widget.notificationsRepository;
     if (notifications == null) return;
@@ -80,6 +93,28 @@ class _RiderHomePageState extends State<RiderHomePage> {
       if (identical(_notificationCountRequest, request)) {
         _notificationCountRequest = null;
       }
+    }
+  }
+
+  Future<void> _refreshMessageCount({bool force = false}) async {
+    final messages = widget.messagesRepository;
+    if (messages == null) return;
+
+    final pending = _messageCountRequest;
+    if (pending != null) {
+      await pending.catchError((_) => _messageUnreadCount);
+      if (!force) return;
+    }
+
+    final request = messages.getUnreadCount();
+    _messageCountRequest = request;
+    try {
+      final count = await request;
+      if (mounted) setState(() => _messageUnreadCount = count);
+    } catch (_) {
+      // Keep the dashboard available while messaging is offline.
+    } finally {
+      if (identical(_messageCountRequest, request)) _messageCountRequest = null;
     }
   }
 
@@ -320,6 +355,28 @@ class _RiderHomePageState extends State<RiderHomePage> {
               subtitle: Text(
                 'Courier assignment, manifest, scanning, departure, arrival, and handoff actions are not available in Mobile yet. Use your Logistics provider\'s approved Courier Web workflow until Courier Mobile support is ready.',
               ),
+            ),
+          ),
+        ],
+        if (widget.messagesRepository != null) ...[
+          const SizedBox(height: 14),
+          Card(
+            color: Colors.white,
+            child: ListTile(
+              leading: const Icon(Icons.chat_bubble_outline_rounded),
+              title: const Text('Messages'),
+              subtitle: const Text('Contact Bearly Support or Logistics.'),
+              trailing: _messageUnreadCount > 0
+                  ? Badge(
+                      label: Text(
+                        _messageUnreadCount > 99
+                            ? '99+'
+                            : '$_messageUnreadCount',
+                      ),
+                      child: const Icon(Icons.mark_chat_unread_rounded),
+                    )
+                  : const Icon(Icons.chevron_right_rounded),
+              onTap: _openMessages,
             ),
           ),
         ],

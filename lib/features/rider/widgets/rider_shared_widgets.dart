@@ -213,7 +213,7 @@ class RiderBottomNavigationBar extends StatelessWidget {
 }
 
 /// Secondary destinations are deliberately limited to history and sign-out.
-/// Primary tabs and unfinished messaging/onboarding shortcuts do not belong here.
+/// Messages has a dedicated dashboard entry; onboarding is not a navigation shortcut.
 class RiderSecondaryMenuButton extends StatelessWidget {
   const RiderSecondaryMenuButton({
     super.key,

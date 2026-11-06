@@ -69,6 +69,13 @@ class ApiFormatException extends ApiException {
   final int statusCode;
 }
 
+class ApiBinaryResponse {
+  const ApiBinaryResponse({required this.bytes, required this.contentType});
+
+  final List<int> bytes;
+  final String? contentType;
+}
+
 /// Small JSON HTTP client shared by future Bearly mobile features.
 ///
 /// Pass an injected [http.Client] for tests. The client does not make requests
@@ -97,6 +104,53 @@ class ApiClient {
     Map<String, Object?>? queryParameters,
     Map<String, String>? headers,
   }) => _request('GET', path, queryParameters: queryParameters, headers: headers);
+
+  /// Retrieves a protected binary resource without decoding it as JSON.
+  Future<ApiBinaryResponse> getBytes(
+    String path, {
+    Map<String, Object?>? queryParameters,
+    Map<String, String>? headers,
+  }) async {
+    final uri = _buildUri(path, queryParameters);
+    final requestHeaders = _buildHeaders(headers, hasBody: false)
+      ..['Accept'] = '*/*';
+    final http.Response response;
+    try {
+      response = await _client
+          .get(uri, headers: requestHeaders)
+          .timeout(timeout);
+    } on TimeoutException {
+      throw ApiTimeoutException(timeout);
+    } on http.ClientException {
+      throw const ApiTransportException();
+    }
+
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      final responseText = utf8
+          .decode(response.bodyBytes, allowMalformed: true)
+          .trim();
+      Object? responseData;
+      var responseWasJson = false;
+      if (responseText.isNotEmpty) {
+        try {
+          responseData = jsonDecode(responseText);
+          responseWasJson = true;
+        } on FormatException {
+          // Keep non-JSON error bodies private and use the generic API error.
+        }
+      }
+      throw ApiHttpException(
+        statusCode: response.statusCode,
+        responseData: responseData,
+        responseWasJson: responseWasJson,
+      );
+    }
+
+    return ApiBinaryResponse(
+      bytes: response.bodyBytes,
+      contentType: response.headers['content-type'],
+    );
+  }
 
   Future<Object?> post(
     String path, {
