@@ -13,6 +13,7 @@ class RiderPageScaffold extends StatelessWidget {
     this.currentRoute,
     this.showBottomNavigationBar = true,
     this.supportsLocalFulfillment = true,
+    this.onRefresh,
   });
 
   final String title;
@@ -21,9 +22,27 @@ class RiderPageScaffold extends StatelessWidget {
   final String? currentRoute;
   final bool showBottomNavigationBar;
   final bool supportsLocalFulfillment;
+  final Future<void> Function()? onRefresh;
 
   @override
   Widget build(BuildContext context) {
+    final body = ListView(
+      physics: onRefresh == null ? null : const AlwaysScrollableScrollPhysics(),
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
+      children: [
+        Text(title, style: Theme.of(context).textTheme.headlineMedium),
+        const SizedBox(height: 5),
+        Text(
+          subtitle,
+          style: Theme.of(
+            context,
+          ).textTheme.bodyMedium?.copyWith(color: BearlyColors.muted),
+        ),
+        const SizedBox(height: 14),
+        child,
+      ],
+    );
+
     return Scaffold(
       appBar: AppBar(
         leading: IconButton(
@@ -39,21 +58,9 @@ class RiderPageScaffold extends StatelessWidget {
           ),
         ],
       ),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
-        children: [
-          Text(title, style: Theme.of(context).textTheme.headlineMedium),
-          const SizedBox(height: 5),
-          Text(
-            subtitle,
-            style: Theme.of(
-              context,
-            ).textTheme.bodyMedium?.copyWith(color: BearlyColors.muted),
-          ),
-          const SizedBox(height: 14),
-          child,
-        ],
-      ),
+      body: onRefresh == null
+          ? body
+          : RefreshIndicator(onRefresh: onRefresh!, child: body),
       bottomNavigationBar: showBottomNavigationBar
           ? RiderBottomNavigationBar(
               currentRoute: currentRoute,

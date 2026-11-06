@@ -2,6 +2,7 @@ import '../../auth/data/auth_service.dart';
 import '../../auth/models/account_role.dart';
 import '../models/rider_account.dart';
 import '../models/rider_assignment.dart';
+import '../models/rider_earnings.dart';
 import '../models/rider_history.dart';
 
 /// Rider mobile API calls for assignments, profile, and history.
@@ -169,6 +170,16 @@ class RiderRepository {
         : '?${Uri(queryParameters: parameters).query}';
     return RiderHistory.fromJson(
       await _authService.getWithSession('/api/mobile/rider/history$query'),
+    );
+  }
+
+  Future<RiderEarningsData> earnings({int page = 1}) async {
+    if (page < 1) throw RangeError.value(page, 'page', 'Must be positive.');
+    return RiderEarningsData.fromJson(
+      await _authService.getWithSession(
+        '/api/mobile/rider/earnings',
+        queryParameters: {'page': page},
+      ),
     );
   }
 

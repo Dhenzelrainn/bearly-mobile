@@ -368,7 +368,7 @@ void main() {
 
         final first = repository.workAccess(forceRefresh: true);
         final second = repository.workAccess(forceRefresh: true);
-      await Future<void>.delayed(Duration.zero);
+        await Future<void>.delayed(Duration.zero);
         expect(paths, [
           '/api/mobile/rider/dashboard',
           '/api/mobile/rider/account',
@@ -821,8 +821,125 @@ void main() {
         expect(requests.single.headers['authorization'], 'Bearer rider-token');
       },
     );
+
+    test(
+      'loads read-only earnings with summary and pagination metadata',
+      () async {
+        final requests = <http.Request>[];
+        final repository = RiderRepository(
+          authService: _authService((request) async {
+            requests.add(request);
+            return http.Response.bytes(
+              utf8.encode(jsonEncode(_earningsPayload(page: 2))),
+              200,
+            );
+          }),
+        );
+
+        final earnings = await repository.earnings(page: 2);
+
+        expect(earnings.workType, 'courier');
+        expect(earnings.currency, 'PHP');
+        expect(earnings.summary.combinedTotalMinor, 130000);
+        expect(earnings.courierDaily?.qualifyingDays, 2);
+        expect(earnings.entries.single.isCourierDaily, isTrue);
+        expect(earnings.entries.single.statusLabel, 'Posted');
+        expect(earnings.currentPage, 2);
+        expect(earnings.hasMore, isFalse);
+        expect(requests.single.url.path, '/api/mobile/rider/earnings');
+        expect(requests.single.url.queryParameters, {'page': '2'});
+        expect(requests.single.headers['authorization'], 'Bearer rider-token');
+      },
+    );
+
+    test(
+      'rejects invalid earnings pagination before making a request',
+      () async {
+        var requested = false;
+        final repository = RiderRepository(
+          authService: _authService((_) async {
+            requested = true;
+            return http.Response('{}', 200);
+          }),
+        );
+
+        await expectLater(repository.earnings(page: 0), throwsRangeError);
+        expect(requested, isFalse);
+      },
+    );
   });
 }
+
+Map<String, Object?> _earningsPayload({int page = 1}) => {
+  'data': {
+    'work_type': 'courier',
+    'currency': 'PHP',
+    'summary': {
+      'today': {'amount_minor': 65000, 'amount': '₱650.00', 'entries': 1},
+      'week': {'amount_minor': 130000, 'amount': '₱1,300.00', 'entries': 2},
+      'month': {'amount_minor': 130000, 'amount': '₱1,300.00', 'entries': 2},
+      'active_total_minor': 130000,
+      'active_total': '₱1,300.00',
+      'active_entries': 2,
+      'pickup_total_minor': 0,
+      'pickup_total': '₱0.00',
+      'delivery_total_minor': 0,
+      'delivery_total': '₱0.00',
+      'delivery_pending_minor': 0,
+      'delivery_pending': '₱0.00',
+      'courier_daily_minor': 130000,
+      'courier_daily': '₱1,300.00',
+      'combined_total_minor': 130000,
+      'combined_total': '₱1,300.00',
+      'payout_eligible_minor': 65000,
+      'payout_eligible': '₱650.00',
+      'payout_paid_minor': 65000,
+      'payout_paid': '₱650.00',
+      'payout_status': 'Ready for payout',
+    },
+    'courier_daily': {
+      'rate_minor': 65000,
+      'rate': '₱650.00',
+      'today_work_date': '2026-11-06',
+      'qualifying_days': 2,
+      'total_minor': 130000,
+      'total': '₱1,300.00',
+      'eligible_minor': 65000,
+      'eligible': '₱650.00',
+      'paid_minor': 65000,
+      'paid': '₱650.00',
+    },
+    'items': [
+      {
+        'id': 14,
+        'earned_at': 'Nov 6, 2026 · 6:00 PM',
+        'earned_at_iso': '2026-11-06T18:00:00+08:00',
+        'work_date': 'Nov 6, 2026',
+        'work_date_label': 'Nov 6, 2026',
+        'job': 'LH-14',
+        'source': 'Courier line-haul run LH-14',
+        'type': 'courier_daily',
+        'type_label': 'Courier Daily',
+        'amount_minor': 65000,
+        'amount': '₱650.00',
+        'status': 'posted',
+        'status_label': 'Posted',
+        'posted_at': 'Nov 6, 2026 · 6:01 PM',
+        'paid_at': '—',
+        'description': 'Courier daily pay',
+        'linehaul_run_no': 'LH-14',
+      },
+    ],
+    'meta': {
+      'current_page': page,
+      'last_page': 2,
+      'per_page': 20,
+      'total': 21,
+      'next_page': null,
+    },
+  },
+  'message': 'Rider earnings loaded.',
+};
 
 Map<String, Object?> _pickupPayload(String statusRaw) => {
   'kind': 'pickup',

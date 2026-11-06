@@ -176,7 +176,8 @@ void main() {
 
       await tester.tap(find.text('Earnings').last);
       await tester.pumpAndSettle();
-      expect(find.text('Earnings unavailable in this version'), findsOneWidget);
+      expect(find.text('Recent earnings'), findsOneWidget);
+      expect(find.text('Courier daily earnings'), findsOneWidget);
       _expectCourierTabs(tester, selectedIndex: 1);
       expect(find.text('Pickup assignments'), findsNothing);
       expect(find.text('Delivery assignments'), findsNothing);
@@ -563,6 +564,10 @@ Widget _navigationApp({
                   }),
                   200,
                 ),
+                '/api/mobile/rider/earnings' => http.Response.bytes(
+                  utf8.encode(jsonEncode(_emptyEarningsPayload(workType))),
+                  200,
+                ),
                 _ => http.Response('Not found', 404),
               };
             }),
@@ -633,6 +638,58 @@ Widget _navigationApp({
           },
   );
 }
+
+Map<String, Object?> _emptyEarningsPayload(String workType) => {
+  'data': {
+    'work_type': workType,
+    'currency': 'PHP',
+    'summary': {
+      'today': {'amount_minor': 0, 'amount': '₱0.00', 'entries': 0},
+      'week': {'amount_minor': 0, 'amount': '₱0.00', 'entries': 0},
+      'month': {'amount_minor': 0, 'amount': '₱0.00', 'entries': 0},
+      'active_total_minor': 0,
+      'active_total': '₱0.00',
+      'active_entries': 0,
+      'pickup_total_minor': 0,
+      'pickup_total': '₱0.00',
+      'delivery_total_minor': 0,
+      'delivery_total': '₱0.00',
+      'delivery_pending_minor': 0,
+      'delivery_pending': '₱0.00',
+      'courier_daily_minor': 0,
+      'courier_daily': '₱0.00',
+      'combined_total_minor': 0,
+      'combined_total': '₱0.00',
+      'payout_eligible_minor': 0,
+      'payout_eligible': '₱0.00',
+      'payout_paid_minor': 0,
+      'payout_paid': '₱0.00',
+      'payout_status': 'No payout due',
+    },
+    'courier_daily': workType == 'courier'
+        ? {
+            'rate_minor': 65000,
+            'rate': '₱650.00',
+            'today_work_date': '2026-11-06',
+            'qualifying_days': 0,
+            'total_minor': 0,
+            'total': '₱0.00',
+            'eligible_minor': 0,
+            'eligible': '₱0.00',
+            'paid_minor': 0,
+            'paid': '₱0.00',
+          }
+        : null,
+    'items': [],
+    'meta': {
+      'current_page': 1,
+      'last_page': 1,
+      'per_page': 20,
+      'total': 0,
+      'next_page': null,
+    },
+  },
+};
 
 class _RouteStackObserver extends NavigatorObserver {
   final List<Route<dynamic>> stack = [];
