@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../../core/network/api_client.dart';
@@ -5,6 +7,7 @@ import '../../../core/routes/app_route_names.dart';
 import '../../../core/theme/bearly_theme.dart';
 import '../../../core/widgets/bearly_logo.dart';
 import '../../auth/data/auth_service.dart';
+import '../../notifications/data/mobile_notifications_data_source.dart';
 import '../data/logistics_repository.dart';
 import '../models/logistics_dashboard.dart';
 import 'logistics_dispatch_page.dart';
@@ -17,10 +20,12 @@ class LogisticsHomePage extends StatefulWidget {
     super.key,
     required this.authService,
     required this.repository,
+    this.notificationsRepository,
   });
 
   final AuthService authService;
   final LogisticsRepository repository;
+  final MobileNotificationsDataSource? notificationsRepository;
 
   @override
   State<LogisticsHomePage> createState() => _LogisticsHomePageState();
@@ -28,11 +33,14 @@ class LogisticsHomePage extends StatefulWidget {
 
 class _LogisticsHomePageState extends State<LogisticsHomePage> {
   late Future<LogisticsDashboard> _dashboard;
+  int _notificationUnreadCount = 0;
+  Future<int>? _notificationCountRequest;
 
   @override
   void initState() {
     super.initState();
     _dashboard = widget.repository.dashboard();
+    unawaited(_refreshNotificationCount());
   }
 
   Future<void> _refresh() async {
@@ -44,6 +52,41 @@ class _LogisticsHomePageState extends State<LogisticsHomePage> {
       await next;
     } catch (_) {
       // FutureBuilder presents the request failure and keeps Retry available.
+    }
+  }
+
+  Future<void> _openNotifications() async {
+    await Navigator.pushNamed(
+      context,
+      AppRouteNames.logisticsNotifications,
+      arguments: _notificationUnreadCount,
+    );
+    if (!mounted) return;
+    await _refresh();
+    await _refreshNotificationCount(force: true);
+  }
+
+  Future<void> _refreshNotificationCount({bool force = false}) async {
+    final notifications = widget.notificationsRepository;
+    if (notifications == null) return;
+
+    final pending = _notificationCountRequest;
+    if (pending != null) {
+      await pending.catchError((_) => _notificationUnreadCount);
+      if (!force) return;
+    }
+
+    final request = notifications.getUnreadCount();
+    _notificationCountRequest = request;
+    try {
+      final count = await request;
+      if (mounted) setState(() => _notificationUnreadCount = count);
+    } catch (_) {
+      // Keep Logistics operations available if notifications are offline.
+    } finally {
+      if (identical(_notificationCountRequest, request)) {
+        _notificationCountRequest = null;
+      }
     }
   }
 
@@ -82,18 +125,17 @@ class _LogisticsHomePageState extends State<LogisticsHomePage> {
   );
 
   Future<void> _openOperationalPage(Widget page) async {
-    await Navigator.of(context).push<void>(
-      MaterialPageRoute<void>(builder: (_) => page),
-    );
+    await Navigator.of(
+      context,
+    ).push<void>(MaterialPageRoute<void>(builder: (_) => page));
     if (!mounted) return;
     await _refresh();
   }
 
   void _openDeliveryMonitoring() => Navigator.of(context).push<void>(
     MaterialPageRoute<void>(
-      builder: (_) => LogisticsDeliveryMonitoringPage(
-        repository: widget.repository,
-      ),
+      builder: (_) =>
+          LogisticsDeliveryMonitoringPage(repository: widget.repository),
     ),
   );
 
@@ -102,6 +144,20 @@ class _LogisticsHomePageState extends State<LogisticsHomePage> {
     appBar: AppBar(
       title: const BearlyLogo(height: 34, width: 102),
       actions: [
+        if (widget.notificationsRepository != null)
+          IconButton(
+            onPressed: _openNotifications,
+            tooltip: 'Notifications',
+            icon: Badge(
+              isLabelVisible: _notificationUnreadCount > 0,
+              label: Text(
+                _notificationUnreadCount > 99
+                    ? '99+'
+                    : '$_notificationUnreadCount',
+              ),
+              child: const Icon(Icons.notifications_outlined),
+            ),
+          ),
         IconButton(
           onPressed: _refresh,
           tooltip: 'Refresh dashboard',

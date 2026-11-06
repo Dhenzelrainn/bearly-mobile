@@ -11,6 +11,7 @@ import '../../features/auth/presentation/pending_page.dart';
 import '../../features/auth/presentation/register_page.dart';
 import '../../features/buyer/data/buyer_catalog_repository.dart';
 import '../../features/buyer/data/buyer_chat_repository.dart';
+import '../../features/buyer/data/buyer_notifications_repository.dart';
 import '../../features/buyer/data/buyer_cart_controller.dart';
 import '../../features/buyer/data/buyer_address_controller.dart';
 import '../../features/buyer/data/buyer_checkout_repository.dart';
@@ -26,14 +27,18 @@ import '../../features/buyer/presentation/buyer_order_details_page.dart';
 import '../../features/buyer/presentation/buyer_product_detail_page.dart';
 import '../../features/buyer/presentation/buyer_messages_page.dart';
 import '../../features/buyer/presentation/buyer_chat_thread_page.dart';
+import '../../features/buyer/presentation/buyer_notifications_page.dart';
+import '../../features/notifications/presentation/mobile_notifications_page.dart';
 import '../../features/rider/presentation/rider_home_page.dart';
 import '../../features/rider/presentation/rider_assignment_pages.dart';
 import '../../features/rider/data/rider_repository.dart';
+import '../../features/rider/data/rider_notifications_repository.dart';
 import '../../features/rider/models/rider_assignment.dart';
 import '../../features/rider/presentation/rider_module_page.dart';
 import '../../features/rider/presentation/rider_pending_page.dart';
 import '../../features/rider/presentation/rider_register_page.dart';
 import '../../features/logistics/data/logistics_repository.dart';
+import '../../features/logistics/data/logistics_notifications_repository.dart';
 import '../../features/logistics/presentation/logistics_home_page.dart';
 
 class AppRoutes {
@@ -49,7 +54,13 @@ class AppRoutes {
     BuyerCheckoutRepository? checkoutRepository,
   }) {
     final riderRepository = RiderRepository(authService: authService);
+    final riderNotificationsRepository = RiderNotificationsRepository(
+      authService: authService,
+    );
     final logisticsRepository = LogisticsRepository(authService: authService);
+    final logisticsNotificationsRepository = LogisticsNotificationsRepository(
+      authService: authService,
+    );
     BuyerAddressController? fallbackAddressController;
     BuyerLocationRepository? fallbackLocationRepository;
     BuyerCheckoutRepository? fallbackCheckoutRepository;
@@ -93,7 +104,10 @@ class AppRoutes {
             addressController: addressController,
             locationRepository: locationRepository,
           ),
-          AccountRole.rider => RiderHomePage(repository: riderRepository),
+          AccountRole.rider => RiderHomePage(
+            repository: riderRepository,
+            notificationsRepository: riderNotificationsRepository,
+          ),
           AccountRole.logistics => LogisticsHomePage(
             authService: authService,
             repository: logisticsRepository,
@@ -252,6 +266,17 @@ class AppRoutes {
           ),
           settings: settings,
         );
+      case AppRouteNames.buyerNotifications:
+        final initialUnreadCount = settings.arguments is int
+            ? settings.arguments! as int
+            : 0;
+        return MaterialPageRoute(
+          builder: (_) => BuyerNotificationsPage(
+            repository: BuyerNotificationsRepository(authService: authService),
+            initialUnreadCount: initialUnreadCount,
+          ),
+          settings: settings,
+        );
       case AppRouteNames.buyerChatThread:
         final conversationId = settings.arguments;
         if (conversationId is int && conversationId > 0) {
@@ -272,12 +297,29 @@ class AppRoutes {
         );
       case AppRouteNames.rider:
         return MaterialPageRoute(
-          builder: (_) => RiderHomePage(repository: riderRepository),
+          builder: (_) => RiderHomePage(
+            repository: riderRepository,
+            notificationsRepository: riderNotificationsRepository,
+          ),
           settings: settings,
         );
       case AppRouteNames.riderDashboard:
         return MaterialPageRoute(
-          builder: (_) => RiderHomePage(repository: riderRepository),
+          builder: (_) => RiderHomePage(
+            repository: riderRepository,
+            notificationsRepository: riderNotificationsRepository,
+          ),
+          settings: settings,
+        );
+      case AppRouteNames.riderNotifications:
+        final initialUnreadCount = settings.arguments is int
+            ? settings.arguments! as int
+            : 0;
+        return MaterialPageRoute(
+          builder: (_) => MobileNotificationsPage(
+            repository: riderNotificationsRepository,
+            initialUnreadCount: initialUnreadCount,
+          ),
           settings: settings,
         );
       case AppRouteNames.logisticsDashboard:
@@ -285,6 +327,18 @@ class AppRoutes {
           builder: (_) => LogisticsHomePage(
             authService: authService,
             repository: logisticsRepository,
+            notificationsRepository: logisticsNotificationsRepository,
+          ),
+          settings: settings,
+        );
+      case AppRouteNames.logisticsNotifications:
+        final initialUnreadCount = settings.arguments is int
+            ? settings.arguments! as int
+            : 0;
+        return MaterialPageRoute(
+          builder: (_) => MobileNotificationsPage(
+            repository: logisticsNotificationsRepository,
+            initialUnreadCount: initialUnreadCount,
           ),
           settings: settings,
         );
@@ -430,6 +484,7 @@ class AppRoutes {
       AppRouteNames.buyerProduct,
       AppRouteNames.buyerMessages,
       AppRouteNames.buyerChatThread,
+      AppRouteNames.buyerNotifications,
     }.contains(name)) {
       return AccountRole.buyer;
     }
@@ -446,12 +501,16 @@ class AppRoutes {
       AppRouteNames.riderEarnings,
       AppRouteNames.riderHistory,
       AppRouteNames.riderMessages,
+      AppRouteNames.riderNotifications,
       AppRouteNames.riderAccount,
     }.contains(name)) {
       return AccountRole.rider;
     }
 
-    if ({AppRouteNames.logisticsDashboard}.contains(name)) {
+    if ({
+      AppRouteNames.logisticsDashboard,
+      AppRouteNames.logisticsNotifications,
+    }.contains(name)) {
       return AccountRole.logistics;
     }
 

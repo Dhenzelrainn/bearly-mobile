@@ -26,12 +26,15 @@ class AppRouteNames {
   static const riderEarnings = '/rider/earnings';
   static const riderHistory = '/rider/history';
   static const riderMessages = '/rider/messages';
+  static const riderNotifications = '/rider/notifications';
   static const riderAccount = '/rider/account';
   static const logisticsDashboard = '/logistics/dashboard';
+  static const logisticsNotifications = '/logistics/notifications';
   static const buyerCart = '/buyer/cart';
   static const buyerCheckoutReview = '/buyer/checkout/review';
   static const buyerOrderDetails = '/buyer/orders/details';
   static const buyerProduct = '/buyer/product';
   static const buyerMessages = '/buyer/messages';
   static const buyerChatThread = '/buyer/messages/thread';
+  static const buyerNotifications = '/buyer/notifications';
 }

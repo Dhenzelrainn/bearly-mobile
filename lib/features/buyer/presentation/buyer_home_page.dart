@@ -11,8 +11,10 @@ import '../data/buyer_address_controller.dart';
 import '../data/buyer_catalog_repository.dart';
 import '../data/buyer_checkout_repository.dart';
 import '../data/buyer_location_repository.dart';
+import '../data/buyer_notifications_repository.dart';
 import '../data/buyer_wishlist_controller.dart';
 import '../models/buyer_catalog_models.dart';
+import '../../notifications/data/mobile_notifications_data_source.dart';
 import 'buyer_account_page.dart';
 import 'buyer_addresses_page.dart';
 import 'buyer_orders_page.dart';
@@ -31,6 +33,7 @@ class BuyerHomePage extends StatefulWidget {
     this.checkoutRepository,
     this.addressController,
     this.locationRepository,
+    this.notificationsRepository,
   });
 
   final AuthService authService;
@@ -40,6 +43,7 @@ class BuyerHomePage extends StatefulWidget {
   final BuyerCheckoutRepository? checkoutRepository;
   final BuyerAddressController? addressController;
   final BuyerLocationRepository? locationRepository;
+  final MobileNotificationsDataSource? notificationsRepository;
 
   @override
   State<BuyerHomePage> createState() => _BuyerHomePageState();
@@ -59,6 +63,11 @@ class _BuyerHomePageState extends State<BuyerHomePage> {
   late final BuyerLocationRepository _locationRepository =
       widget.locationRepository ??
       BuyerLocationRepository(apiClient: ApiClient());
+  late final MobileNotificationsDataSource _notificationsRepository =
+      widget.notificationsRepository ??
+      BuyerNotificationsRepository(authService: widget.authService);
+  int _unreadNotificationCount = 0;
+  Future<void>? _unreadCountRequest;
 
   @override
   void initState() {
@@ -67,6 +76,7 @@ class _BuyerHomePageState extends State<BuyerHomePage> {
     widget.wishlistController.synchronizeSession();
     _addressController.synchronizeSession();
     unawaited(widget.wishlistController.refresh());
+    unawaited(_refreshUnreadCount());
   }
 
   void _logout() {
@@ -109,6 +119,40 @@ class _BuyerHomePageState extends State<BuyerHomePage> {
         ),
       ),
     );
+  }
+
+  Future<void> _openNotifications() async {
+    final result = await Navigator.pushNamed(
+      context,
+      AppRouteNames.buyerNotifications,
+      arguments: _unreadNotificationCount,
+    );
+    if (!mounted) return;
+    if (result is int) {
+      setState(() => _unreadNotificationCount = result);
+    } else {
+      unawaited(_refreshUnreadCount());
+    }
+  }
+
+  Future<void> _refreshUnreadCount() {
+    final pending = _unreadCountRequest;
+    if (pending != null) return pending;
+
+    final request = _loadUnreadCount();
+    _unreadCountRequest = request.whenComplete(() {
+      _unreadCountRequest = null;
+    });
+    return _unreadCountRequest!;
+  }
+
+  Future<void> _loadUnreadCount() async {
+    try {
+      final count = await _notificationsRepository.getUnreadCount();
+      if (mounted) setState(() => _unreadNotificationCount = count);
+    } catch (_) {
+      // The bell remains available while the notification service is offline.
+    }
   }
 
   @override
@@ -173,9 +217,17 @@ class _BuyerHomePageState extends State<BuyerHomePage> {
             ),
           ),
           IconButton(
-            onPressed: () => _showMessage('You are all caught up.'),
+            onPressed: _openNotifications,
             tooltip: 'Notifications',
-            icon: const Icon(Icons.notifications_none_rounded),
+            icon: Badge(
+              isLabelVisible: _unreadNotificationCount > 0,
+              label: Text(
+                _unreadNotificationCount > 99
+                    ? '99+'
+                    : '$_unreadNotificationCount',
+              ),
+              child: const Icon(Icons.notifications_none_rounded),
+            ),
           ),
           IconButton(
             onPressed: _logout,

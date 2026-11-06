@@ -1,16 +1,24 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../../core/routes/app_route_names.dart';
 import '../../../core/theme/bearly_theme.dart';
 import '../../../core/widgets/bearly_logo.dart';
+import '../../notifications/data/mobile_notifications_data_source.dart';
 import '../data/rider_repository.dart';
 import '../models/rider_assignment.dart';
 import '../widgets/rider_shared_widgets.dart';
 
 class RiderHomePage extends StatefulWidget {
-  const RiderHomePage({super.key, required this.repository});
+  const RiderHomePage({
+    super.key,
+    required this.repository,
+    this.notificationsRepository,
+  });
 
   final RiderRepository repository;
+  final MobileNotificationsDataSource? notificationsRepository;
 
   @override
   State<RiderHomePage> createState() => _RiderHomePageState();
@@ -18,11 +26,14 @@ class RiderHomePage extends StatefulWidget {
 
 class _RiderHomePageState extends State<RiderHomePage> {
   late Future<RiderDashboard> _dashboard;
+  int _notificationUnreadCount = 0;
+  Future<int>? _notificationCountRequest;
 
   @override
   void initState() {
     super.initState();
     _dashboard = widget.repository.dashboard();
+    unawaited(_refreshNotificationCount());
   }
 
   void _refresh() {
@@ -37,6 +48,41 @@ class _RiderHomePageState extends State<RiderHomePage> {
     if (mounted) _refresh();
   }
 
+  Future<void> _openNotifications() async {
+    await Navigator.pushNamed(
+      context,
+      AppRouteNames.riderNotifications,
+      arguments: _notificationUnreadCount,
+    );
+    if (!mounted) return;
+    _refresh();
+    await _refreshNotificationCount(force: true);
+  }
+
+  Future<void> _refreshNotificationCount({bool force = false}) async {
+    final notifications = widget.notificationsRepository;
+    if (notifications == null) return;
+
+    final pending = _notificationCountRequest;
+    if (pending != null) {
+      await pending.catchError((_) => _notificationUnreadCount);
+      if (!force) return;
+    }
+
+    final request = notifications.getUnreadCount();
+    _notificationCountRequest = request;
+    try {
+      final count = await request;
+      if (mounted) setState(() => _notificationUnreadCount = count);
+    } catch (_) {
+      // Keep the dashboard usable if notifications are temporarily offline.
+    } finally {
+      if (identical(_notificationCountRequest, request)) {
+        _notificationCountRequest = null;
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) => FutureBuilder<RiderDashboard>(
     future: _dashboard,
@@ -49,6 +95,20 @@ class _RiderHomePageState extends State<RiderHomePage> {
         appBar: AppBar(
           title: const BearlyLogo(height: 34, width: 102),
           actions: [
+            if (widget.notificationsRepository != null)
+              IconButton(
+                onPressed: _openNotifications,
+                tooltip: 'Notifications',
+                icon: Badge(
+                  isLabelVisible: _notificationUnreadCount > 0,
+                  label: Text(
+                    _notificationUnreadCount > 99
+                        ? '99+'
+                        : '$_notificationUnreadCount',
+                  ),
+                  child: const Icon(Icons.notifications_outlined),
+                ),
+              ),
             IconButton(
               onPressed: _refresh,
               tooltip: 'Refresh dashboard',

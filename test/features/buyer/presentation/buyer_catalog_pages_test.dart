@@ -37,6 +37,57 @@ void main() {
       expect(find.text('Home and Furniture'), findsOneWidget);
     });
 
+    testWidgets(
+      'notification bell opens the shared Buyer Notification Center',
+      (tester) async {
+        final auth = _authService((request) async {
+          if (request.url.path ==
+              '/api/mobile/buyer/notifications/unread-count') {
+            return _jsonResponse({
+              'data': {'unread_count': 1},
+            });
+          }
+          if (request.url.path == '/api/mobile/buyer/notifications') {
+            return _jsonResponse({
+              'data': {
+                'items': [
+                  {
+                    'id': 'notification-1',
+                    'title': 'Order update',
+                    'body': 'Your order is being prepared.',
+                    'read': false,
+                    'created_at': '2026-11-06T10:30:00+08:00',
+                  },
+                ],
+                'unread_count': 1,
+                'next_page': null,
+                'current_page': 1,
+                'last_page': 1,
+                'total': 1,
+              },
+            });
+          }
+          if (request.url.path == '/api/mobile/buyer/wishlist') {
+            return _wishlistPage([]);
+          }
+          if (request.url.path.endsWith('/categories')) {
+            return _jsonResponse({'data': []});
+          }
+          return _jsonResponse(_page([]));
+        });
+
+        await _pumpApp(tester, auth);
+        await tester.pumpAndSettle();
+        expect(find.text('1'), findsOneWidget);
+
+        await tester.tap(find.byTooltip('Notifications'));
+        await tester.pumpAndSettle();
+        expect(find.text('Notifications'), findsOneWidget);
+        expect(find.text('Order update'), findsOneWidget);
+        expect(find.text('Your order is being prepared.'), findsOneWidget);
+      },
+    );
+
     testWidgets('search, category, and sort use supported Laravel parameters', (
       tester,
     ) async {
@@ -311,6 +362,12 @@ void main() {
     ) async {
       var productRequests = 0;
       final auth = _authService((request) async {
+        if (request.url.path ==
+            '/api/mobile/buyer/notifications/unread-count') {
+          return _jsonResponse({
+            'data': {'unread_count': 0},
+          });
+        }
         if (request.url.path == '/api/mobile/buyer/wishlist') {
           return _wishlistPage([]);
         }
