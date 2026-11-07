@@ -10,6 +10,7 @@ import '../../features/auth/presentation/login_page.dart';
 import '../../features/auth/presentation/pending_page.dart';
 import '../../features/auth/presentation/register_page.dart';
 import '../../features/buyer/data/buyer_catalog_repository.dart';
+import '../../features/buyer/data/buyer_deals_repository.dart';
 import '../../features/buyer/data/buyer_chat_repository.dart';
 import '../../features/buyer/data/buyer_notifications_repository.dart';
 import '../../features/buyer/data/buyer_cart_controller.dart';
@@ -25,6 +26,7 @@ import '../../features/buyer/presentation/buyer_cart_page.dart';
 import '../../features/buyer/presentation/buyer_checkout_review_page.dart';
 import '../../features/buyer/presentation/buyer_order_details_page.dart';
 import '../../features/buyer/presentation/buyer_product_detail_page.dart';
+import '../../features/buyer/presentation/buyer_deals_page.dart';
 import '../../features/buyer/presentation/buyer_messages_page.dart';
 import '../../features/buyer/presentation/buyer_chat_thread_page.dart';
 import '../../features/buyer/presentation/buyer_notifications_page.dart';
@@ -263,6 +265,16 @@ class AppRoutes {
             checkoutRepository: resolveCheckoutRepository(),
             addressController: addressController,
             locationRepository: locationRepository,
+          ),
+          settings: settings,
+        );
+      case AppRouteNames.buyerDeals:
+        return MaterialPageRoute(
+          builder: (context) => BuyerDealsPage(
+            repository: BuyerDealsRepository(authService: authService),
+            onOpenProduct: (id) => Navigator.of(
+              context,
+            ).pushNamed(AppRouteNames.buyerProduct, arguments: id),
           ),
           settings: settings,
         );
@@ -517,6 +529,7 @@ class AppRoutes {
       AppRouteNames.buyerMessages,
       AppRouteNames.buyerChatThread,
       AppRouteNames.buyerNotifications,
+      AppRouteNames.buyerDeals,
     }.contains(name)) {
       return AccountRole.buyer;
     }

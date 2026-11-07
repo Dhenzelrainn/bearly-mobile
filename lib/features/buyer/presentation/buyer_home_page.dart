@@ -121,6 +121,8 @@ class _BuyerHomePageState extends State<BuyerHomePage> {
     );
   }
 
+  void _openDeals() => Navigator.pushNamed(context, AppRouteNames.buyerDeals);
+
   Future<void> _openNotifications() async {
     final result = await Navigator.pushNamed(
       context,
@@ -199,6 +201,11 @@ class _BuyerHomePageState extends State<BuyerHomePage> {
             onPressed: () =>
                 Navigator.pushNamed(context, AppRouteNames.buyerMessages),
             icon: const Icon(Icons.forum_outlined),
+          ),
+          IconButton(
+            tooltip: 'Deals & Perks',
+            onPressed: _openDeals,
+            icon: const Icon(Icons.local_offer_outlined),
           ),
           IconButton(
             tooltip: 'Cart',

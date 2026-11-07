@@ -37,6 +37,58 @@ void main() {
       expect(find.text('Home and Furniture'), findsOneWidget);
     });
 
+    testWidgets('Buyer dashboard Deals shortcut opens the Laravel deal page', (
+      tester,
+    ) async {
+      final requests = <String>[];
+      final auth = _authService((request) async {
+        requests.add(request.url.path);
+        if (request.url.path == '/api/mobile/buyer/deals') {
+          return _jsonResponse({
+            'data': {
+              'campaigns': [],
+              'store_deals': [],
+              'platform_offers': [
+                {
+                  'id': 12,
+                  'name': 'Live Bearly offer',
+                  'kind': 'automatic_discount',
+                  'discount_label': '10% off',
+                  'description': 'On eligible products.',
+                  'terms': null,
+                  'code': null,
+                  'minimum_spend_minor': 0,
+                  'starts_at': '2026-11-01T00:00:00+08:00',
+                  'ends_at': '2026-11-30T23:59:59+08:00',
+                },
+              ],
+            },
+          });
+        }
+        if (request.url.path.endsWith('/notifications/unread-count')) {
+          return _jsonResponse({
+            'data': {'unread_count': 0},
+          });
+        }
+        if (request.url.path.endsWith('/wishlist')) {
+          return _wishlistPage([]);
+        }
+        if (request.url.path.endsWith('/categories')) {
+          return _jsonResponse({'data': []});
+        }
+        return _jsonResponse(_page([]));
+      });
+
+      await _pumpApp(tester, auth);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('Deals & Perks'));
+      await tester.pumpAndSettle();
+
+      expect(requests, contains('/api/mobile/buyer/deals'));
+      expect(find.text('Live Bearly offer'), findsOneWidget);
+      expect(find.text('10% off'), findsOneWidget);
+    });
+
     testWidgets(
       'notification bell opens the shared Buyer Notification Center',
       (tester) async {
