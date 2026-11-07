@@ -2,21 +2,56 @@ import 'package:flutter/material.dart';
 
 import '../../../core/routes/app_route_names.dart';
 import '../../../core/theme/bearly_theme.dart';
+import '../data/registration_repository.dart';
 import '../widgets/auth_scaffold.dart';
 
 class PendingPage extends StatelessWidget {
-  const PendingPage({super.key, this.roleLabel});
+  const PendingPage({super.key, this.roleLabel, this.outcome});
 
   final String? roleLabel;
+  final RegistrationOutcome? outcome;
 
-  bool get _isRider => (roleLabel ?? '').toLowerCase() == 'rider';
+  String get _status => outcome?.status ?? 'pending';
+  bool get _isActive => _status == 'active';
+  bool get _isRejected => _status == 'rejected';
+  bool get _isRider =>
+      outcome?.role == 'rider' || (roleLabel ?? '').toLowerCase() == 'rider';
+  bool get _isCourier => _isRider && outcome?.workType == 'courier';
+  String get _accountLabel => outcome?.role == 'buyer'
+      ? 'Buyer'
+      : outcome?.role == 'logistics'
+      ? 'Logistics'
+      : _isCourier
+      ? 'Courier (Rider account)'
+      : roleLabel ?? 'Rider';
+  String get _authority => _isActive && outcome?.role == 'buyer'
+      ? 'Email verification'
+      : outcome?.reviewAuthority ??
+            (_isRider
+                ? 'Selected Logistics / Sorting Center'
+                : 'Bearly Administrator');
+
+  String get _description {
+    if (_isActive) {
+      return outcome?.role == 'buyer'
+          ? 'Your email is verified and your Buyer account is active. Sign in to start using Bearly Mobile.'
+          : 'Your application was approved. Sign in to start using Bearly Mobile.';
+    }
+    if (_isRejected) {
+      return outcome?.message.isNotEmpty == true
+          ? outcome!.message
+          : 'Bearly recorded that this application was not approved.';
+    }
+    if (_isRider) {
+      return _isCourier
+          ? 'Your Courier application remains a Rider account. $_authority reviews its documents before access is approved.'
+          : 'Your Rider application remains locked until $_authority reviews your credentials.';
+    }
+    return 'Your Logistics application is pending Bearly Administrator review. Operational access is available only after approval.';
+  }
 
   @override
   Widget build(BuildContext context) {
-    final authority = _isRider
-        ? 'Selected Logistics / Sorting Center'
-        : 'Bearly Administrator';
-
     return AuthScaffold(
       child: ListView(
         padding: const EdgeInsets.fromLTRB(16, 26, 16, 24),
@@ -35,8 +70,12 @@ class PendingPage extends StatelessWidget {
                         color: BearlyColors.cream200,
                         shape: BoxShape.circle,
                       ),
-                      child: const Icon(
-                        Icons.schedule_send_outlined,
+                      child: Icon(
+                        _isRejected
+                            ? Icons.cancel_outlined
+                            : _isActive
+                            ? Icons.check_circle_outline_rounded
+                            : Icons.schedule_send_outlined,
                         color: BearlyColors.brown900,
                         size: 34,
                       ),
@@ -44,15 +83,19 @@ class PendingPage extends StatelessWidget {
                   ),
                   const SizedBox(height: 16),
                   Text(
-                    'Application received',
+                    _isActive
+                        ? outcome?.role == 'buyer'
+                              ? 'Buyer account activated'
+                              : 'Application approved'
+                        : _isRejected
+                        ? 'Application not approved'
+                        : 'Application received',
                     textAlign: TextAlign.center,
                     style: Theme.of(context).textTheme.headlineLarge,
                   ),
                   const SizedBox(height: 10),
                   Text(
-                    _isRider
-                        ? 'Your Rider account remains locked until your selected Logistics / Sorting Center reviews your credentials.'
-                        : 'Your Buyer application remains pending until a Bearly administrator reviews your details and ID.',
+                    _description,
                     textAlign: TextAlign.center,
                     style: Theme.of(
                       context,
@@ -69,12 +112,14 @@ class PendingPage extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
+                        _DetailRow(label: 'Account type', value: _accountLabel),
+                        _DetailRow(label: 'Status', value: _statusLabel),
                         _DetailRow(
-                          label: 'Account type',
-                          value: roleLabel ?? 'Bearly',
+                          label: _isActive
+                              ? 'Verification'
+                              : 'Review authority',
+                          value: _authority,
                         ),
-                        _DetailRow(label: 'Status', value: 'Pending review'),
-                        _DetailRow(label: 'Review authority', value: authority),
                       ],
                     ),
                   ),
@@ -90,31 +135,73 @@ class PendingPage extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'What happens next?',
+                          _isActive
+                              ? 'You are ready'
+                              : _isRejected
+                              ? 'Application decision'
+                              : 'What happens next?',
                           style: Theme.of(context).textTheme.titleLarge,
                         ),
                         const SizedBox(height: 14),
-                        const _TimelineItem(
-                          number: '✓',
-                          title: 'Application prepared',
-                          body:
-                              'Your registration details and required documents are ready for review.',
-                          complete: true,
-                        ),
-                        _TimelineItem(
-                          number: '2',
-                          title: _isRider ? 'Logistics review' : 'Admin review',
-                          body: _isRider
-                              ? 'Your selected Logistics / Sorting Center checks your identity, vehicle, OR/CR, and license or valid ID.'
-                              : 'A Bearly administrator checks your application details and valid government ID.',
-                        ),
-                        const _TimelineItem(
-                          number: '3',
-                          title: 'Decision',
-                          body:
-                              'You can sign in after your account is approved and activated.',
-                          last: true,
-                        ),
+                        if (_isActive) ...[
+                          _TimelineItem(
+                            number: '✓',
+                            title: outcome?.role == 'buyer'
+                                ? 'Email verified'
+                                : 'Application approved',
+                            body: outcome?.role == 'buyer'
+                                ? 'Laravel activated your Buyer account after successful email verification.'
+                                : 'Your application was approved by $_authority.',
+                            complete: true,
+                          ),
+                          const _TimelineItem(
+                            number: '2',
+                            title: 'Sign in to Bearly Mobile',
+                            body:
+                                'Use the email and password you just registered.',
+                            last: true,
+                          ),
+                        ] else if (_isRejected) ...[
+                          const _TimelineItem(
+                            number: '✓',
+                            title: 'Application submitted',
+                            body:
+                                'Your registration and required documents were received.',
+                            complete: true,
+                          ),
+                          _TimelineItem(
+                            number: '×',
+                            title: 'Application not approved',
+                            body: outcome?.message.isNotEmpty == true
+                                ? outcome!.message
+                                : 'Bearly recorded that this application was not approved.',
+                            last: true,
+                          ),
+                        ] else ...[
+                          const _TimelineItem(
+                            number: '✓',
+                            title: 'Application submitted',
+                            body:
+                                'Your verified registration details and required documents were sent securely to Bearly.',
+                            complete: true,
+                          ),
+                          _TimelineItem(
+                            number: '2',
+                            title: _isRider
+                                ? 'Logistics review'
+                                : 'Admin review',
+                            body: _isRider
+                                ? '$_authority checks your Rider application and documents.'
+                                : 'A Bearly Administrator checks your business details and documents.',
+                          ),
+                          const _TimelineItem(
+                            number: '3',
+                            title: 'Decision',
+                            body:
+                                'Sign in after your application is approved and activated.',
+                            last: true,
+                          ),
+                        ],
                       ],
                     ),
                   ),
@@ -137,7 +224,11 @@ class PendingPage extends StatelessWidget {
                         const SizedBox(width: 9),
                         Expanded(
                           child: Text(
-                            'You can sign in once your application is approved. You do not need to submit another application while it is under review.',
+                            _isActive
+                                ? 'Your Buyer account is active now. Sign in with the credentials you just created.'
+                                : _isRejected
+                                ? 'Review the decision details provided above before taking another step.'
+                                : 'You can sign in once your application is approved. Do not submit another application while it is under review.',
                             style: Theme.of(context).textTheme.bodySmall,
                           ),
                         ),
@@ -172,6 +263,13 @@ class PendingPage extends StatelessWidget {
       ),
     );
   }
+
+  String get _statusLabel => switch (_status) {
+    'active' => 'Active',
+    'pending' => 'Pending review',
+    'rejected' => 'Rejected',
+    _ => _status,
+  };
 }
 
 class _DetailRow extends StatelessWidget {

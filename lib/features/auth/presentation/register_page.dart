@@ -1,12 +1,16 @@
+import 'dart:async';
+
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 
+import '../../../core/network/api_client.dart';
 import '../../../core/routes/app_route_names.dart';
 import '../../../core/theme/bearly_theme.dart';
 import '../data/postal_code_service.dart';
 import '../data/psgc_service.dart';
+import '../data/registration_repository.dart';
 import '../models/account_role.dart';
 import '../models/registration_region_fields.dart';
 import '../widgets/auth_scaffold.dart';
@@ -19,9 +23,18 @@ import '../widgets/registration_presentation.dart';
 import '../widgets/role_card.dart';
 
 class RegisterPage extends StatefulWidget {
-  const RegisterPage({super.key, this.initialRole = AccountRole.buyer});
+  const RegisterPage({
+    super.key,
+    this.initialRole = AccountRole.buyer,
+    this.registrationDataSource,
+    this.psgcService,
+    this.postalCodeService,
+  });
 
   final AccountRole initialRole;
+  final RegistrationDataSource? registrationDataSource;
+  final PsgcService? psgcService;
+  final PostalCodeService? postalCodeService;
 
   @override
   State<RegisterPage> createState() => _RegisterPageState();
@@ -32,29 +45,44 @@ class _RegisterPageState extends State<RegisterPage> {
   final _addressKey = GlobalKey<FormState>();
   final _finalKey = GlobalKey<FormState>();
 
-  final _psgc = const PsgcService();
-  final _postalCodes = PostalCodeService();
+  late final _psgc = widget.psgcService ?? const PsgcService();
+  final _registrationScrollController = ScrollController();
+  late final _postalCodes = widget.postalCodeService ?? PostalCodeService();
   final _imagePicker = ImagePicker();
+  late final RegistrationDataSource _registration =
+      widget.registrationDataSource ?? RegistrationRepository();
 
   late AccountRole _role;
   int _currentStep = 0;
 
   bool _termsAccepted = false;
-  bool _riderCertification = false;
   bool _showPassword = false;
   bool _showConfirmPassword = false;
   bool _emailCodeSent = false;
+  bool _emailVerified = false;
+  bool _emailBusy = false;
+  bool _submitting = false;
+  bool _partnersLoading = false;
 
   bool _manualAddress = false;
   bool _addressLoading = true;
   String? _addressError;
   bool _postalAutoFilled = false;
   String _postalHint = 'Select municipality first';
+  String? _verificationId;
+  String? _emailVerificationMessage;
+  String? _submissionError;
+  String? _partnersError;
+  int _retryAfterSeconds = 0;
+  Timer? _retryTimer;
+  Timer? _partnerLookupTimer;
 
   List<LocationOption> _regions = const [];
   List<LocationOption> _provinces = const [];
   List<LocationOption> _cities = const [];
   List<LocationOption> _barangays = const [];
+  List<RegistrationPartner> _partners = const [];
+  RegistrationPartner? _selectedPartner;
   LocationOption? _region;
   LocationOption? _province;
   LocationOption? _city;
@@ -63,6 +91,7 @@ class _RegisterPageState extends State<RegisterPage> {
   PlatformFile? _validId;
   PlatformFile? _orCr;
   PlatformFile? _driverLicense;
+  PlatformFile? _businessPermit;
 
   final firstName = TextEditingController();
   final middleInitial = TextEditingController();
@@ -83,12 +112,22 @@ class _RegisterPageState extends State<RegisterPage> {
   final street = TextEditingController();
   final house = TextEditingController();
   final postal = TextEditingController();
+  final manualRegionCode = TextEditingController();
+  final manualCityCode = TextEditingController();
 
-  final logisticsPartner = TextEditingController();
+  final businessName = TextEditingController();
+  String _riderWorkType = 'local';
+  final vehicleModel = TextEditingController();
   String? vehicleType;
   final plateNumber = TextEditingController();
 
-  static const _vehicleTypes = ['Motorcycle', 'Tricycle', 'E-bike', 'Van'];
+  static const _localVehicleTypes = ['Motorcycle', 'Tricycle', 'E-bike'];
+  static const _courierVehicleTypes = ['Van'];
+  bool get _isRider => _role == AccountRole.rider;
+  bool get _isLogistics => _role == AccountRole.logistics;
+  bool get _requiresCityCode => _isRider || _isLogistics;
+  List<String> get _vehicleTypes =>
+      _riderWorkType == 'courier' ? _courierVehicleTypes : _localVehicleTypes;
 
   @override
   void initState() {
@@ -119,11 +158,17 @@ class _RegisterPageState extends State<RegisterPage> {
       street,
       house,
       postal,
-      logisticsPartner,
+      manualRegionCode,
+      manualCityCode,
+      businessName,
+      vehicleModel,
       plateNumber,
     ]) {
       controller.dispose();
     }
+    _retryTimer?.cancel();
+    _partnerLookupTimer?.cancel();
+    _registrationScrollController.dispose();
     super.dispose();
   }
 
@@ -145,7 +190,11 @@ class _RegisterPageState extends State<RegisterPage> {
     0 => 'Personal Information',
     1 => 'Address',
     _ =>
-      _role == AccountRole.buyer ? 'Documents & Review' : 'Vehicle & Documents',
+      _role == AccountRole.buyer
+          ? 'Review & Submit'
+          : _isLogistics
+          ? 'Provider & Documents'
+          : 'Vehicle & Documents',
   };
 
   Future<void> _loadRegions() async {
@@ -218,6 +267,8 @@ class _RegisterPageState extends State<RegisterPage> {
       _province = province;
       _city = null;
       _barangay = null;
+      _selectedPartner = null;
+      _partners = const [];
       _cities = const [];
       _barangays = const [];
       postal.clear();
@@ -284,6 +335,8 @@ class _RegisterPageState extends State<RegisterPage> {
     setState(() {
       _city = city;
       _barangay = null;
+      _selectedPartner = null;
+      _partners = const [];
       _barangays = const [];
       postal.clear();
       _postalAutoFilled = false;
@@ -293,6 +346,7 @@ class _RegisterPageState extends State<RegisterPage> {
     });
 
     await _updatePostalCode(city);
+    if (_isRider) await _loadLogisticsPartners(city.code);
 
     try {
       final data = await _psgc.barangays(city.code);
@@ -308,6 +362,89 @@ class _RegisterPageState extends State<RegisterPage> {
         _addressError =
             'Unable to load barangays. You can enter them manually.';
       });
+    }
+  }
+
+  Future<void> _loadLogisticsPartners(String cityCode) async {
+    if (!RegExp(r'^[0-9]{6,10}$').hasMatch(cityCode)) {
+      if (mounted) {
+        setState(() {
+          _partners = const [];
+          _selectedPartner = null;
+          _partnersLoading = false;
+        });
+      }
+      return;
+    }
+    setState(() {
+      _partnersLoading = true;
+      _partners = const [];
+      _selectedPartner = null;
+      _partnersError = null;
+    });
+    try {
+      final result = await _registration.logisticsPartners(cityCode);
+      if (!mounted || !_isRider || _effectiveCityCode != cityCode) return;
+      setState(() {
+        _partners = result;
+        _partnersLoading = false;
+        _partnersError = result.isEmpty
+            ? 'No active Logistics partner currently serves this city.'
+            : null;
+      });
+    } catch (error) {
+      if (!mounted || !_isRider || _effectiveCityCode != cityCode) return;
+      setState(() {
+        _partners = const [];
+        _partnersLoading = false;
+        _partnersError =
+            'Unable to load approved partners. Check your connection and retry.';
+      });
+      _showMessage(
+        'Unable to load approved Logistics partners. Check your connection and retry.',
+      );
+    }
+  }
+
+  String get _effectiveCityCode =>
+      _manualAddress ? manualCityCode.text.trim() : (_city?.code ?? '');
+
+  void _scheduleManualPartnerLookup(String value) {
+    final normalized = value.replaceAll(RegExp(r'[^0-9]'), '');
+    manualCityCode.value = TextEditingValue(
+      text: normalized,
+      selection: TextSelection.collapsed(offset: normalized.length),
+    );
+    _partnerLookupTimer?.cancel();
+    if (!_isRider) return;
+    _partnerLookupTimer = Timer(const Duration(milliseconds: 450), () {
+      _loadLogisticsPartners(manualCityCode.text.trim());
+    });
+  }
+
+  void _selectRole(AccountRole role) {
+    setState(() {
+      _role = role;
+      _phoneCountryCode = 'PH';
+      contact.clear();
+      _termsAccepted = false;
+      _selectedPartner = null;
+      _partners = const [];
+      if (role != AccountRole.rider) {
+        _partnersLoading = false;
+      }
+      if (role == AccountRole.rider && vehicleType == 'Van') {
+        vehicleType = null;
+      }
+      if (role == AccountRole.rider &&
+          _riderWorkType == 'courier' &&
+          vehicleType != null &&
+          !_courierVehicleTypes.contains(vehicleType)) {
+        vehicleType = null;
+      }
+    });
+    if (role == AccountRole.rider && _effectiveCityCode.isNotEmpty) {
+      _loadLogisticsPartners(_effectiveCityCode);
     }
   }
 
@@ -340,7 +477,7 @@ class _RegisterPageState extends State<RegisterPage> {
         type: FileType.custom,
         allowedExtensions: const ['pdf'],
         allowMultiple: false,
-        withData: false,
+        withData: true,
       );
 
       if (result == null) return null;
@@ -366,9 +503,11 @@ class _RegisterPageState extends State<RegisterPage> {
         return null;
       }
 
+      final bytes = await image.readAsBytes();
       file = PlatformFile(
         name: image.name,
-        size: await image.length(),
+        size: bytes.length,
+        bytes: bytes,
         path: image.path,
       );
     }
@@ -387,27 +526,137 @@ class _RegisterPageState extends State<RegisterPage> {
     ).showSnackBar(SnackBar(content: Text(message)));
   }
 
-  void _sendEmailCode() {
-    final value = email.text.trim();
+  Future<void> _sendEmailCode() async {
+    final value = email.text.trim().toLowerCase();
     if (!RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(value)) {
       _showMessage('Enter a valid email address first.');
       return;
     }
-    setState(() => _emailCodeSent = true);
-    _showMessage(
-      'Email verification UI is ready. Sending the real 6-digit code requires the Laravel mobile auth API.',
-    );
+    if (_retryAfterSeconds > 0 || _emailBusy) return;
+    setState(() {
+      _emailBusy = true;
+      _emailVerificationMessage = null;
+    });
+    try {
+      final challenge = await _registration.sendEmailCode(value);
+      if (!mounted || email.text.trim().toLowerCase() != value.toLowerCase()) {
+        return;
+      }
+      setState(() {
+        _verificationId = challenge.verificationId;
+        _emailCodeSent = true;
+        _emailVerified = false;
+        _emailBusy = false;
+        _retryAfterSeconds = challenge.retryAfter;
+        _emailVerificationMessage =
+            'Code sent. It expires in about ${_durationText(challenge.expiresIn)}.';
+      });
+      _startRetryTimer();
+    } catch (error) {
+      if (!mounted || email.text.trim().toLowerCase() != value.toLowerCase()) {
+        return;
+      }
+      setState(() {
+        _emailBusy = false;
+        _emailVerificationMessage = _registrationErrorMessage(error);
+      });
+    }
   }
 
-  void _verifyEmailCode() {
+  Future<void> _verifyEmailCode() async {
     final code = emailCode.text.trim();
     if (!RegExp(r'^\d{6}$').hasMatch(code)) {
       _showMessage('Enter the 6-digit verification code.');
       return;
     }
-    _showMessage(
-      'The code will be verified by Laravel once the mobile auth API is connected.',
-    );
+    final verificationId = _verificationId;
+    if (verificationId == null || !_emailCodeSent) {
+      _showMessage('Request a verification code first.');
+      return;
+    }
+    setState(() {
+      _emailBusy = true;
+      _emailVerificationMessage = null;
+    });
+    try {
+      await _registration.verifyEmailCode(
+        email: email.text.trim(),
+        code: code,
+        verificationId: verificationId,
+      );
+      if (!mounted || _verificationId != verificationId) return;
+      setState(() {
+        _emailVerified = true;
+        _emailBusy = false;
+        _emailVerificationMessage = 'Email address verified.';
+      });
+    } catch (error) {
+      if (!mounted || _verificationId != verificationId) return;
+      setState(() {
+        _emailBusy = false;
+        _emailVerified = false;
+        _emailVerificationMessage = _registrationErrorMessage(error);
+      });
+    }
+  }
+
+  void _startRetryTimer() {
+    _retryTimer?.cancel();
+    if (_retryAfterSeconds <= 0) return;
+    _retryTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      setState(() {
+        _retryAfterSeconds--;
+        if (_retryAfterSeconds <= 0) timer.cancel();
+      });
+    });
+  }
+
+  void _emailChanged() {
+    _retryTimer?.cancel();
+    setState(() {
+      _emailCodeSent = false;
+      _emailVerified = false;
+      _emailBusy = false;
+      _verificationId = null;
+      _retryAfterSeconds = 0;
+      _emailVerificationMessage = null;
+      emailCode.clear();
+    });
+  }
+
+  static String _durationText(int seconds) {
+    final minutes = seconds ~/ 60;
+    final remainder = seconds % 60;
+    if (minutes == 0) return '$remainder seconds';
+    return '$minutes min ${remainder.toString().padLeft(2, '0')} sec';
+  }
+
+  String _registrationErrorMessage(Object error) {
+    if (error is ApiHttpException) {
+      final emailErrors = error.validationErrors['email'];
+      if (emailErrors != null && emailErrors.isNotEmpty) {
+        return '${emailErrors.first} If you already registered this email, sign in instead.';
+      }
+      final messages = error.validationErrors.values
+          .expand((items) => items)
+          .where((item) => item.trim().isNotEmpty);
+      if (messages.isNotEmpty) return messages.first;
+      if (error.statusCode == 429) {
+        return 'Too many requests. Please wait and try again.';
+      }
+      if (error.statusCode >= 500) {
+        return 'Bearly could not complete the request. Try again later.';
+      }
+    }
+    if (error is ApiTransportException || error is ApiTimeoutException) {
+      return 'Bearly could not confirm the request. Check your connection and retry. If you submitted an application, trying again with the same email cannot create a duplicate account.';
+    }
+    if (error is FormatException) return error.message;
+    return 'Bearly could not complete registration. Please review your details and try again.';
   }
 
   bool _validatePersonal() {
@@ -416,6 +665,20 @@ class _RegisterPageState extends State<RegisterPage> {
 
     if (birthday == null) {
       _showMessage('Select your birthday.');
+      return false;
+    }
+
+    if ((_role == AccountRole.buyer || _isRider) && (_age ?? 0) < 18) {
+      _showMessage(
+        _isRider
+            ? 'Riders must be at least 18 years old.'
+            : 'You must be at least 18 years old to register.',
+      );
+      return false;
+    }
+
+    if (!_emailVerified) {
+      _showMessage('Verify this email address before continuing.');
       return false;
     }
 
@@ -451,6 +714,23 @@ class _RegisterPageState extends State<RegisterPage> {
       return false;
     }
 
+    if (_requiresCityCode &&
+        !RegExp(r'^[0-9]{6,10}$').hasMatch(_effectiveCityCode)) {
+      _showMessage('Select a valid municipality from the address list.');
+      return false;
+    }
+
+    if (_requiresCityCode &&
+        !RegExp(r'^\d{10}$').hasMatch(_regionFields.regionCode ?? '')) {
+      _showMessage('Select a valid 10-digit PSGC region for this application.');
+      return false;
+    }
+
+    if (_isRider && _selectedPartner == null) {
+      _showMessage('Select an approved Logistics partner for your city.');
+      return false;
+    }
+
     return true;
   }
 
@@ -458,9 +738,23 @@ class _RegisterPageState extends State<RegisterPage> {
     final valid = _finalKey.currentState?.validate() ?? false;
     if (!valid) return false;
 
-    if (_role == AccountRole.buyer) {
+    if (_role == AccountRole.buyer) return _termsAccepted;
+
+    if (_isLogistics) {
+      if (businessName.text.trim().isEmpty) {
+        _showMessage('Enter the Logistics business name.');
+        return false;
+      }
       if (_validId == null) {
         _showMessage('Upload a valid government ID.');
+        return false;
+      }
+      if (_businessPermit == null) {
+        _showMessage('Upload the business permit.');
+        return false;
+      }
+      if (!_termsAccepted) {
+        _showMessage('Accept the Terms of Service and Privacy Policy.');
         return false;
       }
       return true;
@@ -474,10 +768,6 @@ class _RegisterPageState extends State<RegisterPage> {
       _showMessage('Upload your driver’s license or valid ID.');
       return false;
     }
-    if (!_riderCertification) {
-      _showMessage('Certify that the Rider and vehicle details are accurate.');
-      return false;
-    }
     if (!_termsAccepted) {
       _showMessage('Accept the Terms of Service and Privacy Policy.');
       return false;
@@ -485,7 +775,8 @@ class _RegisterPageState extends State<RegisterPage> {
     return true;
   }
 
-  void _next() {
+  Future<void> _next() async {
+    if (_submitting) return;
     final ok = switch (_currentStep) {
       0 => _validatePersonal(),
       1 => _validateAddress(),
@@ -494,18 +785,146 @@ class _RegisterPageState extends State<RegisterPage> {
     if (!ok) return;
 
     if (_currentStep < 2) {
-      setState(() => _currentStep++);
+      _setStep(_currentStep + 1);
     } else {
-      Navigator.pushNamed(
-        context,
-        AppRouteNames.pending,
-        arguments: _role.label,
-      );
+      await _submitRegistration();
     }
   }
 
+  void _setStep(int step) {
+    FocusManager.instance.primaryFocus?.unfocus();
+    setState(() => _currentStep = step);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_registrationScrollController.hasClients) {
+        _registrationScrollController.jumpTo(0);
+      }
+    });
+  }
+
+  Future<void> _submitRegistration() async {
+    if (!_emailVerified || _verificationId == null) {
+      _showMessage('Verify your email address before submitting.');
+      return;
+    }
+    setState(() {
+      _submitting = true;
+      _submissionError = null;
+    });
+    try {
+      final outcome = switch (_role) {
+        AccountRole.buyer => await _registration.registerBuyer(_buyerPayload()),
+        AccountRole.rider => await _registration.registerRider(
+          fields: _multipartFields(role: 'rider'),
+          documents: [
+            _document('or_cr', _orCr),
+            _document('driver_license', _driverLicense),
+          ],
+        ),
+        AccountRole.logistics => await _registration.registerLogistics(
+          fields: _multipartFields(role: 'logistics'),
+          documents: [
+            _document('valid_id', _validId),
+            _document('business_permit', _businessPermit),
+          ],
+        ),
+      };
+      if (!mounted) return;
+      Navigator.pushNamedAndRemoveUntil(
+        context,
+        AppRouteNames.pending,
+        (route) => false,
+        arguments: outcome,
+      );
+    } catch (error) {
+      if (!mounted) return;
+      final message = _registrationErrorMessage(error);
+      setState(() => _submissionError = message);
+      _showMessage(message);
+    } finally {
+      if (mounted) setState(() => _submitting = false);
+    }
+  }
+
+  Map<String, Object?> _buyerPayload() {
+    final region = _regionFields.toJson();
+    return {
+      ..._commonPayload(),
+      'sex': _apiSex(buyer: true),
+      'phone_country': _phoneCountryCode,
+      'city': _addressValue(cityManual, _city),
+      'street_name': street.text.trim(),
+      ...region,
+      if (_effectiveCityCode.isNotEmpty) 'city_code': _effectiveCityCode,
+    };
+  }
+
+  Map<String, String> _multipartFields({required String role}) {
+    final region = _regionFields.toJson();
+    return {
+      ..._commonPayload().map((key, value) => MapEntry(key, '$value')),
+      'sex': _apiSex(buyer: false),
+      'contact_number': contact.text.trim(),
+      'region': region['region'] as String,
+      'region_code': region['region_code'] as String? ?? '',
+      'province': _addressValue(provinceManual, _province),
+      'municipality': _addressValue(cityManual, _city),
+      'city_code': _effectiveCityCode,
+      'barangay': _addressValue(barangayManual, _barangay),
+      'street': street.text.trim(),
+      'house_number': house.text.trim(),
+      'postal_code': postal.text.trim(),
+      'postal_manual': _postalAutoFilled ? '0' : '1',
+      'terms': _termsAccepted ? '1' : '0',
+      if (role == 'rider') ...{
+        'logistics_partner': '${_selectedPartner!.id}',
+        'work_type': _riderWorkType,
+        'vehicle_type': vehicleType ?? '',
+        'vehicle_model': vehicleModel.text.trim(),
+        'plate_number': plateNumber.text.trim(),
+      },
+      if (role == 'logistics') 'business_name': businessName.text.trim(),
+    };
+  }
+
+  Map<String, Object?> _commonPayload() => {
+    'first_name': firstName.text.trim(),
+    'middle_initial': middleInitial.text.trim(),
+    'last_name': lastName.text.trim(),
+    'birthday': _dateString(birthday!),
+    'email': email.text.trim().toLowerCase(),
+    'verification_id': _verificationId!,
+    'contact_number': contact.text.trim(),
+    'province': _addressValue(provinceManual, _province),
+    'barangay': _addressValue(barangayManual, _barangay),
+    'house_number': house.text.trim(),
+    'postal_code': postal.text.trim(),
+    'postal_manual': _postalAutoFilled ? '0' : '1',
+    'password': password.text,
+    'password_confirmation': confirmPassword.text,
+    'terms': _termsAccepted ? '1' : '0',
+  };
+
+  String _apiSex({required bool buyer}) => switch (sex) {
+    'Female' => buyer ? 'female' : 'Female',
+    'Male' => buyer ? 'male' : 'Male',
+    _ => buyer ? 'prefer_not_to_say' : 'Prefer not to say',
+  };
+
+  static String _dateString(DateTime value) =>
+      '${value.year.toString().padLeft(4, '0')}-${value.month.toString().padLeft(2, '0')}-${value.day.toString().padLeft(2, '0')}';
+
+  ApiMultipartFile _document(String field, PlatformFile? file) {
+    final bytes = file?.bytes;
+    if (file == null || bytes == null || bytes.isEmpty) {
+      throw const FormatException(
+        'Choose each required document again before submitting.',
+      );
+    }
+    return ApiMultipartFile(field: field, bytes: bytes, fileName: file.name);
+  }
+
   void _back() {
-    if (_currentStep > 0) setState(() => _currentStep--);
+    if (_currentStep > 0) _setStep(_currentStep - 1);
   }
 
   String _addressValue(TextEditingController manual, LocationOption? option) {
@@ -514,7 +933,11 @@ class _RegisterPageState extends State<RegisterPage> {
 
   RegistrationRegionFields get _regionFields => RegistrationRegionFields(
     region: _manualAddress ? regionManual.text : (_region?.name ?? ''),
-    regionCode: _manualAddress ? null : _region?.code,
+    regionCode: _manualAddress
+        ? manualRegionCode.text.trim().isEmpty
+              ? null
+              : manualRegionCode.text.trim()
+        : _region?.code,
   );
 
   @override
@@ -530,6 +953,7 @@ class _RegisterPageState extends State<RegisterPage> {
           _buildProgress(),
           Expanded(
             child: ListView(
+              controller: _registrationScrollController,
               padding: const EdgeInsets.fromLTRB(20, 22, 20, 120),
               children: [
                 Center(
@@ -541,6 +965,8 @@ class _RegisterPageState extends State<RegisterPage> {
                       _ =>
                         _role == AccountRole.buyer
                             ? _buildBuyerReviewStep()
+                            : _isLogistics
+                            ? _buildLogisticsStep()
                             : _buildRiderVehicleStep(),
                     },
                   ),
@@ -624,10 +1050,18 @@ class _RegisterPageState extends State<RegisterPage> {
             Expanded(
               flex: 2,
               child: FilledButton(
-                onPressed: _next,
-                child: Text(
-                  _currentStep == 2 ? 'Submit application →' : 'Continue →',
-                ),
+                onPressed: _submitting ? null : _next,
+                child: _submitting
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : Text(
+                        _currentStep == 2
+                            ? 'Submit application →'
+                            : 'Continue →',
+                      ),
               ),
             ),
           ],
@@ -644,54 +1078,74 @@ class _RegisterPageState extends State<RegisterPage> {
         children: [
           const RegistrationStepHeading(
             title: "Choose how you'll use Bearly",
-            subtitle:
-                'The Bearly mobile app supports Buyer and Rider accounts.',
+            subtitle: 'Choose the account you want to register.',
           ),
           const SizedBox(height: 18),
+          RoleCard(
+            role: AccountRole.buyer,
+            selected: _role == AccountRole.buyer,
+            onTap: () => _selectRole(AccountRole.buyer),
+          ),
+          const SizedBox(height: 10),
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Expanded(
                 child: RoleCard(
-                  role: AccountRole.buyer,
-                  selected: _role == AccountRole.buyer,
-                  onTap: () => setState(() {
-                    _role = AccountRole.buyer;
-                    _phoneCountryCode = 'PH';
-                    contact.clear();
-                    _termsAccepted = false;
-                  }),
+                  role: AccountRole.rider,
+                  selected: _role == AccountRole.rider,
+                  onTap: () => _selectRole(AccountRole.rider),
                 ),
               ),
               const SizedBox(width: 10),
               Expanded(
                 child: RoleCard(
-                  role: AccountRole.rider,
-                  selected: _role == AccountRole.rider,
-                  onTap: () => setState(() {
-                    _role = AccountRole.rider;
-                    _phoneCountryCode = 'PH';
-                    contact.clear();
-                    _termsAccepted = false;
-                  }),
+                  role: AccountRole.logistics,
+                  selected: _role == AccountRole.logistics,
+                  onTap: () => _selectRole(AccountRole.logistics),
                 ),
               ),
             ],
           ),
-          if (_role == AccountRole.rider) ...[
+          if (_isRider) ...[
             const SizedBox(height: 16),
-            TextFormField(
-              controller: logisticsPartner,
-              decoration: const InputDecoration(
-                labelText: 'Logistics / Sorting Center',
-                hintText: 'Select approved partner when API is connected',
-                prefixIcon: Icon(Icons.warehouse_outlined),
-              ),
-              validator: _requiredValidator,
+            Text(
+              'Rider work type',
+              style: Theme.of(context).textTheme.titleMedium,
             ),
             const SizedBox(height: 6),
             Text(
-              'The production app will load approved Logistics partners from Laravel.',
+              'Courier applications remain Rider accounts and use the Courier vehicle rules.',
               style: Theme.of(context).textTheme.bodySmall,
+            ),
+            const SizedBox(height: 8),
+            SegmentedButton<String>(
+              segments: const [
+                ButtonSegment(value: 'local', label: Text('Local Rider')),
+                ButtonSegment(value: 'courier', label: Text('Courier')),
+              ],
+              selected: {_riderWorkType},
+              onSelectionChanged: (selection) => setState(() {
+                _riderWorkType = selection.first;
+                vehicleType = null;
+              }),
+            ),
+          ],
+          if (_isLogistics) ...[
+            const SizedBox(height: 16),
+            TextFormField(
+              controller: businessName,
+              textCapitalization: TextCapitalization.words,
+              decoration: const InputDecoration(
+                labelText: 'Logistics business name',
+              ),
+              validator: (value) {
+                final text = value?.trim() ?? '';
+                if (text.isEmpty) return 'Enter your business name.';
+                return text.length <= 120
+                    ? null
+                    : 'Use 120 characters or fewer.';
+              },
             ),
           ],
           const SizedBox(height: 28),
@@ -740,7 +1194,7 @@ class _RegisterPageState extends State<RegisterPage> {
           ),
           const SizedBox(height: 12),
           DropdownButtonFormField<String>(
-            value: sex,
+            initialValue: sex,
             decoration: const InputDecoration(labelText: 'Sex'),
             items: const [
               DropdownMenuItem(value: 'Female', child: Text('Female')),
@@ -762,9 +1216,7 @@ class _RegisterPageState extends State<RegisterPage> {
               labelText: 'Email address',
               prefixIcon: Icon(Icons.mail_outline_rounded),
             ),
-            onChanged: (_) {
-              if (_emailCodeSent) setState(() => _emailCodeSent = false);
-            },
+            onChanged: (_) => _emailChanged(),
             validator: (value) {
               final text = value?.trim() ?? '';
               if (text.isEmpty) return 'Enter your email address.';
@@ -778,8 +1230,8 @@ class _RegisterPageState extends State<RegisterPage> {
           const SizedBox(height: 12),
           PhoneNumberField(
             controller: contact,
-            countryCode: _role == AccountRole.rider ? 'PH' : _phoneCountryCode,
-            riderMode: _role == AccountRole.rider,
+            countryCode: _role == AccountRole.buyer ? _phoneCountryCode : 'PH',
+            riderMode: _role != AccountRole.buyer,
             onCountryChanged: (value) => setState(() {
               _phoneCountryCode = value;
             }),
@@ -906,11 +1358,48 @@ class _RegisterPageState extends State<RegisterPage> {
                 ),
               ),
               TextButton(
-                onPressed: _sendEmailCode,
-                child: const Text('Send code'),
+                onPressed: _emailBusy || _retryAfterSeconds > 0
+                    ? null
+                    : _sendEmailCode,
+                child: _emailBusy
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : Text(
+                        _retryAfterSeconds > 0
+                            ? 'Resend in ${_durationText(_retryAfterSeconds)}'
+                            : _emailCodeSent
+                            ? 'Resend code'
+                            : 'Send code',
+                      ),
               ),
             ],
           ),
+          if (_emailVerified || _emailVerificationMessage != null) ...[
+            const SizedBox(height: 6),
+            Row(
+              children: [
+                Icon(
+                  _emailVerified
+                      ? Icons.check_circle_outline_rounded
+                      : Icons.info_outline_rounded,
+                  size: 18,
+                  color: _emailVerified
+                      ? BearlyColors.success
+                      : BearlyColors.brown700,
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    _emailVerificationMessage ?? 'Email address verified.',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ),
+              ],
+            ),
+          ],
           if (_emailCodeSent) ...[
             const SizedBox(height: 12),
             TextField(
@@ -924,15 +1413,22 @@ class _RegisterPageState extends State<RegisterPage> {
                 counterText: '',
                 suffixIcon: IconButton(
                   tooltip: 'Verify email',
-                  onPressed: _verifyEmailCode,
-                  icon: const Icon(Icons.check_circle_outline_rounded),
+                  onPressed: _emailBusy || _emailVerified
+                      ? null
+                      : _verifyEmailCode,
+                  icon: _emailBusy
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : Icon(
+                          _emailVerified
+                              ? Icons.verified_rounded
+                              : Icons.check_circle_outline_rounded,
+                        ),
                 ),
               ),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              'The real send/verify action will use Laravel’s email verification API.',
-              style: Theme.of(context).textTheme.bodySmall,
             ),
           ],
         ],
@@ -993,6 +1489,27 @@ class _RegisterPageState extends State<RegisterPage> {
               decoration: const InputDecoration(labelText: 'Region'),
               validator: RegistrationRegionFields.validateRegion,
             ),
+            if (_requiresCityCode) ...[
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: manualRegionCode,
+                keyboardType: TextInputType.number,
+                maxLength: 10,
+                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                decoration: const InputDecoration(
+                  labelText: 'PSGC region code',
+                  hintText: '10 digits',
+                  counterText: '',
+                ),
+                validator: (value) {
+                  final code = value?.trim() ?? '';
+                  if (!_requiresCityCode && code.isEmpty) return null;
+                  return RegExp(r'^\d{10}$').hasMatch(code)
+                      ? null
+                      : 'Enter the 10-digit PSGC region code.';
+                },
+              ),
+            ],
             const SizedBox(height: 12),
             TextFormField(
               controller: provinceManual,
@@ -1007,6 +1524,27 @@ class _RegisterPageState extends State<RegisterPage> {
               ),
               validator: _requiredValidator,
             ),
+            if (_requiresCityCode) ...[
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: manualCityCode,
+                keyboardType: TextInputType.number,
+                maxLength: 10,
+                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                decoration: const InputDecoration(
+                  labelText: 'PSGC city / municipality code',
+                  hintText: '6–10 digits',
+                  counterText: '',
+                ),
+                onChanged: _scheduleManualPartnerLookup,
+                validator: (value) {
+                  final code = value?.trim() ?? '';
+                  return RegExp(r'^[0-9]{6,10}$').hasMatch(code)
+                      ? null
+                      : 'Enter a valid 6–10 digit PSGC city code.';
+                },
+              ),
+            ],
             const SizedBox(height: 12),
             TextFormField(
               controller: barangayManual,
@@ -1048,6 +1586,10 @@ class _RegisterPageState extends State<RegisterPage> {
             ),
             validator: _requiredValidator,
           ),
+          if (_isRider) ...[
+            const SizedBox(height: 16),
+            _buildPartnerSelector(),
+          ],
           const SizedBox(height: 12),
           TextFormField(
             controller: postal,
@@ -1145,6 +1687,63 @@ class _RegisterPageState extends State<RegisterPage> {
     );
   }
 
+  Widget _buildPartnerSelector() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        DropdownButtonFormField<RegistrationPartner>(
+          initialValue: _selectedPartner,
+          decoration: InputDecoration(
+            labelText: 'Logistics / Sorting Center',
+            prefixIcon: const Icon(Icons.warehouse_outlined),
+            suffixIcon: _partnersLoading
+                ? const Padding(
+                    padding: EdgeInsets.all(12),
+                    child: SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                  )
+                : null,
+          ),
+          items: _partners
+              .map(
+                (partner) => DropdownMenuItem(
+                  value: partner,
+                  child: Text(partner.name, overflow: TextOverflow.ellipsis),
+                ),
+              )
+              .toList(growable: false),
+          onChanged: _partnersLoading || _partners.isEmpty
+              ? null
+              : (partner) => setState(() => _selectedPartner = partner),
+          validator: (partner) => partner == null
+              ? 'Select an approved Logistics partner for your city.'
+              : null,
+        ),
+        if (_partnersError != null) ...[
+          const SizedBox(height: 5),
+          Text(
+            _partnersError!,
+            style: Theme.of(
+              context,
+            ).textTheme.bodySmall?.copyWith(color: BearlyColors.muted),
+          ),
+          if (!_partnersLoading && _effectiveCityCode.isNotEmpty)
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                onPressed: () => _loadLogisticsPartners(_effectiveCityCode),
+                icon: const Icon(Icons.refresh_rounded),
+                label: const Text('Retry partner search'),
+              ),
+            ),
+        ],
+      ],
+    );
+  }
+
   Widget _buildBuyerReviewStep() {
     final address = _fullAddress;
     return Form(
@@ -1153,51 +1752,26 @@ class _RegisterPageState extends State<RegisterPage> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const RegistrationStepHeading(
-            title: 'Documents & review',
-            subtitle: 'Upload your ID and confirm the application details.',
+            title: 'Review your Buyer registration',
+            subtitle: 'Confirm your details and submit your verified account.',
           ),
           const SizedBox(height: 14),
-          Container(
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: BearlyColors.cream100,
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: BearlyColors.lineSoft),
-            ),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Icon(Icons.shield_outlined, color: BearlyColors.brown900),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    'Use a current government-issued ID. Keep all four corners visible and make sure the name and photo are readable.',
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 14),
-          DocumentUploadCard(
-            title: 'Valid government ID',
-            help:
-                'Passport, driver’s license, national ID, or another government-issued ID.',
-            file: _validId,
-            onPick: () async {
-              final file = await _pickDocument();
-              if (file != null) setState(() => _validId = file);
-            },
-            onRemove: () => setState(() => _validId = null),
-          ),
-          const SizedBox(height: 22),
           _buildApplicationSummary(address: address),
           const SizedBox(height: 16),
           const RegistrationInfoCallout(
-            title: 'What happens next?',
+            title: 'Email verified',
             body:
-                'A Bearly administrator will review your Buyer application. Buyer access becomes available after approval.',
+                'After submission, your Buyer account activates immediately. You can then sign in to Bearly Mobile.',
           ),
+          if (_submissionError != null) ...[
+            const SizedBox(height: 12),
+            Text(
+              _submissionError!,
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(color: BearlyColors.error),
+            ),
+          ],
         ],
       ),
     );
@@ -1212,11 +1786,18 @@ class _RegisterPageState extends State<RegisterPage> {
           const RegistrationStepHeading(
             title: 'Vehicle & documents',
             subtitle:
-                'Your selected Logistics / Sorting Center will review these credentials.',
+                'Your selected Logistics partner will review the application before access is approved.',
           ),
           const SizedBox(height: 18),
+          InputDecorator(
+            decoration: const InputDecoration(labelText: 'Rider work type'),
+            child: Text(
+              _riderWorkType == 'courier' ? 'Courier' : 'Local Rider',
+            ),
+          ),
+          const SizedBox(height: 12),
           DropdownButtonFormField<String>(
-            value: vehicleType,
+            initialValue: vehicleType,
             decoration: const InputDecoration(labelText: 'Vehicle type'),
             items: _vehicleTypes
                 .map((item) => DropdownMenuItem(value: item, child: Text(item)))
@@ -1224,6 +1805,16 @@ class _RegisterPageState extends State<RegisterPage> {
             onChanged: (value) => setState(() => vehicleType = value),
             validator: (value) =>
                 value == null ? 'Select a vehicle type.' : null,
+          ),
+          const SizedBox(height: 12),
+          TextFormField(
+            controller: vehicleModel,
+            textCapitalization: TextCapitalization.words,
+            maxLength: 160,
+            decoration: const InputDecoration(
+              labelText: 'Vehicle model (optional)',
+              counterText: '',
+            ),
           ),
           const SizedBox(height: 12),
           TextFormField(
@@ -1254,28 +1845,18 @@ class _RegisterPageState extends State<RegisterPage> {
             },
             onRemove: () => setState(() => _driverLicense = null),
           ),
-          const SizedBox(height: 14),
-          CheckboxListTile(
-            value: _riderCertification,
-            contentPadding: EdgeInsets.zero,
-            controlAffinity: ListTileControlAffinity.leading,
-            activeColor: BearlyColors.brown900,
-            onChanged: (value) =>
-                setState(() => _riderCertification = value ?? false),
-            title: const Text(
-              'I certify that these Rider and vehicle details are accurate.',
-            ),
-            subtitle: const Text(
-              'The selected Logistics partner will verify every document.',
-            ),
-          ),
           _buildTermsCheckbox(),
           const SizedBox(height: 16),
           _buildApplicationSummary(
             address: _fullAddress,
             extra: [
-              _SummaryData('Logistics partner', logisticsPartner.text.trim()),
+              _SummaryData('Logistics partner', _selectedPartner?.name ?? ''),
+              _SummaryData(
+                'Work type',
+                _riderWorkType == 'courier' ? 'Courier' : 'Local Rider',
+              ),
               _SummaryData('Vehicle', vehicleType ?? ''),
+              _SummaryData('Vehicle model', vehicleModel.text.trim()),
               _SummaryData('Plate number', plateNumber.text.trim()),
             ],
           ),
@@ -1285,6 +1866,69 @@ class _RegisterPageState extends State<RegisterPage> {
             body:
                 'Your selected Logistics / Sorting Center reviews the Rider application before dashboard access is activated.',
           ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLogisticsStep() {
+    return Form(
+      key: _finalKey,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const RegistrationStepHeading(
+            title: 'Provider documents',
+            subtitle:
+                'Bearly reviews Logistics applications and required business credentials before operational access.',
+          ),
+          const SizedBox(height: 14),
+          DocumentUploadCard(
+            title: 'Valid government ID',
+            help: 'Upload a clear JPG, PNG, or PDF copy (maximum 5 MB).',
+            file: _validId,
+            onPick: () async {
+              final file = await _pickDocument();
+              if (file != null) setState(() => _validId = file);
+            },
+            onRemove: () => setState(() => _validId = null),
+          ),
+          const SizedBox(height: 12),
+          DocumentUploadCard(
+            title: 'Business permit',
+            help: 'Upload a clear JPG, PNG, or PDF copy (maximum 5 MB).',
+            file: _businessPermit,
+            onPick: () async {
+              final file = await _pickDocument();
+              if (file != null) setState(() => _businessPermit = file);
+            },
+            onRemove: () => setState(() => _businessPermit = null),
+          ),
+          const SizedBox(height: 18),
+          _buildTermsCheckbox(),
+          const SizedBox(height: 12),
+          _buildApplicationSummary(
+            address: _fullAddress,
+            extra: [
+              _SummaryData('Business', businessName.text.trim()),
+              _SummaryData('Service area', _addressValue(cityManual, _city)),
+            ],
+          ),
+          const SizedBox(height: 16),
+          const RegistrationInfoCallout(
+            title: 'Approval authority',
+            body:
+                'Your application and documents are reviewed by a Bearly Administrator. A Logistics operating profile is created only after approval.',
+          ),
+          if (_submissionError != null) ...[
+            const SizedBox(height: 12),
+            Text(
+              _submissionError!,
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(color: BearlyColors.error),
+            ),
+          ],
         ],
       ),
     );
@@ -1375,11 +2019,11 @@ class _RegisterPageState extends State<RegisterPage> {
             spacing: 8,
             children: [
               TextButton(
-                onPressed: () => setState(() => _currentStep = 0),
+                onPressed: () => _setStep(0),
                 child: const Text('Edit personal'),
               ),
               TextButton(
-                onPressed: () => setState(() => _currentStep = 1),
+                onPressed: () => _setStep(1),
                 child: const Text('Edit address'),
               ),
             ],
@@ -1405,6 +2049,8 @@ class _RegisterPageState extends State<RegisterPage> {
   String? _nameValidator(String? value) {
     final text = value?.trim() ?? '';
     if (text.isEmpty) return 'This field is required.';
+    if (text.length < 2) return 'Use at least 2 characters.';
+    if (text.length > 50) return 'Use 50 characters or fewer.';
     if (!RegExp(r"^[A-Za-zÀ-ÿ.' -]+$").hasMatch(text)) {
       return 'Use letters and standard name punctuation only.';
     }

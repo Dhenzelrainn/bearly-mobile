@@ -4,6 +4,7 @@ import 'app_route_names.dart';
 import '../network/api_client.dart';
 import '../../features/auth/data/auth_service.dart';
 import '../../features/auth/models/account_role.dart';
+import '../../features/auth/data/registration_repository.dart';
 import '../../features/auth/presentation/forgot_password_page.dart';
 import '../../features/auth/presentation/logout_page.dart';
 import '../../features/auth/presentation/login_page.dart';
@@ -163,8 +164,12 @@ class AppRoutes {
           settings: settings,
         );
       case AppRouteNames.pending:
+        final result = settings.arguments;
         return MaterialPageRoute(
-          builder: (_) => PendingPage(roleLabel: settings.arguments as String?),
+          builder: (_) => PendingPage(
+            outcome: result is RegistrationOutcome ? result : null,
+            roleLabel: result is String ? result : null,
+          ),
           settings: settings,
         );
       case AppRouteNames.buyer:
