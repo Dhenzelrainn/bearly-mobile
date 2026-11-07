@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../core/network/api_client.dart';
 import '../../../core/theme/bearly_theme.dart';
+import '../../../core/widgets/product_thumbnail.dart';
 import '../../auth/data/auth_service.dart';
 import '../data/logistics_repository.dart';
 import '../models/logistics_sorting.dart';
@@ -277,6 +278,27 @@ class _LogisticsSortingQueuePageState extends State<LogisticsSortingQueuePage> {
                   ? 'Destination unavailable'
                   : parcel.destination,
             ),
+            if (parcel.products.isNotEmpty) ...[
+              const Divider(height: 22),
+              for (final product in parcel.products)
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: ProductThumbnail(
+                    imageUrl: product.imageUrl,
+                    size: 48,
+                    semanticLabel: product.name,
+                  ),
+                  title: Text(
+                    product.name.isEmpty ? 'Purchased item' : product.name,
+                  ),
+                  subtitle: Text(
+                    [
+                      if (product.variant.isNotEmpty) product.variant,
+                      'Qty ${product.quantity}',
+                    ].join(' / '),
+                  ),
+                ),
+            ],
             const SizedBox(height: 12),
             if (parcel.matchingZones.isEmpty)
               const Text('No active zone covers this parcel destination.')

@@ -1,3 +1,5 @@
+import '../../../core/models/product_preview.dart';
+
 enum RiderAssignmentKind { pickup, delivery }
 
 class RiderDashboard {
@@ -94,6 +96,7 @@ class RiderAssignment {
     this.batchNumber = '',
     this.parcels = const [],
     this.products = const [],
+    this.productItems = const [],
   });
 
   final RiderAssignmentKind kind;
@@ -118,6 +121,7 @@ class RiderAssignment {
   final String batchNumber;
   final List<RiderJobParcel> parcels;
   final List<String> products;
+  final List<ProductPreview> productItems;
 
   factory RiderAssignment.fromJson(Object? value) {
     final map = _jsonMap(value, 'job');
@@ -129,6 +133,7 @@ class RiderAssignment {
 
     final parcelEntries = <RiderJobParcel>[];
     final products = <String>[];
+    final productItems = <ProductPreview>[];
     if (kind == RiderAssignmentKind.pickup) {
       for (final groupValue in _jsonList(map['manifest'])) {
         final group = _jsonMap(groupValue, 'pickup manifest');
@@ -141,6 +146,7 @@ class RiderAssignment {
         }
         for (final productValue in _jsonList(group['products'])) {
           final product = _jsonMap(productValue, 'pickup product');
+          productItems.add(ProductPreview.fromJson(productValue));
           final name = _string(product['name']);
           final variant = _string(product['variant']);
           final quantity = _integer(product['quantity']);
@@ -152,6 +158,7 @@ class RiderAssignment {
         }
       }
     } else {
+      productItems.addAll(ProductPreview.listFromJson(map['products']));
       for (final parcelValue in _jsonList(map['parcels'])) {
         parcelEntries.add(
           RiderJobParcel.fromJson(_jsonMap(parcelValue, 'delivery parcel')),
@@ -187,6 +194,7 @@ class RiderAssignment {
       batchNumber: _string(map['batch_no']),
       parcels: parcelEntries,
       products: products,
+      productItems: productItems,
     );
   }
 }

@@ -1,3 +1,5 @@
+import '../../../core/models/product_preview.dart';
+
 class LogisticsDashboard {
   const LogisticsDashboard({
     required this.providerName,
@@ -347,6 +349,7 @@ class LogisticsLookupParcel {
     required this.currentSortingCenter,
     required this.lastRecordedCenter,
     required this.centerIntakeRecordedAt,
+    this.products = const [],
   });
 
   final String reference;
@@ -355,6 +358,7 @@ class LogisticsLookupParcel {
   final LogisticsSortingCenter? currentSortingCenter;
   final LogisticsSortingCenter? lastRecordedCenter;
   final String centerIntakeRecordedAt;
+  final List<ProductPreview> products;
 
   factory LogisticsLookupParcel.fromJson(Object? value) {
     final map = _map(value, 'parcel');
@@ -371,6 +375,7 @@ class LogisticsLookupParcel {
           ? null
           : LogisticsSortingCenter.fromJson(lastCenter),
       centerIntakeRecordedAt: _string(map['center_intake_recorded_at']),
+      products: ProductPreview.listFromJson(map['products']),
     );
   }
 }

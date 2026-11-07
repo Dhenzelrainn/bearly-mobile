@@ -104,6 +104,13 @@ void main() {
     expect(find.textContaining('SHP-20261031-LONG-SHIPMENT-REFERENCE'), findsOneWidget);
     expect(find.text('Parcel status: Out for Delivery'), findsOneWidget);
     expect(find.text('Shipment status: Out for Delivery'), findsOneWidget);
+    expect(find.text('Monitoring Snapshot Bear'), findsOneWidget);
+    expect(find.textContaining('Qty 2'), findsOneWidget);
+    await tester.scrollUntilVisible(
+      find.text('Assigned to rider'),
+      180,
+      scrollable: find.byType(Scrollable).first,
+    );
     expect(find.text('Assigned to rider'), findsOneWidget);
     await tester.scrollUntilVisible(
       find.text('Released for delivery'),
@@ -237,6 +244,14 @@ Map<String, Object?> _detailResponse({bool longIdentifiers = false}) => {
           'reference': 'SHP-20261031-LONG-SHIPMENT-REFERENCE',
           'status': 'out_for_delivery',
         },
+        'products': [
+          {
+            'name': 'Monitoring Snapshot Bear',
+            'variant': 'Honey / Small',
+            'quantity': 2,
+            'image_url': 'https://images.bearly.test/monitoring.jpg',
+          },
+        ],
       },
     ],
     'timeline': [

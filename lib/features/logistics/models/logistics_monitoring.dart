@@ -1,3 +1,5 @@
+import '../../../core/models/product_preview.dart';
+
 class LogisticsDeliveryMonitoring {
   const LogisticsDeliveryMonitoring({
     required this.providerName,
@@ -118,6 +120,7 @@ class LogisticsMonitoredParcel {
     required this.lastEventAt,
     required this.shipmentReference,
     required this.shipmentStatus,
+    this.products = const [],
   });
 
   final String reference;
@@ -126,6 +129,7 @@ class LogisticsMonitoredParcel {
   final String lastEventAt;
   final String shipmentReference;
   final String shipmentStatus;
+  final List<ProductPreview> products;
 
   factory LogisticsMonitoredParcel.fromJson(Object? value) {
     final map = _map(value, 'parcel');
@@ -137,6 +141,7 @@ class LogisticsMonitoredParcel {
       lastEventAt: _string(map['last_event_at']),
       shipmentReference: _string(shipment['reference']),
       shipmentStatus: _string(shipment['status']),
+      products: ProductPreview.listFromJson(map['products']),
     );
   }
 }

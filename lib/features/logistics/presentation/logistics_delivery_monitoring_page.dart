@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../core/network/api_client.dart';
 import '../../../core/theme/bearly_theme.dart';
+import '../../../core/widgets/product_thumbnail.dart';
 import '../data/logistics_repository.dart';
 import '../models/logistics_monitoring.dart';
 
@@ -368,6 +369,27 @@ class _LogisticsDeliveryMonitoringDetailPageState
           _detailValue('Parcel status', _humanStatus(parcel.status)),
           _detailValue('Shipment', parcel.shipmentReference),
           _detailValue('Shipment status', _humanStatus(parcel.shipmentStatus)),
+          if (parcel.products.isNotEmpty) ...[
+            const Divider(height: 22),
+            for (final product in parcel.products)
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: ProductThumbnail(
+                  imageUrl: product.imageUrl,
+                  size: 48,
+                  semanticLabel: product.name,
+                ),
+                title: Text(
+                  product.name.isEmpty ? 'Purchased item' : product.name,
+                ),
+                subtitle: Text(
+                  [
+                    if (product.variant.isNotEmpty) product.variant,
+                    'Qty ${product.quantity}',
+                  ].join(' / '),
+                ),
+              ),
+          ],
         ],
       ),
     ),

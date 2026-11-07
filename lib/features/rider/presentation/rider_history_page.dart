@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../core/widgets/product_thumbnail.dart';
 import '../../../core/routes/app_route_names.dart';
 import '../data/rider_repository.dart';
 import '../models/rider_history.dart';
@@ -146,7 +147,38 @@ class _RiderHistoryPageState extends State<RiderHistoryPage> {
     color: Colors.white,
     child: ListTile(
       leading: const CircleAvatar(child: Icon(Icons.receipt_long_outlined)),
-      title: Text(entry.shipmentNumber),
+      title: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(entry.shipmentNumber),
+          for (final product in entry.products.take(3))
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Row(
+                children: [
+                  ProductThumbnail(
+                    imageUrl: product.imageUrl,
+                    size: 38,
+                    semanticLabel: product.name,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      [
+                        product.name.isEmpty ? 'Purchased item' : product.name,
+                        if (product.variant.isNotEmpty) product.variant,
+                        'Qty ${product.quantity}',
+                      ].join(' / '),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
       subtitle: Text(
         [
           entry.parcelNumber,

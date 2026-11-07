@@ -3,11 +3,13 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:bearly_mobile/core/network/api_client.dart';
+import 'package:bearly_mobile/core/widgets/product_thumbnail.dart';
 import 'package:bearly_mobile/features/auth/data/auth_service.dart';
 import 'package:bearly_mobile/features/auth/models/account_role.dart';
 import 'package:bearly_mobile/features/rider/data/rider_repository.dart';
 import 'package:bearly_mobile/features/rider/models/rider_assignment.dart';
 import 'package:bearly_mobile/features/rider/presentation/rider_assignment_pages.dart';
+import 'package:bearly_mobile/features/rider/presentation/rider_history_page.dart';
 import 'package:bearly_mobile/features/rider/presentation/rider_waybill_scanner_page.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -16,6 +18,49 @@ import 'package:http/testing.dart';
 import 'package:image_picker/image_picker.dart';
 
 void main() {
+  testWidgets('delivery history shows purchased item snapshots', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: RiderHistoryPage(
+          repository: _repository(
+            (request) async => http.Response(
+              jsonEncode({
+                'data': [
+                  {
+                    'shipment_no': 'SH-HISTORY-1',
+                    'parcel_no': 'P-HISTORY-1',
+                    'date': 'Nov 6, 2026',
+                    'area': 'Pila',
+                    'status': 'delivered',
+                    'status_label': 'Delivered',
+                    'earning': 'PHP 90.00',
+                    'batch_no': 'DB-HISTORY-1',
+                    'attempt': 'Attempt 1',
+                    'products': [
+                      {
+                        'name': 'History Snapshot Bear',
+                        'variant': 'Cocoa / Medium',
+                        'quantity': 3,
+                        'image_url': 'https://images.bearly.test/history.jpg',
+                      },
+                    ],
+                  },
+                ],
+                'meta': {'current_page': 1, 'last_page': 1, 'total': 1},
+              }),
+              200,
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.textContaining('History Snapshot Bear'), findsOneWidget);
+    expect(find.textContaining('Cocoa / Medium'), findsOneWidget);
+    expect(find.textContaining('Qty 3'), findsOneWidget);
+    expect(find.byType(ProductThumbnail), findsOneWidget);
+  });
+
   testWidgets('assigned delivery list shows API data without accept controls', (
     tester,
   ) async {
@@ -41,6 +86,14 @@ void main() {
                     'zone_name': 'North',
                     'batch_no': 'DB-20',
                     'parcels': [],
+                    'products': [
+                      {
+                        'name': 'List Delivery Bear',
+                        'variant': 'Honey / Small',
+                        'quantity': 1,
+                        'image_url': 'https://images.bearly.test/list-bear.jpg',
+                      },
+                    ],
                   },
                 ],
               }),
@@ -55,6 +108,7 @@ void main() {
 
     expect(find.text('Buyer Rae'), findsOneWidget);
     expect(find.text('SH-20'), findsOneWidget);
+    expect(find.byType(ProductThumbnail), findsOneWidget);
     expect(find.text('1 parcel(s) · Assigned'), findsOneWidget);
     expect(find.text('Accept'), findsNothing);
   });
@@ -109,6 +163,14 @@ void main() {
                       'weight_kg': 1.0,
                     },
                   ],
+                  'products': [
+                    {
+                      'name': 'Delivery Detail Bear',
+                      'variant': 'Cocoa / Medium',
+                      'quantity': 2,
+                      'image_url': 'https://images.bearly.test/detail-bear.jpg',
+                    },
+                  ],
                 },
               }),
               200,
@@ -123,6 +185,9 @@ void main() {
 
     expect(find.text('Waybill: WB-20'), findsOneWidget);
     expect(find.text('P-20'), findsOneWidget);
+    expect(find.text('Delivery Detail Bear'), findsOneWidget);
+    expect(find.textContaining('Cocoa / Medium'), findsOneWidget);
+    expect(find.byType(ProductThumbnail), findsOneWidget);
     expect(find.text('Delivery Details'), findsOneWidget);
     expect(find.byType(FilledButton), findsNothing);
     expect(find.text('Report Failed Delivery'), findsNothing);
@@ -832,6 +897,9 @@ void main() {
     );
     await tester.pumpAndSettle();
 
+    expect(find.text('Pickup Snapshot Bear'), findsOneWidget);
+    expect(find.textContaining('Honey / Small'), findsOneWidget);
+
     await tester.tap(find.text('Accept pickup'));
     await tester.pumpAndSettle();
     expect(find.byType(TextFormField), findsOneWidget);
@@ -1436,7 +1504,27 @@ Map<String, Object?> _pickupPayload(String statusRaw) => {
   'window': 'Today',
   'assigned_at': 'Now',
   'instructions': '',
-  'manifest': [],
+  'manifest': [
+    {
+      'waybill': 'WB-10',
+      'products': [
+        {
+          'name': 'Pickup Snapshot Bear',
+          'variant': 'Honey / Small',
+          'quantity': 1,
+          'image_url': 'https://images.bearly.test/pickup-bear.jpg',
+        },
+      ],
+      'parcels': [
+        {
+          'parcel_no': 'P-10',
+          'waybill': 'WB-10',
+          'status': 'Ready for Pickup',
+          'size': 'Small',
+        },
+      ],
+    },
+  ],
 };
 
 Map<String, Object?> _deliveryPayload(

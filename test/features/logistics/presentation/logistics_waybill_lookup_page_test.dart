@@ -58,6 +58,7 @@ void main() {
 
       expect(requests.map((request) => request.method), ['GET']);
       expect(find.text('Victoria Logistics'), findsWidgets);
+      expect(find.text('Waybill Snapshot Bear'), findsOneWidget);
       expect(find.text('Pila Logistics'), findsWidgets);
       expect(find.text('Pila Sorting Center (SC-PILA)'), findsOneWidget);
       final accept = find.byKey(const ValueKey('logistics-confirm-handoff'));
@@ -706,6 +707,8 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(requests.map((request) => request.method), ['GET', 'POST', 'GET']);
+      await tester.drag(find.byType(Scrollable).first, const Offset(0, 1200));
+      await tester.pumpAndSettle();
       expect(
         find.text(
           'The server confirms this parcel was received at the Sorting Center.',
@@ -809,6 +812,8 @@ void main() {
 
     expect(getRequests, 1);
     expect(postRequests, 1);
+    await tester.drag(find.byType(Scrollable).first, const Offset(0, 1200));
+    await tester.pumpAndSettle();
     expect(find.textContaining('result is uncertain'), findsOneWidget);
     expect(
       find.byKey(const ValueKey('logistics-confirm-receipt')),
@@ -906,6 +911,8 @@ void main() {
         );
         await tester.pumpAndSettle();
 
+        await tester.drag(find.byType(Scrollable).first, const Offset(0, 1200));
+        await tester.pumpAndSettle();
         expect(posts, 1);
         expect(find.textContaining(scenario.$2), findsOneWidget);
         if (scenario.$1 == 409) {
@@ -958,6 +965,8 @@ void main() {
 
       expect(posts, 1);
       expect(gets, 1);
+      await tester.drag(find.byType(Scrollable).first, const Offset(0, 1200));
+      await tester.pumpAndSettle();
       expect(find.textContaining('result is uncertain'), findsOneWidget);
       expect(
         find.byKey(const ValueKey('logistics-confirm-receipt')),
@@ -1069,6 +1078,14 @@ Map<String, Object?> _lookup({
           'address': 'Victoria, Laguna',
         },
         'center_intake_recorded_at': '2026-10-30T10:00:00Z',
+        'products': [
+          {
+            'name': 'Waybill Snapshot Bear',
+            'variant': 'Cocoa / Medium',
+            'quantity': 2,
+            'image_url': 'https://images.bearly.test/waybill.jpg',
+          },
+        ],
       },
     ],
     'terminal': false,

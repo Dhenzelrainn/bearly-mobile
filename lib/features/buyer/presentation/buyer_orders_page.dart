@@ -2,8 +2,10 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../../../core/models/product_preview.dart';
 import '../../../core/routes/app_route_names.dart';
 import '../../../core/theme/bearly_theme.dart';
+import '../../../core/widgets/product_thumbnail.dart';
 import '../../auth/data/auth_service.dart';
 import '../data/buyer_checkout_repository.dart';
 import '../data/buyer_orders_controller.dart';
@@ -297,6 +299,34 @@ class _BuyerOrdersPageState extends State<BuyerOrdersPage> {
               ],
             ),
             const SizedBox(height: 12),
+            if (order.previewItems.isNotEmpty) ...[
+              for (final item in order.previewItems)
+                _previewItem(context, item),
+              if (order.additionalPreviewItemsCount > 0)
+                Padding(
+                  padding: const EdgeInsets.only(top: 4, left: 66),
+                  child: Text(
+                    '+${order.additionalPreviewItemsCount} more item${order.additionalPreviewItemsCount == 1 ? '' : 's'}',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: BearlyColors.muted,
+                    ),
+                  ),
+                ),
+              const SizedBox(height: 10),
+            ] else if (order.previewImageUrl != null) ...[
+              Row(
+                children: [
+                  ProductThumbnail(
+                    imageUrl: order.previewImageUrl,
+                    size: 52,
+                    semanticLabel: 'Purchased product',
+                  ),
+                  const SizedBox(width: 10),
+                  const Expanded(child: Text('Purchased items')),
+                ],
+              ),
+              const SizedBox(height: 10),
+            ],
             Row(
               children: [
                 Expanded(
@@ -376,5 +406,46 @@ class _BuyerOrdersPageState extends State<BuyerOrdersPage> {
     label: Text(label),
     visualDensity: VisualDensity.compact,
     padding: EdgeInsets.zero,
+  );
+
+  Widget _previewItem(BuildContext context, ProductPreview item) => Padding(
+    padding: const EdgeInsets.only(bottom: 7),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        ProductThumbnail(
+          imageUrl: item.imageUrl,
+          size: 52,
+          semanticLabel: item.name,
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                item.name.isEmpty ? 'Purchased item' : item.name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              if (item.variant.isNotEmpty)
+                Text(
+                  item.variant,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              Text(
+                'Qty ${item.quantity}',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ],
+          ),
+        ),
+      ],
+    ),
   );
 }

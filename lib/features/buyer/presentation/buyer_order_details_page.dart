@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../../../core/theme/bearly_theme.dart';
+import '../../../core/widgets/product_thumbnail.dart';
 import '../../auth/data/auth_service.dart';
 import '../data/buyer_checkout_repository.dart';
 import '../data/buyer_order_detail_controller.dart';
@@ -525,11 +526,24 @@ class _BuyerOrderDetailsPageState extends State<BuyerOrderDetailsPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            item.productName.isEmpty
-                ? 'Item name unavailable'
-                : item.productName,
-            style: Theme.of(context).textTheme.titleSmall,
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              ProductThumbnail(
+                imageUrl: item.productImageUrl,
+                size: 64,
+                semanticLabel: item.productName,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  item.productName.isEmpty
+                      ? 'Item name unavailable'
+                      : item.productName,
+                  style: Theme.of(context).textTheme.titleSmall,
+                ),
+              ),
+            ],
           ),
           if (item.variantName.isNotEmpty)
             Text('Variant · ${item.variantName}'),

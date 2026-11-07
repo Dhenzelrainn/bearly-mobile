@@ -53,6 +53,7 @@ void main() {
     expect(find.text('Sorting Queue'), findsOneWidget);
     expect(find.text('BRLY-L4-001'), findsOneWidget);
     expect(find.text('Pinagbayanan, Pila, Laguna'), findsOneWidget);
+    expect(find.text('Sorting Snapshot Bear'), findsOneWidget);
     await tester.tap(find.byKey(const ValueKey('logistics-sorting-zone-42')));
     await tester.pumpAndSettle();
     expect(find.text('PILA-02 · Pila / Pinagbayanan'), findsOneWidget);
@@ -299,6 +300,14 @@ Map<String, Object?> _queue({
         },
       ],
       'can_sort': true,
+      'products': [
+        {
+          'name': 'Sorting Snapshot Bear',
+          'variant': 'Honey / Large',
+          'quantity': 1,
+          'image_url': 'https://images.bearly.test/sorting.jpg',
+        },
+      ],
     },
   ],
 }) => {

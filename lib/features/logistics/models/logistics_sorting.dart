@@ -1,3 +1,4 @@
+import '../../../core/models/product_preview.dart';
 import 'logistics_dashboard.dart';
 
 class LogisticsSortingQueue {
@@ -37,6 +38,7 @@ class LogisticsSortingParcel {
     required this.currentZone,
     required this.matchingZones,
     required this.canSort,
+    this.products = const [],
   });
 
   final int id;
@@ -50,6 +52,7 @@ class LogisticsSortingParcel {
   final String? currentZone;
   final List<LogisticsMatchingZone> matchingZones;
   final bool canSort;
+  final List<ProductPreview> products;
 
   String get destination =>
       [barangay, city, province].where((part) => part.isNotEmpty).join(', ');
@@ -75,6 +78,7 @@ class LogisticsSortingParcel {
           .map(LogisticsMatchingZone.fromJson)
           .toList(growable: false),
       canSort: map['can_sort'] == true,
+      products: ProductPreview.listFromJson(map['products']),
     );
   }
 }

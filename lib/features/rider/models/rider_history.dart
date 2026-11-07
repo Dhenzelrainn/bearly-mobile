@@ -1,3 +1,5 @@
+import '../../../core/models/product_preview.dart';
+
 class RiderHistory {
   const RiderHistory({
     required this.entries,
@@ -36,6 +38,7 @@ class RiderHistoryEntry {
     required this.earning,
     required this.batchNumber,
     required this.attempt,
+    this.products = const [],
   });
 
   final String shipmentNumber;
@@ -47,6 +50,7 @@ class RiderHistoryEntry {
   final String earning;
   final String batchNumber;
   final String attempt;
+  final List<ProductPreview> products;
 
   factory RiderHistoryEntry.fromJson(Object? value) {
     final map = _map(value, 'history entry');
@@ -60,6 +64,7 @@ class RiderHistoryEntry {
       earning: _string(map['earning']),
       batchNumber: _string(map['batch_no']),
       attempt: _string(map['attempt']),
+      products: ProductPreview.listFromJson(map['products']),
     );
   }
 }

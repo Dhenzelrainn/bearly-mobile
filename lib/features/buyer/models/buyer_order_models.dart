@@ -1,3 +1,4 @@
+import '../../../core/models/product_preview.dart';
 import 'buyer_checkout_models.dart';
 
 class BuyerOrderHistoryPage {
@@ -92,9 +93,12 @@ class BuyerOrderSummary {
     required this.totalMinor,
     required this.itemCount,
     required this.previewImageUrl,
+    List<ProductPreview> previewItems = const [],
+    this.additionalPreviewItemsCount = 0,
     required this.codPayment,
     required List<BuyerSellerOrderSummary> sellerOrders,
-  }) : sellerOrders = List.unmodifiable(sellerOrders);
+  }) : previewItems = List.unmodifiable(previewItems),
+       sellerOrders = List.unmodifiable(sellerOrders);
 
   final int id;
   final String reference;
@@ -109,6 +113,8 @@ class BuyerOrderSummary {
   final int totalMinor;
   final int itemCount;
   final String? previewImageUrl;
+  final List<ProductPreview> previewItems;
+  final int additionalPreviewItemsCount;
   final BuyerOrderCodPayment? codPayment;
   final List<BuyerSellerOrderSummary> sellerOrders;
 
@@ -133,6 +139,10 @@ class BuyerOrderSummary {
         'preview_image_url',
         'order',
       ),
+      previewItems: ProductPreview.listFromJson(json['preview_items']),
+      additionalPreviewItemsCount: json['additional_preview_items_count'] is int
+          ? json['additional_preview_items_count'] as int
+          : int.tryParse('${json['additional_preview_items_count']}') ?? 0,
       codPayment: rawCodPayment == null
           ? null
           : BuyerOrderCodPayment.fromJson(rawCodPayment),

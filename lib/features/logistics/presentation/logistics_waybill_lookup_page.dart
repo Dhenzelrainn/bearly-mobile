@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../core/network/api_client.dart';
 import '../../../core/theme/bearly_theme.dart';
+import '../../../core/widgets/product_thumbnail.dart';
 import '../../rider/presentation/rider_waybill_scanner_page.dart';
 import '../data/logistics_repository.dart';
 import '../models/logistics_dashboard.dart';
@@ -772,7 +773,10 @@ class _LogisticsWaybillLookupPageState
   Widget _parcelTile(LogisticsLookupParcel parcel) {
     final intakeRecorded = parcel.centerIntakeRecordedAt.isNotEmpty;
     final lastCenter = parcel.lastRecordedCenter;
-    return ListTile(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        ListTile(
       contentPadding: EdgeInsets.zero,
       leading: const Icon(Icons.local_mall_outlined),
       title: Text(parcel.reference),
@@ -789,6 +793,24 @@ class _LogisticsWaybillLookupPageState
       trailing: parcel.terminal
           ? const Icon(Icons.check_circle_outline_rounded)
           : null,
+        ),
+        for (final product in parcel.products)
+          ListTile(
+            contentPadding: const EdgeInsets.only(left: 12),
+            leading: ProductThumbnail(
+              imageUrl: product.imageUrl,
+              size: 48,
+              semanticLabel: product.name,
+            ),
+            title: Text(product.name.isEmpty ? 'Purchased item' : product.name),
+            subtitle: Text(
+              [
+                if (product.variant.isNotEmpty) product.variant,
+                'Qty ${product.quantity}',
+              ].join(' / '),
+            ),
+          ),
+      ],
     );
   }
 

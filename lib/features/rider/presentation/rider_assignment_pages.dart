@@ -6,6 +6,7 @@ import 'package:image_picker/image_picker.dart';
 import '../../../core/network/api_client.dart';
 import '../../../core/routes/app_route_names.dart';
 import '../../../core/theme/bearly_theme.dart';
+import '../../../core/widgets/product_thumbnail.dart';
 import '../../auth/data/auth_service.dart';
 import '../data/rider_repository.dart';
 import '../models/rider_assignment.dart';
@@ -107,13 +108,21 @@ class _RiderAssignmentListPageState extends State<RiderAssignmentListPage> {
     margin: const EdgeInsets.only(bottom: 10),
     child: ListTile(
       contentPadding: const EdgeInsets.all(14),
-      leading: CircleAvatar(
-        backgroundColor: BearlyColors.cream200,
-        foregroundColor: BearlyColors.brown700,
-        child: Icon(
-          _isPickup ? Icons.storefront_outlined : Icons.local_shipping_outlined,
+      leading: job.productItems.isNotEmpty
+          ? ProductThumbnail(
+              imageUrl: job.productItems.first.imageUrl,
+              size: 52,
+              semanticLabel: job.productItems.first.name,
+            )
+          : CircleAvatar(
+              backgroundColor: BearlyColors.cream200,
+              foregroundColor: BearlyColors.brown700,
+              child: Icon(
+                _isPickup
+                    ? Icons.storefront_outlined
+                    : Icons.local_shipping_outlined,
+              ),
         ),
-      ),
       title: Text(job.title, maxLines: 1, overflow: TextOverflow.ellipsis),
       subtitle: Padding(
         padding: const EdgeInsets.only(top: 5),
@@ -970,19 +979,31 @@ class _RiderJobDetailPageState extends State<RiderJobDetailPage> {
                   ),
                 ),
               ),
-            if (job.products.isNotEmpty) ...[
+            if (job.productItems.isNotEmpty) ...[
               const SizedBox(height: 12),
               Text(
                 'Order contents',
                 style: Theme.of(context).textTheme.titleLarge,
               ),
               const SizedBox(height: 8),
-              ...job.products.map(
+              ...job.productItems.map(
                 (product) => Card(
                   color: Colors.white,
                   child: ListTile(
-                    leading: const Icon(Icons.inventory_outlined),
-                    title: Text(product),
+                    leading: ProductThumbnail(
+                      imageUrl: product.imageUrl,
+                      size: 52,
+                      semanticLabel: product.name,
+                    ),
+                    title: Text(
+                      product.name.isEmpty ? 'Purchased item' : product.name,
+                    ),
+                    subtitle: Text(
+                      [
+                        if (product.variant.isNotEmpty) product.variant,
+                        'Qty ${product.quantity}',
+                      ].join(' · '),
+                    ),
                   ),
                 ),
               ),

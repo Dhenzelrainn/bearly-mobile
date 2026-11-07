@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:bearly_mobile/core/network/api_client.dart';
 import 'package:bearly_mobile/core/routes/app_routes.dart';
+import 'package:bearly_mobile/core/widgets/product_thumbnail.dart';
 import 'package:bearly_mobile/features/auth/data/auth_service.dart';
 import 'package:bearly_mobile/features/auth/models/account_role.dart';
 import 'package:bearly_mobile/features/buyer/data/buyer_address_controller.dart';
@@ -67,6 +68,9 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('BRL-812'), findsOneWidget);
+      expect(find.text('Order History Bear'), findsOneWidget);
+      expect(find.text('Honey / Small'), findsOneWidget);
+      expect(find.byType(ProductThumbnail), findsNWidgets(2));
       expect(find.text('Bearly Studio'), findsOneWidget);
       expect(find.text('Laguna Makers'), findsOneWidget);
       expect(find.textContaining('Processing'), findsOneWidget);
@@ -139,6 +143,7 @@ void main() {
             item: _itemJson(
               name: 'Handmade Bear',
               variant: 'Honey / Large',
+              image: 'https://images.bearly.test/history-bear.jpg',
               options: {'Color': 'Honey', 'Size': 'Large'},
               unit: 12500,
               total: 11500,
@@ -270,6 +275,7 @@ void main() {
         await _scrollTo(tester, find.textContaining('Honey / Large'));
         expect(find.text('Handmade Bear'), findsOneWidget);
         expect(find.textContaining('Honey / Large'), findsOneWidget);
+        expect(find.byType(ProductThumbnail), findsNWidgets(2));
         expect(
           find.textContaining('Purchase-time unit price'),
           findsNWidgets(2),
@@ -1697,6 +1703,21 @@ Map<String, Object?> _summaryJson({
   'total_minor': total,
   'item_count': 2,
   'preview_image_url': null,
+  'preview_items': [
+    {
+      'product_name': 'Order History Bear',
+      'variant_name': 'Honey / Small',
+      'quantity': 1,
+      'product_image_url': 'https://images.bearly.test/order-bear.jpg',
+    },
+    {
+      'product_name': 'Order History Pouch',
+      'variant_name': 'Olive / Medium',
+      'quantity': 1,
+      'product_image_url': null,
+    },
+  ],
+  'additional_preview_items_count': 0,
   'cod_payment': noPayment
       ? null
       : {
