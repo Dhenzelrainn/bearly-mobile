@@ -6,6 +6,7 @@ import '../../../core/network/api_client.dart';
 import '../../../core/routes/app_route_names.dart';
 import '../../../core/theme/bearly_theme.dart';
 import '../../../core/widgets/bearly_logo.dart';
+import '../../../core/widgets/product_thumbnail.dart';
 import '../../auth/data/auth_service.dart';
 import '../data/buyer_cart_controller.dart';
 import '../data/buyer_catalog_repository.dart';
@@ -1045,32 +1046,171 @@ class _BuyerProductDetailPageState extends State<BuyerProductDetailPage> {
     );
   }
 
-  Widget _reviews(BuyerCatalogProduct product) => _section(
-    'Ratings & Reviews',
-    Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Column(
-          children: [
+  Widget _reviews(BuyerCatalogProduct product) {
+    final summary = product.ratingSummary;
+    return _section(
+      'Ratings & Reviews',
+      Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Column(
+                children: [
+                  Text(
+                    summary.average.toStringAsFixed(1),
+                    style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                      color: BearlyColors.gold,
+                      fontSize: _compact ? 26 : null,
+                    ),
+                  ),
+                  Text(
+                    'out of 5',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ],
+              ),
+              SizedBox(width: _compact ? 16 : 22),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '${summary.count} ${summary.count == 1 ? 'rating' : 'ratings'}',
+                      style: Theme.of(context).textTheme.bodyMedium,
+                    ),
+                    for (var star = 5; star >= 1; star--)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 3),
+                        child: Row(
+                          children: [
+                            SizedBox(
+                              width: 16,
+                              child: Text(
+                                '$star',
+                                style: Theme.of(context).textTheme.labelSmall,
+                              ),
+                            ),
+                            const Icon(
+                              Icons.star_rounded,
+                              size: 14,
+                              color: BearlyColors.gold,
+                            ),
+                            const SizedBox(width: 5),
+                            Expanded(
+                              child: LinearProgressIndicator(
+                                minHeight: 5,
+                                value: summary.count == 0
+                                    ? 0
+                                    : (summary.distribution[star] ?? 0) /
+                                          summary.count,
+                                backgroundColor: BearlyColors.cream200,
+                                color: BearlyColors.gold,
+                              ),
+                            ),
+                            SizedBox(
+                              width: 28,
+                              child: Text(
+                                '${summary.distribution[star] ?? 0}',
+                                textAlign: TextAlign.end,
+                                style: Theme.of(context).textTheme.labelSmall,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const Divider(height: 24),
+          if (product.reviews.isEmpty)
             Text(
-              product.ratingSummary.average.toStringAsFixed(1),
-              style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                color: BearlyColors.gold,
-                fontSize: _compact ? 26 : null,
+              summary.count == 0
+                  ? 'No reviews yet.'
+                  : 'No written reviews are available to display.',
+              key: const ValueKey('buyer-product-reviews-empty'),
+              style: Theme.of(context).textTheme.bodyMedium,
+            )
+          else
+            for (final review in product.reviews) ...[
+              _productReviewCard(review),
+              if (review != product.reviews.last) const Divider(height: 24),
+            ],
+        ],
+      ),
+    );
+  }
+
+  Widget _productReviewCard(BuyerProductReview review) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Row(
+        children: [
+          Expanded(
+            child: Text(
+              review.name,
+              style: Theme.of(context).textTheme.titleSmall,
+            ),
+          ),
+          Text(
+            review.dateDisplay,
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+        ],
+      ),
+      const SizedBox(height: 3),
+      Row(
+        children: [
+          for (var star = 1; star <= 5; star++)
+            Icon(
+              star <= review.rating
+                  ? Icons.star_rounded
+                  : Icons.star_outline_rounded,
+              color: BearlyColors.gold,
+              size: 17,
+            ),
+          if (review.variation.isNotEmpty) ...[
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                review.variation,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.bodySmall,
               ),
             ),
-            Text('out of 5', style: Theme.of(context).textTheme.bodySmall),
           ],
-        ),
-        SizedBox(width: _compact ? 16 : 22),
-        Expanded(
-          child: Text(
-            '${product.ratingSummary.count} ${product.ratingSummary.count == 1 ? 'rating' : 'ratings'}',
-            style: Theme.of(context).textTheme.bodyMedium,
+        ],
+      ),
+      if (review.text.isNotEmpty) ...[
+        const SizedBox(height: 6),
+        Text(review.text),
+      ],
+      if (review.photoUrl?.isNotEmpty == true)
+        Padding(
+          padding: const EdgeInsets.only(top: 8),
+          child: ProductThumbnail(
+            imageUrl: review.photoUrl,
+            size: 72,
+            semanticLabel: 'Buyer review photo',
           ),
         ),
+      if (review.response?.trim().isNotEmpty == true) ...[
+        const SizedBox(height: 8),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            color: BearlyColors.cream100,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Text('Seller response · ${review.response}'),
+        ),
       ],
-    ),
+    ],
   );
 
   Widget _section(String title, Widget child, {Widget? extra}) => Container(

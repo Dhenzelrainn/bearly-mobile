@@ -591,6 +591,8 @@ class BuyerOrderItemSnapshot {
     required this.platformDiscountMinor,
     required this.campaignPlatformDiscountMinor,
     required this.totalMinor,
+    this.canReview = false,
+    this.review,
   }) : options = Map.unmodifiable(options);
 
   final int id;
@@ -606,6 +608,8 @@ class BuyerOrderItemSnapshot {
   final int platformDiscountMinor;
   final int campaignPlatformDiscountMinor;
   final int totalMinor;
+  final bool canReview;
+  final BuyerOrderReview? review;
 
   factory BuyerOrderItemSnapshot.fromJson(Object? value) {
     final json = buyerCheckoutMap(value, 'order_item');
@@ -649,6 +653,47 @@ class BuyerOrderItemSnapshot {
         'order_item',
       ),
       totalMinor: buyerCheckoutInt(json, 'total_minor', 'order_item'),
+      canReview: json['can_review'] == true,
+      review: json['review'] == null
+          ? null
+          : BuyerOrderReview.fromJson(json['review']),
+    );
+  }
+}
+
+class BuyerOrderReview {
+  const BuyerOrderReview({
+    required this.rating,
+    required this.comment,
+    required this.photoUrl,
+    required this.reviewedAt,
+  });
+
+  final int rating;
+  final String comment;
+  final String? photoUrl;
+  final DateTime? reviewedAt;
+
+  factory BuyerOrderReview.fromJson(Object? value) {
+    final json = buyerCheckoutMap(value, 'order_item.review');
+    final rating = buyerCheckoutInt(json, 'rating', 'order_item.review');
+    if (rating < 1 || rating > 5) {
+      throw const BuyerCheckoutFormatException('order_item.review.rating');
+    }
+    return BuyerOrderReview(
+      rating: rating,
+      comment: buyerCheckoutString(
+        json,
+        'comment',
+        'order_item.review',
+        allowEmpty: true,
+      ),
+      photoUrl: buyerCheckoutOptionalString(json, 'photo', 'order_item.review'),
+      reviewedAt: buyerCheckoutOptionalDate(
+        json,
+        'reviewed_at',
+        'order_item.review',
+      ),
     );
   }
 }

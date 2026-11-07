@@ -192,6 +192,59 @@ void main() {
       expect(find.byKey(const ValueKey('buyer-detail-price')), findsOneWidget);
     });
 
+    testWidgets('product details show the API rating breakdown and reviews', (
+      tester,
+    ) async {
+      final auth = _authService((request) async {
+        if (request.url.path.endsWith('/categories')) {
+          return _jsonResponse({'data': []});
+        }
+        if (request.url.path == '/api/mobile/buyer/products/41') {
+          final detail = _product(detail: true)
+            ..['rating_summary'] = {
+              'average': 4.5,
+              'count': 2,
+              'distribution': {'5': 1, '4': 1, '3': 0, '2': 0, '1': 0},
+              'with_comments': 2,
+              'with_media': 0,
+            }
+            ..['reviews'] = [
+              {
+                'id': 91,
+                'name': 'b******r',
+                'date': '2026-11-05 10:30',
+                'date_display': 'Nov 5, 2026',
+                'rating': 5,
+                'text': 'The stitching is excellent.',
+                'variation': 'Honey / Large',
+                'photo': '',
+                'response': 'Thank you!',
+                'response_at_display': 'Nov 6, 2026',
+              },
+            ];
+          return _jsonResponse({'data': detail});
+        }
+        return _jsonResponse(_page([_product()]));
+      });
+      auth.currentSession = _buyerSession();
+
+      await _pumpApp(tester, auth);
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(
+        find.byKey(const ValueKey('buyer-product-41')),
+      );
+      await tester.tap(find.byKey(const ValueKey('buyer-product-41')));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text('The stitching is excellent.'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('4.5'), findsNWidgets(2));
+      expect(find.text('2 ratings'), findsOneWidget);
+      expect(find.text('b******r'), findsOneWidget);
+      expect(find.text('Honey / Large'), findsOneWidget);
+      expect(find.textContaining('Thank you!'), findsOneWidget);
+    });
+
     testWidgets('detail variant selection updates price and availability', (
       tester,
     ) async {

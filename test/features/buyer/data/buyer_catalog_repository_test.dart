@@ -121,6 +121,49 @@ void main() {
       },
     );
 
+    test('parses real review summaries and visible product reviews', () async {
+      final detail = _productJson()
+        ..['rating_summary'] = {
+          'average': 4.5,
+          'count': 2,
+          'distribution': {'5': 1, '4': 1, '3': 0, '2': 0, '1': 0},
+          'with_comments': 2,
+          'with_media': 1,
+        }
+        ..['reviews'] = [
+          {
+            'id': 61,
+            'name': 'b******r',
+            'date': '2026-11-05 10:30',
+            'date_display': 'Nov 5, 2026',
+            'rating': 5,
+            'text': 'Just like the photos.',
+            'variation': 'Honey / Medium',
+            'photo': 'https://cdn.example.test/review/bear.jpg',
+            'response': 'Thank you for the feedback.',
+            'response_at_display': 'Nov 6, 2026',
+          },
+        ];
+      final repository = _repository(
+        (_) async => _jsonResponse({'data': detail}),
+      );
+
+      final product = await repository.getProduct(41);
+
+      expect(product.ratingSummary.average, 4.5);
+      expect(product.ratingSummary.count, 2);
+      expect(product.ratingSummary.distribution[5], 1);
+      expect(product.ratingSummary.withMedia, 1);
+      expect(product.reviews.single.name, 'b******r');
+      expect(product.reviews.single.rating, 5);
+      expect(product.reviews.single.text, 'Just like the photos.');
+      expect(
+        product.reviews.single.photoUrl,
+        'https://cdn.example.test/review/bear.jpg',
+      );
+      expect(product.reviews.single.response, 'Thank you for the feedback.');
+    });
+
     test(
       'handles nullable optional metadata and empty image galleries',
       () async {

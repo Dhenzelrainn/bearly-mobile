@@ -140,8 +140,10 @@ class BuyerCatalogProduct {
     required List<BuyerCatalogVariant> variants,
     required this.ratingSummary,
     required List<BuyerProductImage> images,
+    List<BuyerProductReview> reviews = const [],
   }) : variants = List.unmodifiable(variants),
-       images = List.unmodifiable(images);
+       images = List.unmodifiable(images),
+       reviews = List.unmodifiable(reviews);
 
   final int id;
   final String slug;
@@ -159,6 +161,7 @@ class BuyerCatalogProduct {
   final List<BuyerCatalogVariant> variants;
   final BuyerRatingSummary ratingSummary;
   final List<BuyerProductImage> images;
+  final List<BuyerProductReview> reviews;
 
   String get formattedPrice =>
       formatPriceMinorUnits(priceMinor, currency: currency);
@@ -190,6 +193,10 @@ class BuyerCatalogProduct {
     final rawImages = json['images'];
     if (rawImages != null && rawImages is! List) {
       throw const BuyerCatalogFormatException('product.images');
+    }
+    final rawReviews = json['reviews'];
+    if (rawReviews != null && rawReviews is! List) {
+      throw const BuyerCatalogFormatException('product.reviews');
     }
 
     return BuyerCatalogProduct(
@@ -230,6 +237,59 @@ class BuyerCatalogProduct {
                 .map(BuyerProductImage.tryFromJson)
                 .whereType<BuyerProductImage>()
                 .toList(growable: false),
+      reviews: rawReviews == null
+          ? const []
+          : (rawReviews as List)
+                .map(BuyerProductReview.fromJson)
+                .toList(growable: false),
+    );
+  }
+}
+
+class BuyerProductReview {
+  const BuyerProductReview({
+    required this.id,
+    required this.name,
+    required this.dateDisplay,
+    required this.rating,
+    required this.text,
+    required this.variation,
+    required this.photoUrl,
+    required this.response,
+    required this.responseAtDisplay,
+  });
+
+  final int id;
+  final String name;
+  final String dateDisplay;
+  final int rating;
+  final String text;
+  final String variation;
+  final String? photoUrl;
+  final String? response;
+  final String? responseAtDisplay;
+
+  factory BuyerProductReview.fromJson(Object? value) {
+    final json = _jsonMap(value, 'product.reviews[]');
+    final rating = _requiredInt(json, 'rating', 'product.reviews[]');
+    if (rating < 1 || rating > 5) {
+      throw const BuyerCatalogFormatException('product.reviews[].rating');
+    }
+    return BuyerProductReview(
+      id: _requiredInt(json, 'id', 'product.reviews[]'),
+      name: _requiredString(json, 'name', 'product.reviews[]'),
+      dateDisplay: _optionalString(json['date_display']),
+      rating: rating,
+      text: _requiredString(
+        json,
+        'text',
+        'product.reviews[]',
+        allowEmpty: true,
+      ),
+      variation: _optionalString(json['variation']),
+      photoUrl: _buyerImageUrlPolicy.normalize(json['photo']),
+      response: _optionalString(json['response']),
+      responseAtDisplay: _optionalString(json['response_at_display']),
     );
   }
 }
@@ -329,10 +389,19 @@ class BuyerCatalogVariant {
 }
 
 class BuyerRatingSummary {
-  const BuyerRatingSummary({required this.average, required this.count});
+  const BuyerRatingSummary({
+    required this.average,
+    required this.count,
+    this.distribution = const {},
+    this.withComments = 0,
+    this.withMedia = 0,
+  });
 
   final double average;
   final int count;
+  final Map<int, int> distribution;
+  final int withComments;
+  final int withMedia;
 
   factory BuyerRatingSummary.fromJson(Object? value) {
     final json = _jsonMap(value, 'rating_summary');
@@ -344,8 +413,38 @@ class BuyerRatingSummary {
     if (count < 0) {
       throw const BuyerCatalogFormatException('rating_summary.count');
     }
-    return BuyerRatingSummary(average: rawAverage.toDouble(), count: count);
+    final rawDistribution = json['distribution'];
+    final distribution = <int, int>{};
+    if (rawDistribution is Map) {
+      for (final entry in rawDistribution.entries) {
+        final rating = int.tryParse('${entry.key}');
+        final ratingCount = entry.value is int
+            ? entry.value as int
+            : int.tryParse('${entry.value}');
+        if (rating != null &&
+            rating >= 1 &&
+            rating <= 5 &&
+            ratingCount != null &&
+            ratingCount >= 0) {
+          distribution[rating] = ratingCount;
+        }
+      }
+    }
+    return BuyerRatingSummary(
+      average: rawAverage.toDouble(),
+      count: count,
+      distribution: Map.unmodifiable(distribution),
+      withComments: _optionalNonNegativeInt(json['with_comments']),
+      withMedia: _optionalNonNegativeInt(json['with_media']),
+    );
   }
+}
+
+String _optionalString(Object? value) => value is String ? value.trim() : '';
+
+int _optionalNonNegativeInt(Object? value) {
+  final parsed = value is int ? value : int.tryParse('$value');
+  return parsed != null && parsed >= 0 ? parsed : 0;
 }
 
 class BuyerProductImage {

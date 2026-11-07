@@ -130,6 +130,78 @@ void main() {
       expect(h.requests.single.method, 'GET');
     });
 
+    testWidgets('completed purchase can be reviewed and refreshed', (
+      tester,
+    ) async {
+      var saved = false;
+      final h = _Harness(
+        detailHandler: (_) async => _json(
+          _detailResponse(
+            sellers: [
+              _sellerDetailJson(
+                id: 991,
+                reference: 'SELL-991',
+                store: 'Bearly Studio',
+                status: 'completed',
+                shipments: const [],
+                item: _itemJson(
+                  canReview: true,
+                  review: saved
+                      ? {
+                          'rating': 5,
+                          'comment': 'Fits perfectly.',
+                          'photo': null,
+                          'reviewed_at': '2026-11-06T10:00:00Z',
+                        }
+                      : null,
+                ),
+              ),
+            ],
+          ),
+        ),
+        reviewHandler: (request) async {
+          expect(request.method, 'POST');
+          expect(request.url.path, '/api/mobile/buyer/reviews');
+          expect(jsonDecode(request.body), {
+            'order_item_id': '881',
+            'rating': '5',
+            'comment': 'Fits perfectly.',
+          });
+          saved = true;
+          return _json({
+            'data': {'order_item_id': 881, 'rating': 5},
+          }, 201);
+        },
+      );
+      await _mountOrders(tester, h);
+      await tester.tap(find.text('BRL-812'));
+      await tester.pumpAndSettle();
+
+      final reviewAction = find.byKey(
+        const ValueKey('buyer-order-review-action-881'),
+      );
+      await tester.ensureVisible(reviewAction);
+      await tester.pumpAndSettle();
+      await tester.tap(reviewAction);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('buyer-review-star-5')));
+      await tester.enterText(
+        find.byKey(const ValueKey('buyer-review-comment')),
+        'Fits perfectly.',
+      );
+      await tester.tap(find.byKey(const ValueKey('buyer-review-submit')));
+      await tester.pumpAndSettle();
+
+      expect(saved, isTrue);
+      expect(find.text('Your review · 5/5'), findsOneWidget);
+      expect(find.text('Fits perfectly.'), findsOneWidget);
+      expect(find.text('Update review'), findsOneWidget);
+      expect(
+        h.requests.where((request) => request.method == 'POST'),
+        hasLength(1),
+      );
+    });
+
     testWidgets(
       'details show historical variants, COD state, Seller groups, and tracking',
       (tester) async {
@@ -1539,6 +1611,7 @@ class _Harness {
     this.detailHandler,
     this.trackingHandler,
     this.receiptHandler,
+    this.reviewHandler,
   }) {
     apiClient = ApiClient(
       httpClient: client,
@@ -1562,6 +1635,7 @@ class _Harness {
   final Future<http.Response> Function(http.Request)? detailHandler;
   final Future<http.Response> Function(http.Request)? trackingHandler;
   final Future<http.Response> Function(http.Request)? receiptHandler;
+  final Future<http.Response> Function(http.Request)? reviewHandler;
   final List<http.Request> requests = [];
 
   late final MockClient client = MockClient(_respond);
@@ -1575,6 +1649,12 @@ class _Harness {
 
   Future<http.Response> _respond(http.Request request) async {
     requests.add(request);
+    if (request.method == 'POST' &&
+        request.url.path == '/api/mobile/buyer/reviews') {
+      return reviewHandler == null
+          ? _json({'message': 'Unexpected review submission.'}, 405)
+          : reviewHandler!(request);
+    }
     if (request.method == 'POST' &&
         request.url.path.endsWith('/confirm-receipt')) {
       return receiptHandler == null
@@ -1811,6 +1891,8 @@ Map<String, Object?> _itemJson({
   int subtotal = 12500,
   int total = 11500,
   String? image,
+  bool canReview = false,
+  Map<String, Object?>? review,
 }) => {
   'id': 881,
   'product_name': name,
@@ -1825,6 +1907,8 @@ Map<String, Object?> _itemJson({
   'platform_discount_minor': 1000,
   'campaign_platform_discount_minor': 0,
   'total_minor': total,
+  'can_review': canReview,
+  'review': review,
 };
 
 Map<String, Object?> _detailResponse({

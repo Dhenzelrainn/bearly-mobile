@@ -7,9 +7,11 @@ import '../../../core/widgets/product_thumbnail.dart';
 import '../../auth/data/auth_service.dart';
 import '../data/buyer_checkout_repository.dart';
 import '../data/buyer_order_detail_controller.dart';
+import '../data/buyer_review_repository.dart';
 import '../models/buyer_order_models.dart';
 import '../models/buyer_tracking_models.dart';
 import 'buyer_order_display.dart';
+import 'buyer_review_editor.dart';
 
 class BuyerOrderDetailsPage extends StatefulWidget {
   const BuyerOrderDetailsPage({
@@ -18,12 +20,14 @@ class BuyerOrderDetailsPage extends StatefulWidget {
     required this.checkoutRepository,
     required this.orderId,
     required this.onSignInAgain,
+    this.reviewRepository,
   });
 
   final AuthService authService;
   final BuyerCheckoutRepository checkoutRepository;
   final int orderId;
   final VoidCallback onSignInAgain;
+  final BuyerReviewRepository? reviewRepository;
 
   @override
   State<BuyerOrderDetailsPage> createState() => _BuyerOrderDetailsPageState();
@@ -39,6 +43,9 @@ class _BuyerOrderDetailsPageState extends State<BuyerOrderDetailsPage> {
         checkoutRepository: widget.checkoutRepository,
         orderId: widget.orderId,
       );
+  late final BuyerReviewRepository _reviewRepository =
+      widget.reviewRepository ??
+      BuyerReviewRepository(authService: widget.authService);
 
   @override
   void initState() {
@@ -569,9 +576,77 @@ class _BuyerOrderDetailsPageState extends State<BuyerOrderDetailsPage> {
               context,
             ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
           ),
+          if (item.review != null) ...[
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                const Icon(
+                  Icons.star_rounded,
+                  color: BearlyColors.gold,
+                  size: 18,
+                ),
+                Text('Your review · ${item.review!.rating}/5'),
+              ],
+            ),
+            if (item.review!.comment.isNotEmpty)
+              Text(
+                item.review!.comment,
+                key: ValueKey('buyer-order-review-${item.id}'),
+              ),
+            if (item.review!.photoUrl?.isNotEmpty == true)
+              Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: ProductThumbnail(
+                  imageUrl: item.review!.photoUrl,
+                  size: 56,
+                  semanticLabel: 'Your review photo',
+                ),
+              ),
+          ],
+          if (item.canReview) ...[
+            const SizedBox(height: 8),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: OutlinedButton.icon(
+                key: ValueKey('buyer-order-review-action-${item.id}'),
+                onPressed: () => _openReviewEditor(item),
+                icon: const Icon(Icons.rate_review_outlined),
+                label: Text(
+                  item.review == null ? 'Write a review' : 'Update review',
+                ),
+              ),
+            ),
+          ] else if (item.review == null) ...[
+            const SizedBox(height: 6),
+            Text(
+              'Reviews require a completed Seller Order.',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ],
         ],
       ),
     );
+  }
+
+  Future<void> _openReviewEditor(BuyerOrderItemSnapshot item) async {
+    final submitted = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (_) => BuyerReviewEditor(
+        item: item,
+        repository: _reviewRepository,
+        initialReview: item.review,
+      ),
+    );
+    if (submitted != true || !mounted) return;
+    await _controller.load();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        const SnackBar(content: Text('Your product review was saved.')),
+      );
   }
 
   Widget _trackingSection(
