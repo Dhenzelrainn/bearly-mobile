@@ -16,6 +16,7 @@ import '../models/buyer_catalog_models.dart';
 import '../models/buyer_checkout_models.dart';
 import '../models/buyer_order_models.dart';
 import '../models/buyer_shopping_models.dart';
+import '../models/buyer_voucher_models.dart';
 import 'buyer_address_form_page.dart';
 
 class BuyerCheckoutReviewPage extends StatefulWidget {
@@ -41,12 +42,30 @@ class _BuyerCheckoutReviewPageState extends State<BuyerCheckoutReviewPage> {
   BuyerCheckoutReviewController get controller => widget.reviewController;
   BuyerCheckoutPlacementController get placement => widget.placementController;
   bool _reviewInitializationStarted = false;
+  late final TextEditingController _promoCodeController;
+  String _selectedVoucherOption = '';
+  String? _voucherSelectionError;
   int? _observedPlacementSessionGeneration;
   Future<void>? _reviewInitialization;
 
   @override
   void initState() {
     super.initState();
+    final applied = controller.voucherSelection;
+    _promoCodeController = TextEditingController(text: applied.voucherCode);
+    _selectedVoucherOption = _voucherOptionKeyFor(
+      source: applied.platformVoucherId != null
+          ? 'platform'
+          : applied.platformShippingVoucherId != null
+          ? 'shipping'
+          : applied.storeVoucherId != null
+          ? 'store'
+          : null,
+      id:
+          applied.platformVoucherId ??
+          applied.platformShippingVoucherId ??
+          applied.storeVoucherId,
+    );
     placement.addListener(_onPlacementChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) unawaited(_initializeCheckout());
@@ -83,6 +102,7 @@ class _BuyerCheckoutReviewPageState extends State<BuyerCheckoutReviewPage> {
   @override
   void dispose() {
     placement.removeListener(_onPlacementChanged);
+    _promoCodeController.dispose();
     placement.dispose();
     controller.dispose();
     super.dispose();
@@ -425,6 +445,8 @@ class _BuyerCheckoutReviewPageState extends State<BuyerCheckoutReviewPage> {
           _addressSection(),
           const SizedBox(height: 14),
           _selectionSection(),
+          const SizedBox(height: 12),
+          _voucherSelectionSection(),
           const SizedBox(height: 14),
           if (controller.isQuoting) ...[
             const LinearProgressIndicator(
@@ -668,6 +690,154 @@ class _BuyerCheckoutReviewPageState extends State<BuyerCheckoutReviewPage> {
       ),
     );
   }
+
+  Widget _voucherSelectionSection() {
+    final wallet = controller.voucherWallet;
+    final choices =
+        wallet?.vouchers
+            .where((voucher) => voucher.isClaimed && voucher.canUse)
+            .toList(growable: false) ??
+        const <BuyerVoucher>[];
+    final choiceKeys = choices
+        .map((voucher) => _voucherOptionKey(voucher))
+        .toSet();
+    final currentChoice = choiceKeys.contains(_selectedVoucherOption)
+        ? _selectedVoucherOption
+        : '';
+
+    return _sectionCard(
+      title: 'Vouchers and promo code',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          TextField(
+            key: const ValueKey('buyer-checkout-promo-code'),
+            controller: _promoCodeController,
+            textCapitalization: TextCapitalization.characters,
+            maxLength: 40,
+            decoration: const InputDecoration(
+              labelText: 'Promo code',
+              helperText: 'This stays separate from your claimed voucher.',
+              counterText: '',
+              border: OutlineInputBorder(),
+            ),
+            enabled: !placement.isSubmitting,
+          ),
+          const SizedBox(height: 10),
+          DropdownButtonFormField<String>(
+            key: const ValueKey('buyer-checkout-claimed-voucher'),
+            initialValue: currentChoice,
+            isExpanded: true,
+            decoration: InputDecoration(
+              labelText: 'Claimed voucher',
+              helperText: controller.isLoadingVoucherWallet
+                  ? 'Loading your claimed vouchers…'
+                  : controller.voucherWalletError != null
+                  ? 'Vouchers could not be loaded. Refresh the page to retry.'
+                  : 'One claimed voucher can be selected with a promo code when both are eligible.',
+              border: const OutlineInputBorder(),
+            ),
+            items: [
+              const DropdownMenuItem(
+                value: '',
+                child: Text('No claimed voucher'),
+              ),
+              for (final voucher in choices)
+                DropdownMenuItem(
+                  value: _voucherOptionKey(voucher),
+                  key: ValueKey(
+                    'buyer-checkout-voucher-option-${voucher.source}-${voucher.id}',
+                  ),
+                  child: Text(
+                    '${voucher.name} · ${voucher.valueLabel}',
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+            ],
+            onChanged: placement.isSubmitting
+                ? null
+                : (value) =>
+                      setState(() => _selectedVoucherOption = value ?? ''),
+          ),
+          if (_voucherSelectionError != null) ...[
+            const SizedBox(height: 6),
+            Text(
+              _voucherSelectionError!,
+              key: const ValueKey('buyer-checkout-voucher-selection-error'),
+              style: TextStyle(color: Theme.of(context).colorScheme.error),
+            ),
+          ],
+          if (wallet == null && controller.voucherWalletError == null)
+            const Padding(
+              padding: EdgeInsets.only(top: 8),
+              child: Text('Claim vouchers from My Vouchers before checkout.'),
+            ),
+          const SizedBox(height: 10),
+          Align(
+            alignment: Alignment.centerRight,
+            child: FilledButton.tonal(
+              key: const ValueKey('buyer-checkout-apply-vouchers'),
+              onPressed: placement.isSubmitting || !controller.canRequestQuote
+                  ? null
+                  : () => unawaited(_applyVoucherSelection(choices)),
+              child: const Text('Apply and refresh quote'),
+            ),
+          ),
+          const Text(
+            'Bearly checks code, claim, expiry, minimum spend, and item eligibility on the server. COD totals come from the current quote.',
+            style: TextStyle(fontSize: 12),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _applyVoucherSelection(List<BuyerVoucher> choices) async {
+    BuyerVoucher? voucher;
+    if (_selectedVoucherOption.isNotEmpty) {
+      for (final candidate in choices) {
+        if (_voucherOptionKey(candidate) == _selectedVoucherOption) {
+          voucher = candidate;
+          break;
+        }
+      }
+    }
+    try {
+      controller.setVoucherSelection(
+        BuyerCheckoutVoucherSelection(
+          platformVoucherId:
+              voucher != null &&
+                  voucher.source == 'platform' &&
+                  voucher.section != 'shipping'
+              ? voucher.id
+              : null,
+          platformShippingVoucherId:
+              voucher != null &&
+                  voucher.source == 'platform' &&
+                  voucher.section == 'shipping'
+              ? voucher.id
+              : null,
+          storeVoucherId: voucher?.source == 'store' ? voucher!.id : null,
+          voucherCode: _promoCodeController.text,
+        ),
+      );
+      setState(() => _voucherSelectionError = null);
+      await controller.requestQuote();
+    } on ArgumentError {
+      setState(
+        () => _voucherSelectionError =
+            'Check the promo code format and try again.',
+      );
+    }
+  }
+
+  String _voucherOptionKey(BuyerVoucher voucher) => _voucherOptionKeyFor(
+    source: voucher.section == 'shipping' ? 'shipping' : voucher.source,
+    id: voucher.id,
+  );
+
+  String _voucherOptionKeyFor({required String? source, required int? id}) =>
+      source == null || id == null ? '' : '$source:$id';
 
   Widget _quoteContent(BuyerCheckoutQuote quote) {
     final cartItems = {

@@ -1,7 +1,9 @@
 import 'dart:async';
 
 import 'package:bearly_mobile/features/buyer/data/buyer_deals_repository.dart';
+import 'package:bearly_mobile/features/buyer/data/buyer_vouchers_repository.dart';
 import 'package:bearly_mobile/features/buyer/models/buyer_deals_models.dart';
+import 'package:bearly_mobile/features/buyer/models/buyer_voucher_models.dart';
 import 'package:bearly_mobile/features/buyer/presentation/buyer_deals_page.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -85,6 +87,35 @@ void main() {
     expect(repository.calls, 2);
     expect(find.text('No live deals right now'), findsOneWidget);
   });
+
+  testWidgets('claimable platform deal claims once and refreshes its state', (
+    tester,
+  ) async {
+    final deals = _FakeDealsDataSource()
+      ..responses.add(Future.value(_data(_offerDeals(claimed: false))))
+      ..responses.add(Future.value(_data(_offerDeals(claimed: true))));
+    final vouchers = _FakeVoucherDataSource();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: BuyerDealsPage(
+          repository: deals,
+          vouchersRepository: vouchers,
+          onOpenProduct: (_) {},
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('buyer-deals-claim-81')), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('buyer-deals-claim-81')));
+    await tester.pumpAndSettle();
+
+    expect(vouchers.claimedPlatformIds, [81]);
+    expect(deals.calls, 2);
+    expect(find.text('Added to My Vouchers'), findsOneWidget);
+    expect(find.text('Voucher added to My Vouchers.'), findsOneWidget);
+  });
 }
 
 class _FakeDealsDataSource implements BuyerDealsDataSource {
@@ -96,6 +127,24 @@ class _FakeDealsDataSource implements BuyerDealsDataSource {
     calls++;
     if (responses.isEmpty) return Future.value(_data(_emptyDeals));
     return responses.removeAt(0);
+  }
+}
+
+class _FakeVoucherDataSource implements BuyerVouchersDataSource {
+  final List<int> claimedPlatformIds = [];
+
+  @override
+  Future<BuyerVoucherWallet> getWallet() async => _emptyVoucherWallet();
+
+  @override
+  Future<BuyerVoucher> claim({
+    int? platformPromotionId,
+    int? storePromotionId,
+    String? code,
+  }) async {
+    if (platformPromotionId != null)
+      claimedPlatformIds.add(platformPromotionId);
+    return _dealVoucher();
   }
 }
 
@@ -150,6 +199,59 @@ final Map<String, Object?> _activeDeals = {
     ],
   },
 };
+
+Map<String, Object?> _offerDeals({required bool claimed}) => {
+  'data': {
+    'campaigns': [],
+    'store_deals': [],
+    'platform_offers': [
+      {
+        'id': 81,
+        'name': 'Claimable platform voucher',
+        'kind': 'voucher',
+        'discount_label': '₱5 off',
+        'description': 'Eligible products only.',
+        'terms': 'Minimum spend applies.',
+        'code': null,
+        'minimum_spend_minor': 1000,
+        'starts_at': '2026-11-01T00:00:00+08:00',
+        'ends_at': '2026-11-30T23:59:59+08:00',
+        'is_claimable': true,
+        'can_claim': !claimed,
+        'claimed': claimed,
+      },
+    ],
+  },
+};
+
+BuyerVoucher _dealVoucher() => const BuyerVoucher(
+  source: 'platform',
+  id: 81,
+  name: 'Claimable platform voucher',
+  title: '₱5 off',
+  valueLabel: '₱5.00',
+  minimumSpendMinor: 1000,
+  expiresAt: null,
+  section: 'discount',
+  claimed: true,
+  canClaim: false,
+  canUse: true,
+  autoApplies: false,
+  codeApplies: false,
+  availabilityStatus: 'active',
+  availabilityReason: null,
+  description: null,
+  terms: null,
+  code: null,
+  fundingType: 'platform',
+);
+
+BuyerVoucherWallet _emptyVoucherWallet() => BuyerVoucherWallet(
+  platform: const [],
+  store: const [],
+  claimedCount: 0,
+  categories: const [],
+);
 
 Map<String, Object?> _product(
   int id,

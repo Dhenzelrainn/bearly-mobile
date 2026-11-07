@@ -14,10 +14,12 @@ class BuyerCheckoutFormatException implements Exception {
 class BuyerCheckoutVoucherSelection {
   BuyerCheckoutVoucherSelection({
     this.platformVoucherId,
+    this.platformShippingVoucherId,
     this.storeVoucherId,
     String? voucherCode,
   }) : voucherCode = _normalizeVoucherCode(voucherCode) {
     if ((platformVoucherId != null && platformVoucherId! < 1) ||
+        (platformShippingVoucherId != null && platformShippingVoucherId! < 1) ||
         (storeVoucherId != null && storeVoucherId! < 1)) {
       throw ArgumentError('Voucher IDs must be positive.');
     }
@@ -29,17 +31,21 @@ class BuyerCheckoutVoucherSelection {
   }
 
   final int? platformVoucherId;
+  final int? platformShippingVoucherId;
   final int? storeVoucherId;
   final String? voucherCode;
 
   bool get isEmpty =>
       platformVoucherId == null &&
+      platformShippingVoucherId == null &&
       storeVoucherId == null &&
       voucherCode == null;
 
   Map<String, Object?> toJson({bool includeNulls = false}) => {
     if (includeNulls || platformVoucherId != null)
       'platform_voucher_id': platformVoucherId,
+    if (includeNulls || platformShippingVoucherId != null)
+      'platform_shipping_voucher_id': platformShippingVoucherId,
     if (includeNulls || storeVoucherId != null)
       'store_voucher_id': storeVoucherId,
     if (includeNulls || voucherCode != null) 'voucher_code': voucherCode,
@@ -52,6 +58,11 @@ class BuyerCheckoutVoucherSelection {
         platformVoucherId: buyerCheckoutOptionalInt(
           json,
           'platform_voucher_id',
+          'promotion_selection',
+        ),
+        platformShippingVoucherId: buyerCheckoutOptionalInt(
+          json,
+          'platform_shipping_voucher_id',
           'promotion_selection',
         ),
         storeVoucherId: buyerCheckoutOptionalInt(
@@ -74,12 +85,17 @@ class BuyerCheckoutVoucherSelection {
   bool operator ==(Object other) =>
       other is BuyerCheckoutVoucherSelection &&
       other.platformVoucherId == platformVoucherId &&
+      other.platformShippingVoucherId == platformShippingVoucherId &&
       other.storeVoucherId == storeVoucherId &&
       other.voucherCode == voucherCode;
 
   @override
-  int get hashCode =>
-      Object.hash(platformVoucherId, storeVoucherId, voucherCode);
+  int get hashCode => Object.hash(
+    platformVoucherId,
+    platformShippingVoucherId,
+    storeVoucherId,
+    voucherCode,
+  );
 }
 
 /// A product selection for direct checkout. Display labels stay on the local

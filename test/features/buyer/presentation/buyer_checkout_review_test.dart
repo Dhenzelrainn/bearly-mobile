@@ -13,6 +13,7 @@ import 'package:bearly_mobile/features/buyer/data/buyer_checkout_placement_contr
 import 'package:bearly_mobile/features/buyer/data/buyer_checkout_review_controller.dart';
 import 'package:bearly_mobile/features/buyer/data/buyer_location_repository.dart';
 import 'package:bearly_mobile/features/buyer/data/buyer_wishlist_controller.dart';
+import 'package:bearly_mobile/features/buyer/data/buyer_vouchers_repository.dart';
 import 'package:bearly_mobile/features/buyer/models/buyer_catalog_models.dart';
 import 'package:bearly_mobile/features/buyer/models/buyer_checkout_attempt.dart';
 import 'package:bearly_mobile/features/buyer/models/buyer_checkout_models.dart';
@@ -27,6 +28,120 @@ import 'package:http/testing.dart';
 
 void main() {
   group('Buyer checkout review integration', () {
+    testWidgets(
+      'keeps the promo code separate from a claimed voucher and shows Laravel total',
+      (tester) async {
+        late _Harness h;
+        h = _Harness(
+          enableVouchers: true,
+          quoteHandler: (request) async {
+            final body = jsonDecode(request.body) as Map<String, dynamic>;
+            final ids = (body['cart_item_ids'] as List).cast<int>();
+            final response = h.quoteResponse(
+              ids,
+              addressId: body['address_id'] as int,
+            );
+            final data = response['data'] as Map<String, Object?>;
+            if (body['voucher_code'] == 'SHOP-10' &&
+                body['platform_voucher_id'] == 77) {
+              data['platform_discount_minor'] = 500;
+              data['discount_minor'] = 500;
+              data['total_discount_minor'] = 500;
+              data['total_minor'] = 31500;
+              data['applied_promotions'] = [
+                {
+                  'source': 'platform',
+                  'name': 'Claimed Bearly voucher',
+                  'discount_minor': 500,
+                  'shipping_discount_minor': 0,
+                },
+                {
+                  'source': 'store',
+                  'name': 'Store promo code',
+                  'discount_minor': 600,
+                  'shipping_discount_minor': 0,
+                },
+              ];
+            }
+            return _json(response);
+          },
+        );
+        await _pumpCart(tester, h);
+        await tester.tap(find.byKey(const ValueKey('buyer-cart-select-501')));
+        await tester.pump();
+        await tester.ensureVisible(
+          find.byKey(const ValueKey('buyer-cart-continue-checkout')),
+        );
+        await tester.tap(
+          find.byKey(const ValueKey('buyer-cart-continue-checkout')),
+        );
+        await tester.pumpAndSettle();
+        await _scrollCheckoutUntilVisible(tester, find.text('Alpha Shop'));
+        expect(
+          h.requests.map((request) => request.url.path),
+          contains('/api/mobile/buyer/vouchers'),
+        );
+        final reviewController = tester
+            .widget<BuyerCheckoutReviewPage>(
+              find.byType(BuyerCheckoutReviewPage),
+            )
+            .reviewController;
+        expect(
+          reviewController.voucherWalletError,
+          isNull,
+          reason: '${reviewController.voucherWalletError}',
+        );
+        expect(reviewController.voucherWallet?.vouchers, hasLength(1));
+        expect(reviewController.voucherWallet?.claimed.single.canUse, isTrue);
+
+        await tester.ensureVisible(
+          find.byKey(const ValueKey('buyer-checkout-promo-code')),
+        );
+        await tester.enterText(
+          find.byKey(const ValueKey('buyer-checkout-promo-code')),
+          'shop-10',
+        );
+        await tester.ensureVisible(
+          find.byKey(const ValueKey('buyer-checkout-claimed-voucher')),
+        );
+        await tester.tap(
+          find.byKey(const ValueKey('buyer-checkout-claimed-voucher')),
+        );
+        await tester.pumpAndSettle();
+        expect(find.textContaining('Claimed Bearly voucher'), findsOneWidget);
+        await tester.tap(
+          find.byKey(
+            const ValueKey('buyer-checkout-voucher-option-platform-77'),
+          ),
+        );
+        await tester.pumpAndSettle();
+        await tester.ensureVisible(
+          find.byKey(const ValueKey('buyer-checkout-apply-vouchers')),
+        );
+        await tester.tap(
+          find.byKey(const ValueKey('buyer-checkout-apply-vouchers')),
+        );
+        await tester.pumpAndSettle();
+
+        final quoteRequest = h.requests
+            .where((request) => request.url.path.endsWith('/checkout/quote'))
+            .last;
+        expect(jsonDecode(quoteRequest.body), {
+          'address_id': 31,
+          'cart_item_ids': [501],
+          'payment_method': 'cod',
+          'platform_voucher_id': 77,
+          'voucher_code': 'SHOP-10',
+        });
+        expect(
+          find.text(formatPriceMinorUnits(31500, currency: 'PHP')),
+          findsWidgets,
+        );
+        expect(find.text('Claimed Bearly voucher'), findsOneWidget);
+        expect(find.text('Store promo code'), findsOneWidget);
+      },
+    );
+
     testWidgets('sends Cart IDs and renders the server COD quote', (
       tester,
     ) async {
@@ -66,8 +181,14 @@ void main() {
       expect(h.attemptStore.writeCount, 0);
       expect(h.attemptStore.clearCount, 0);
       expect(find.byType(BuyerCheckoutReviewPage), findsOneWidget);
+      await _scrollCheckoutUntilVisible(tester, find.text('Alpha Shop'));
       expect(find.text('Alpha Shop'), findsOneWidget);
+      await _scrollCheckoutUntilVisible(tester, find.text('Beta Shop'));
       expect(find.text('Beta Shop'), findsOneWidget);
+      await _scrollCheckoutUntilVisible(
+        tester,
+        find.text('Cash on Delivery (COD)'),
+      );
       expect(find.text('Cash on Delivery (COD)'), findsOneWidget);
       expect(
         find.byKey(const ValueKey('buyer-checkout-quote-error')),
@@ -746,6 +867,10 @@ void main() {
           find.byKey(const ValueKey('buyer-checkout-place-order')),
           findsNothing,
         );
+        await _scrollCheckoutUntilVisible(
+          tester,
+          find.byKey(const ValueKey('buyer-checkout-quote-expired')),
+        );
         expect(
           find.byKey(const ValueKey('buyer-checkout-quote-expired')),
           findsOneWidget,
@@ -884,7 +1009,10 @@ void main() {
         find.byKey(const ValueKey('buyer-checkout-confirm-placement')),
       );
       await tester.pumpAndSettle();
-
+      await _scrollCheckoutUntilVisible(
+        tester,
+        find.byKey(const ValueKey('buyer-checkout-placement-error')),
+      );
       expect(
         find.byKey(const ValueKey('buyer-checkout-placement-error')),
         findsOneWidget,
@@ -1107,6 +1235,20 @@ Future<void> _pumpCart(WidgetTester tester, _Harness h) async {
   await tester.pumpAndSettle();
 }
 
+Future<void> _scrollCheckoutUntilVisible(
+  WidgetTester tester,
+  Finder target,
+) async => tester.scrollUntilVisible(
+  target,
+  250,
+  scrollable: find
+      .descendant(
+        of: find.byKey(const ValueKey('buyer-checkout-review-list')),
+        matching: find.byType(Scrollable),
+      )
+      .first,
+);
+
 class _Harness {
   _Harness({
     List<Map<String, Object?>>? addresses,
@@ -1114,6 +1256,7 @@ class _Harness {
     Future<http.Response> Function(http.Request)? placeHandler,
     this.failAttemptWrites = false,
     this.quoteLifetime = const Duration(minutes: 5),
+    this.enableVouchers = false,
   }) : _addresses = List.of(
          addresses ?? [_address(32), _address(31, isDefault: true)],
        ) {
@@ -1126,6 +1269,10 @@ class _Harness {
       if (request.method == 'GET' &&
           request.url.path == '/api/mobile/buyer/addresses') {
         return _json({'data': _addresses});
+      }
+      if (request.method == 'GET' &&
+          request.url.path == '/api/mobile/buyer/vouchers') {
+        return _json(enableVouchers ? _voucherWallet() : _emptyVoucherWallet());
       }
       if (request.method == 'POST' &&
           request.url.path == '/api/mobile/buyer/addresses') {
@@ -1196,6 +1343,7 @@ class _Harness {
   final List<Map<String, Object?>> _addresses;
   final bool failAttemptWrites;
   final Duration quoteLifetime;
+  final bool enableVouchers;
   final List<Map<String, Object?>> _cartItems = [
     _cartItem(
       501,
@@ -1238,6 +1386,9 @@ class _Harness {
     cartController: cart,
     addressController: addresses,
     checkoutRepository: checkout,
+    vouchersRepository: enableVouchers
+        ? BuyerVouchersRepository(authService: auth)
+        : null,
     buyNowSelection: buyNowSelection,
   );
 
@@ -1420,6 +1571,43 @@ Map<String, Object?> _address(int id, {bool isDefault = false}) => {
   'longitude': null,
 };
 
+Map<String, Object?> _voucherWallet() => {
+  'data': {
+    'claimed_count': 1,
+    'categories': [
+      {'key': 'discount', 'label': 'Item discounts'},
+    ],
+    'platform': [
+      {
+        'source': 'platform',
+        'id': 77,
+        'name': 'Claimed Bearly voucher',
+        'title': '₱5 off eligible items',
+        'value_label': '₱5.00',
+        'min_spend_minor': 0,
+        'expires_at': '2026-12-01T23:59:59+08:00',
+        'section': 'discount',
+        'claimed': true,
+        'can_claim': false,
+        'can_use': true,
+        'auto_applies': false,
+        'code_applies': false,
+        'availability_status': 'active',
+        'availability_reason': null,
+        'description': null,
+        'terms': null,
+        'code': null,
+        'funding_type': 'platform',
+      },
+    ],
+    'store': [],
+  },
+};
+
+Map<String, Object?> _emptyVoucherWallet() => {
+  'data': {'claimed_count': 0, 'categories': [], 'platform': [], 'store': []},
+};
+
 Map<String, Object?> _buyNowLine(Map<String, dynamic> selection) {
   final quantity = selection['quantity'] as int;
   const unitPrice = 10000;
@@ -1519,8 +1707,11 @@ AuthSession _session(int id) => AuthSession(
   role: AccountRole.buyer,
 );
 
-http.Response _json(Object value, {int status = 200}) =>
-    http.Response(jsonEncode(value), status);
+http.Response _json(Object value, {int status = 200}) => http.Response(
+  jsonEncode(value),
+  status,
+  headers: {'content-type': 'application/json; charset=utf-8'},
+);
 
 class _MemoryTokenStore implements SessionTokenStore {
   String? token;

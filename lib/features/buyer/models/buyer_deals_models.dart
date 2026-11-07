@@ -143,6 +143,13 @@ class BuyerPlatformOffer {
     required this.minimumSpendMinor,
     required this.startsAt,
     required this.endsAt,
+    this.isClaimable = false,
+    this.canClaim = false,
+    this.claimed = false,
+    this.autoApplies = false,
+    this.codeApplies = false,
+    this.availabilityStatus = 'active',
+    this.availabilityReason,
   });
 
   final int id;
@@ -155,6 +162,13 @@ class BuyerPlatformOffer {
   final int minimumSpendMinor;
   final DateTime? startsAt;
   final DateTime? endsAt;
+  final bool isClaimable;
+  final bool canClaim;
+  final bool claimed;
+  final bool autoApplies;
+  final bool codeApplies;
+  final String availabilityStatus;
+  final String? availabilityReason;
 
   factory BuyerPlatformOffer.fromJson(Object? value) {
     final json = _dealsMap(value, 'platform_offer');
@@ -175,6 +189,14 @@ class BuyerPlatformOffer {
       ),
       startsAt: _dealsDate(json['starts_at']),
       endsAt: _dealsDate(json['ends_at']),
+      isClaimable: json['is_claimable'] == true,
+      canClaim: json['can_claim'] == true,
+      claimed: json['claimed'] == true,
+      autoApplies: json['auto_applies'] == true,
+      codeApplies: json['code_applies'] == true,
+      availabilityStatus:
+          _dealsOptionalString(json['availability_status']) ?? 'active',
+      availabilityReason: _dealsOptionalString(json['availability_reason']),
     );
   }
 }

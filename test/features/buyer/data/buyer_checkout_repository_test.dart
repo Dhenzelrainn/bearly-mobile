@@ -25,7 +25,10 @@ void main() {
         final quoteRequest = BuyerCheckoutQuoteRequest(
           addressId: 6,
           cartItemIds: [71],
-          vouchers: BuyerCheckoutVoucherSelection(voucherCode: ' bear-10 '),
+          vouchers: BuyerCheckoutVoucherSelection(
+            platformVoucherId: 19,
+            voucherCode: ' bear-10 ',
+          ),
         );
 
         final quote = await repository.requestQuote(quoteRequest);
@@ -36,6 +39,7 @@ void main() {
           'address_id': 6,
           'cart_item_ids': [71],
           'payment_method': 'cod',
+          'platform_voucher_id': 19,
           'voucher_code': 'BEAR-10',
         });
         expect(request.body, isNot(contains('total_minor')));
@@ -307,6 +311,27 @@ void main() {
         await expectLater(
           repository.fetchOrderHistory(),
           throwsA(isA<BuyerCheckoutException>()),
+        );
+      },
+    );
+
+    test(
+      'serializes a claimed shipping voucher separately from a promo code',
+      () {
+        final selection = BuyerCheckoutVoucherSelection(
+          platformShippingVoucherId: 28,
+          storeVoucherId: 31,
+          voucherCode: 'SHIP-AND-STORE',
+        );
+
+        expect(selection.toJson(), {
+          'platform_shipping_voucher_id': 28,
+          'store_voucher_id': 31,
+          'voucher_code': 'SHIP-AND-STORE',
+        });
+        expect(
+          BuyerCheckoutVoucherSelection.fromJson(selection.toJson()),
+          selection,
         );
       },
     );

@@ -3,8 +3,10 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../../../core/theme/bearly_theme.dart';
+import '../../../core/routes/app_route_names.dart';
 import '../../../core/widgets/product_thumbnail.dart';
 import '../data/buyer_deals_repository.dart';
+import '../data/buyer_vouchers_repository.dart';
 import '../models/buyer_catalog_models.dart';
 import '../models/buyer_deals_models.dart';
 
@@ -13,10 +15,12 @@ class BuyerDealsPage extends StatefulWidget {
     super.key,
     required this.repository,
     required this.onOpenProduct,
+    this.vouchersRepository,
   });
 
   final BuyerDealsDataSource repository;
   final ValueChanged<int> onOpenProduct;
+  final BuyerVouchersDataSource? vouchersRepository;
 
   @override
   State<BuyerDealsPage> createState() => _BuyerDealsPageState();
@@ -26,6 +30,9 @@ class _BuyerDealsPageState extends State<BuyerDealsPage> {
   BuyerDealsPageData? _deals;
   Object? _error;
   bool _loading = true;
+  int? _claimingOfferId;
+  String? _claimError;
+  String? _claimMessage;
   Future<void>? _pending;
 
   @override
@@ -47,6 +54,7 @@ class _BuyerDealsPageState extends State<BuyerDealsPage> {
     setState(() {
       if (_deals == null) _loading = true;
       _error = null;
+      _claimError = null;
     });
     try {
       final deals = await widget.repository.getDeals();
@@ -64,9 +72,45 @@ class _BuyerDealsPageState extends State<BuyerDealsPage> {
     }
   }
 
+  Future<void> _claimOffer(BuyerPlatformOffer offer) async {
+    final vouchers = widget.vouchersRepository;
+    if (vouchers == null || !offer.canClaim || _claimingOfferId != null) {
+      return;
+    }
+    setState(() {
+      _claimingOfferId = offer.id;
+      _claimError = null;
+      _claimMessage = null;
+    });
+    try {
+      await vouchers.claim(platformPromotionId: offer.id);
+      if (!mounted) return;
+      setState(() => _claimMessage = 'Voucher added to My Vouchers.');
+      await _loadDeals();
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _claimError =
+            'This offer could not be claimed. It may already be claimed, expired, exhausted, or not eligible.';
+      });
+    } finally {
+      if (mounted) setState(() => _claimingOfferId = null);
+    }
+  }
+
   @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('Deals & Perks')),
+    appBar: AppBar(
+      title: const Text('Deals & Perks'),
+      actions: [
+        IconButton(
+          tooltip: 'My Vouchers',
+          onPressed: () =>
+              Navigator.of(context).pushNamed(AppRouteNames.buyerVouchers),
+          icon: const Icon(Icons.confirmation_number_outlined),
+        ),
+      ],
+    ),
     body: _loading && _deals == null
         ? const Center(child: CircularProgressIndicator())
         : RefreshIndicator(
@@ -110,6 +154,22 @@ class _BuyerDealsPageState extends State<BuyerDealsPage> {
                     const SizedBox(height: 8),
                     for (final offer in _deals!.platformOffers)
                       _offerCard(context, offer),
+                    if (_claimMessage != null)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: Text(
+                          _claimMessage!,
+                          key: const ValueKey('buyer-deals-claim-success'),
+                        ),
+                      ),
+                    if (_claimError != null)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: Text(
+                          _claimError!,
+                          key: const ValueKey('buyer-deals-claim-error'),
+                        ),
+                      ),
                     const SizedBox(height: 8),
                     Text(
                       'Offer terms and checkout eligibility are confirmed by Bearly when an order is placed.',
@@ -314,6 +374,39 @@ class _BuyerDealsPageState extends State<BuyerDealsPage> {
               const SizedBox(height: 5),
               Text(offer.terms!, style: Theme.of(context).textTheme.bodySmall),
             ],
+            if (offer.canClaim)
+              Align(
+                alignment: Alignment.centerRight,
+                child: FilledButton.tonal(
+                  key: ValueKey('buyer-deals-claim-${offer.id}'),
+                  onPressed: _claimingOfferId != null
+                      ? null
+                      : () => _claimOffer(offer),
+                  child: Text(
+                    _claimingOfferId == offer.id ? 'Adding…' : 'Claim',
+                  ),
+                ),
+              )
+            else if (offer.claimed)
+              const Align(
+                alignment: Alignment.centerRight,
+                child: Text('Added to My Vouchers'),
+              )
+            else if (offer.autoApplies)
+              const Align(
+                alignment: Alignment.centerRight,
+                child: Text('Applied automatically when eligible'),
+              )
+            else if (offer.codeApplies)
+              const Align(
+                alignment: Alignment.centerRight,
+                child: Text('Enter this code at checkout'),
+              )
+            else if (offer.isClaimable && offer.availabilityReason != null)
+              Align(
+                alignment: Alignment.centerRight,
+                child: Text(offer.availabilityReason!),
+              ),
           ],
         ),
       ),

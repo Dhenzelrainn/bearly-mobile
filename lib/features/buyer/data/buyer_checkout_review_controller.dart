@@ -7,9 +7,11 @@ import '../../auth/data/auth_service.dart';
 import '../../auth/models/account_role.dart';
 import '../models/buyer_checkout_models.dart';
 import '../models/buyer_shopping_models.dart';
+import '../models/buyer_voucher_models.dart';
 import 'buyer_address_controller.dart';
 import 'buyer_cart_controller.dart';
 import 'buyer_checkout_repository.dart';
+import 'buyer_vouchers_repository.dart';
 
 /// Coordinates the temporary, in-memory selection used by checkout review.
 /// Laravel remains authoritative for the quote; no placement attempt is read,
@@ -20,10 +22,12 @@ class BuyerCheckoutReviewController extends ChangeNotifier {
     required this.cartController,
     required this.addressController,
     required BuyerCheckoutRepository checkoutRepository,
+    BuyerVouchersDataSource? vouchersRepository,
     this.buyNowSelection,
     DateTime Function()? clock,
   }) : _authService = authService,
        _checkoutRepository = checkoutRepository,
+       _vouchersRepository = vouchersRepository,
        _clock = clock ?? DateTime.now {
     _observedSessionKey = _sessionKey;
     _lastContextFingerprint = _contextFingerprint;
@@ -33,6 +37,7 @@ class BuyerCheckoutReviewController extends ChangeNotifier {
 
   final AuthService _authService;
   final BuyerCheckoutRepository _checkoutRepository;
+  final BuyerVouchersDataSource? _vouchersRepository;
   final DateTime Function() _clock;
   final BuyerCartController cartController;
   final BuyerAddressController addressController;
@@ -53,6 +58,11 @@ class BuyerCheckoutReviewController extends ChangeNotifier {
   String? _observedSessionKey;
   late String _lastContextFingerprint;
   Timer? _quoteExpiryTimer;
+  BuyerVoucherWallet? _voucherWallet;
+  Object? _voucherWalletError;
+  bool _isLoadingVoucherWallet = false;
+  BuyerCheckoutVoucherSelection _voucherSelection =
+      BuyerCheckoutVoucherSelection();
 
   BuyerCheckoutQuote? get quote =>
       _quoteContextFingerprint == _contextFingerprint ? _quote : null;
@@ -74,6 +84,10 @@ class BuyerCheckoutReviewController extends ChangeNotifier {
   List<BuyerAddress>? get addresses => addressController.addresses;
   Object? get addressLoadError => addressController.loadError;
   bool get isLoadingAddresses => addressController.isLoading;
+  BuyerVoucherWallet? get voucherWallet => _voucherWallet;
+  Object? get voucherWalletError => _voucherWalletError;
+  bool get isLoadingVoucherWallet => _isLoadingVoucherWallet;
+  BuyerCheckoutVoucherSelection get voucherSelection => _voucherSelection;
 
   BuyerAddress? get selectedAddress {
     final id = _selectedAddressId;
@@ -159,6 +173,11 @@ class BuyerCheckoutReviewController extends ChangeNotifier {
         _onDependencyChanged();
         return;
       }
+      await refreshVoucherWallet();
+      if (_sessionKey != sessionKey) {
+        _onDependencyChanged();
+        return;
+      }
       _isInitialized = true;
       _onDependencyChanged();
       if (canRequestQuote) await requestQuote();
@@ -173,7 +192,35 @@ class BuyerCheckoutReviewController extends ChangeNotifier {
     notifyListeners();
     await cartController.refresh(force: true);
     await addressController.refresh(force: true);
+    await refreshVoucherWallet();
     if (canRequestQuote && quote == null) await requestQuote();
+  }
+
+  Future<void> refreshVoucherWallet() async {
+    final repository = _vouchersRepository;
+    if (repository == null || _isLoadingVoucherWallet) return;
+    final sessionKey = _sessionKey;
+    _isLoadingVoucherWallet = true;
+    _voucherWalletError = null;
+    notifyListeners();
+    try {
+      final wallet = await repository.getWallet();
+      if (_sessionKey != sessionKey) return;
+      _voucherWallet = wallet;
+    } catch (error) {
+      if (_sessionKey == sessionKey) _voucherWalletError = error;
+    } finally {
+      if (_sessionKey == sessionKey) {
+        _isLoadingVoucherWallet = false;
+        notifyListeners();
+      }
+    }
+  }
+
+  void setVoucherSelection(BuyerCheckoutVoucherSelection selection) {
+    if (_voucherSelection == selection) return;
+    _voucherSelection = selection;
+    _onDependencyChanged();
   }
 
   bool selectAddress(int addressId) {
@@ -231,6 +278,7 @@ class BuyerCheckoutReviewController extends ChangeNotifier {
           ? items.map((item) => item.id).toList(growable: false)
           : const [],
       buyNow: direct,
+      vouchers: _voucherSelection,
     );
     final fingerprint = _contextFingerprint;
     final sessionKey = _sessionKey;
@@ -347,6 +395,10 @@ class BuyerCheckoutReviewController extends ChangeNotifier {
     _quoteError = null;
     _localError = null;
     _isQuoteExpired = false;
+    _voucherSelection = BuyerCheckoutVoucherSelection();
+    _voucherWallet = null;
+    _voucherWalletError = null;
+    _isLoadingVoucherWallet = false;
     _clearQuote();
     cartController.synchronizeSession();
     addressController.synchronizeSession();
@@ -435,6 +487,7 @@ class BuyerCheckoutReviewController extends ChangeNotifier {
               address.postal,
               address.street,
             ],
+      _voucherSelection.toJson(),
     ]);
   }
 
