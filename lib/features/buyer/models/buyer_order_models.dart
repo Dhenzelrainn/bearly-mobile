@@ -204,6 +204,8 @@ class BuyerSellerOrderSummary {
     required this.shippingFeeMinor,
     required this.totalMinor,
     required List<BuyerOrderShipmentSummary> shipments,
+    this.canRequestReturn = false,
+    this.returnDeadline,
   }) : shipments = List.unmodifiable(shipments);
 
   final int id;
@@ -218,9 +220,15 @@ class BuyerSellerOrderSummary {
   final int shippingFeeMinor;
   final int totalMinor;
   final List<BuyerOrderShipmentSummary> shipments;
+  final bool canRequestReturn;
+  final DateTime? returnDeadline;
 
   factory BuyerSellerOrderSummary.fromJson(Object? value) {
     final json = buyerCheckoutMap(value, 'seller_order');
+    final eligibilityValue = json['return_eligibility'];
+    final eligibility = eligibilityValue == null
+        ? null
+        : buyerCheckoutMap(eligibilityValue, 'seller_order.return_eligibility');
     final result = BuyerSellerOrderSummary(
       id: buyerCheckoutInt(json, 'id', 'seller_order'),
       reference: buyerCheckoutString(json, 'order_reference', 'seller_order'),
@@ -245,6 +253,16 @@ class BuyerSellerOrderSummary {
         json['shipments'],
         'seller_order.shipments',
       ).map(BuyerOrderShipmentSummary.fromJson).toList(growable: false),
+      canRequestReturn: eligibility == null
+          ? false
+          : buyerCheckoutBool(eligibility, 'can_request', 'return_eligibility'),
+      returnDeadline: eligibility == null
+          ? null
+          : buyerCheckoutOptionalDate(
+              eligibility,
+              'deadline',
+              'return_eligibility',
+            ),
     );
     if (result.id < 1 ||
         result.storeId < 1 ||

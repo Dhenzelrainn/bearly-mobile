@@ -23,6 +23,169 @@ import 'package:http/testing.dart';
 
 void main() {
   group('Buyer order history and details integration', () {
+    testWidgets('eligible Seller order opens the Buyer returns workspace', (
+      tester,
+    ) async {
+      final h = _Harness(
+        detailHandler: (_) async => _json(
+          _detailResponse(
+            sellers: [
+              _sellerDetailJson(
+                id: 991,
+                reference: 'SELL-991',
+                store: 'Bearly Studio',
+                status: 'completed',
+                shipments: const [],
+                item: _itemJson(),
+                returnEligibility: {
+                  'can_request': true,
+                  'deadline': '2026-11-09T23:59:59+08:00',
+                },
+              ),
+            ],
+          ),
+        ),
+        returnsHandler: (_) async => _json(_returnsWorkspace(991)),
+      );
+      await _mountOrders(tester, h);
+      await tester.tap(find.text('BRL-812'));
+      await tester.pumpAndSettle();
+
+      final action = find.byKey(const ValueKey('buyer-return-open-991'));
+      await _scrollTo(tester, action);
+      expect(action, findsOneWidget);
+      await tester.tap(action);
+      await tester.pumpAndSettle();
+
+      expect(find.text('Returns & refunds'), findsOneWidget);
+      expect(find.textContaining('Returnable item'), findsOneWidget);
+      expect(
+        h.requests.any(
+          (request) =>
+              request.url.path == '/api/mobile/buyer/seller-orders/991/returns',
+        ),
+        isTrue,
+      );
+    });
+
+    testWidgets(
+      'expired completed Seller order opens read-only returns workspace',
+      (tester) async {
+        final h = _Harness(
+          detailHandler: (_) async => _json(
+            _detailResponse(
+              sellers: [
+                _sellerDetailJson(
+                  id: 992,
+                  reference: 'SELL-992',
+                  store: 'Bearly Studio',
+                  status: 'completed',
+                  shipments: const [],
+                  item: _itemJson(),
+                  returns: [
+                    {
+                      'return_reference': 'RET-992',
+                      'request_type': 'refund_only',
+                      'status': 'awaiting_seller',
+                      'requested_amount_minor': 12500,
+                      'submitted_at': '2026-11-02T10:00:00+08:00',
+                      'resolved_at': null,
+                      'refunds': <Object>[],
+                    },
+                  ],
+                  returnEligibility: {
+                    'can_request': false,
+                    'deadline': '2026-11-04T23:59:59+08:00',
+                  },
+                ),
+              ],
+            ),
+          ),
+          returnsHandler: (_) async => _json(
+            _returnsWorkspace(
+              992,
+              canRequest: false,
+              ineligibilityReason:
+                  'The three-day return or refund request window has ended.',
+              cases: [
+                {
+                  'id': 9921,
+                  'return_reference': 'RET-992',
+                  'request_type': 'refund_only',
+                  'status': 'awaiting_seller',
+                  'requested_amount_minor': 12500,
+                  'submitted_at': '2026-11-02T10:00:00+08:00',
+                  'resolved_at': null,
+                  'refunds': <Object>[],
+                },
+              ],
+            ),
+          ),
+        );
+        await _mountOrders(tester, h);
+        await tester.tap(find.text('BRL-812'));
+        await tester.pumpAndSettle();
+
+        final action = find.byKey(const ValueKey('buyer-return-open-992'));
+        await _scrollTo(tester, action);
+        expect(action, findsOneWidget);
+        await tester.tap(action);
+        await tester.pumpAndSettle();
+
+        expect(
+          find.text('The three-day return or refund request window has ended.'),
+          findsOneWidget,
+        );
+        expect(find.byKey(const ValueKey('buyer-return-submit')), findsNothing);
+        expect(find.text('Request history'), findsOneWidget);
+        expect(find.text('RET-992 · Refund Only'), findsOneWidget);
+        expect(
+          h.requests.any(
+            (request) =>
+                request.url.path.endsWith('/seller-orders/992/returns'),
+          ),
+          isTrue,
+        );
+        await tester.pageBack();
+        await tester.pumpAndSettle();
+        expect(find.byType(BuyerOrderDetailsPage), findsOneWidget);
+      },
+    );
+
+    testWidgets('incomplete Seller order has no returns action', (
+      tester,
+    ) async {
+      final h = _Harness(
+        detailHandler: (_) async => _json(
+          _detailResponse(
+            sellers: [
+              _sellerDetailJson(
+                id: 993,
+                reference: 'SELL-993',
+                store: 'Bearly Studio',
+                status: 'processing',
+                shipments: const [],
+                item: _itemJson(),
+                returnEligibility: {'can_request': false},
+              ),
+            ],
+          ),
+        ),
+      );
+      await _mountOrders(tester, h);
+      await tester.tap(find.text('BRL-812'));
+      await tester.pumpAndSettle();
+
+      await _scrollTo(tester, find.text('Seller order · SELL-993'));
+      expect(find.byKey(const ValueKey('buyer-return-open-993')), findsNothing);
+      expect(
+        h.requests.any(
+          (request) => request.url.path.endsWith('/seller-orders/993/returns'),
+        ),
+        isFalse,
+      );
+    });
+
     testWidgets('Buyer Home Orders tab opens paginated server history', (
       tester,
     ) async {
@@ -1612,6 +1775,7 @@ class _Harness {
     this.trackingHandler,
     this.receiptHandler,
     this.reviewHandler,
+    this.returnsHandler,
   }) {
     apiClient = ApiClient(
       httpClient: client,
@@ -1636,6 +1800,7 @@ class _Harness {
   final Future<http.Response> Function(http.Request)? trackingHandler;
   final Future<http.Response> Function(http.Request)? receiptHandler;
   final Future<http.Response> Function(http.Request)? reviewHandler;
+  final Future<http.Response> Function(http.Request)? returnsHandler;
   final List<http.Request> requests = [];
 
   late final MockClient client = MockClient(_respond);
@@ -1663,6 +1828,12 @@ class _Harness {
     }
     if (request.method != 'GET') {
       return _json({'message': 'Unexpected method.'}, 405);
+    }
+    if (request.url.path.startsWith('/api/mobile/buyer/seller-orders/') &&
+        request.url.path.endsWith('/returns')) {
+      return returnsHandler == null
+          ? _json({'message': 'Unexpected returns request.'}, 405)
+          : returnsHandler!(request);
     }
     if (request.url.path == '/api/mobile/buyer/orders') {
       return historyHandler == null
@@ -1845,6 +2016,7 @@ Map<String, Object?> _sellerDetailJson({
   int shipping = 1800,
   int total = 13300,
   List<Map<String, Object?>> returns = const [],
+  Map<String, Object?>? returnEligibility,
 }) => {
   ..._sellerSummaryJson(
     id: id,
@@ -1862,7 +2034,11 @@ Map<String, Object?> _sellerDetailJson({
   'platform_shipping_discount_minor': 0,
   'items': [item],
   'returns': returns,
+  ..._returnEligibilityFields(returnEligibility),
 };
+
+Map<String, Object?> _returnEligibilityFields(Map<String, Object?>? value) =>
+    value == null ? const {} : {'return_eligibility': value};
 
 Map<String, Object?> _summaryFromDetail(Map<String, Object?> seller) => {
   for (final key in [
@@ -1878,6 +2054,7 @@ Map<String, Object?> _summaryFromDetail(Map<String, Object?> seller) => {
     'shipping_fee_minor',
     'total_minor',
     'shipments',
+    'return_eligibility',
   ])
     key: seller[key],
 };
@@ -1992,6 +2169,45 @@ Map<String, Object?> _detailResponse({
     },
   };
 }
+
+Map<String, Object?> _returnsWorkspace(
+  int sellerOrderId, {
+  bool canRequest = true,
+  String? ineligibilityReason,
+  List<Object?> cases = const [],
+}) => {
+  'data': {
+    'seller_order': {
+      'id': sellerOrderId,
+      'reference': 'SELL-$sellerOrderId',
+      'order_reference': 'BRL-812',
+      'store_name': 'Bearly Studio',
+      'status': 'completed',
+      'completed_at': '2026-11-06T10:00:00+08:00',
+    },
+    'can_request': canRequest,
+    'ineligibility_reason': ineligibilityReason,
+    'deadline': '2026-11-09T23:59:59+08:00',
+    'reason_codes': {'other': 'Other issue'},
+    'delivery_methods': [
+      {'value': 'rider_pickup', 'label': 'Rider pickup', 'available': true},
+    ],
+    'dropoff_center': null,
+    'items': [
+      {
+        'id': 881,
+        'name': 'Returnable item',
+        'variant': 'Standard',
+        'sku': 'RET-ITEM',
+        'quantity': 1,
+        'returnable_quantity': 1,
+        'unit_price_minor': 11500,
+        'image_url': null,
+      },
+    ],
+    'cases': cases,
+  },
+};
 
 Map<String, Object?> _eligibleDetailResponse({
   bool canConfirmReceipt = true,

@@ -26,6 +26,8 @@ import '../../features/buyer/presentation/buyer_home_page.dart';
 import '../../features/buyer/presentation/buyer_cart_page.dart';
 import '../../features/buyer/presentation/buyer_checkout_review_page.dart';
 import '../../features/buyer/presentation/buyer_order_details_page.dart';
+import '../../features/buyer/presentation/buyer_returns_page.dart';
+import '../../features/buyer/data/buyer_returns_repository.dart';
 import '../../features/buyer/presentation/buyer_product_detail_page.dart';
 import '../../features/buyer/presentation/buyer_deals_page.dart';
 import '../../features/buyer/presentation/buyer_vouchers_page.dart';
@@ -243,6 +245,28 @@ class AppRoutes {
         return MaterialPageRoute<void>(
           builder: (_) => const Scaffold(
             body: Center(child: Text('This order could not be opened.')),
+          ),
+          settings: settings,
+        );
+      case AppRouteNames.buyerReturns:
+        final sellerOrderId = settings.arguments;
+        if (sellerOrderId is int && sellerOrderId > 0) {
+          return MaterialPageRoute(
+            builder: (_) => BuyerReturnsPage(
+              repository: BuyerReturnsRepository(authService: authService),
+              sellerOrderId: sellerOrderId,
+            ),
+            settings: settings,
+          );
+        }
+        return MaterialPageRoute(
+          builder: (_) => BuyerHomePage(
+            authService: authService,
+            cartController: cartController,
+            wishlistController: wishlistController,
+            checkoutRepository: resolveCheckoutRepository(),
+            addressController: addressController,
+            locationRepository: locationRepository,
           ),
           settings: settings,
         );
@@ -540,6 +564,7 @@ class AppRoutes {
       AppRouteNames.buyerCart,
       AppRouteNames.buyerCheckoutReview,
       AppRouteNames.buyerOrderDetails,
+      AppRouteNames.buyerReturns,
       AppRouteNames.buyerProduct,
       AppRouteNames.buyerMessages,
       AppRouteNames.buyerChatThread,

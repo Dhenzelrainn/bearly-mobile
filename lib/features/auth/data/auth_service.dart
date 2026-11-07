@@ -347,6 +347,31 @@ class AuthService extends ChangeNotifier {
     int? expectedAccountId,
     required T Function(Object? response) parse,
   }) async {
+    return multipartFilesRequestWithSession<T>(
+      path: path,
+      fields: fields,
+      files: [
+        ApiMultipartFile(
+          field: fileField,
+          bytes: fileBytes,
+          fileName: fileName,
+        ),
+      ],
+      expectedSessionEpoch: expectedSessionEpoch,
+      expectedAccountId: expectedAccountId,
+      parse: parse,
+    );
+  }
+
+  /// Uploads multiple attachments with the active Sanctum session.
+  Future<T> multipartFilesRequestWithSession<T>({
+    required String path,
+    required Map<String, String> fields,
+    required List<ApiMultipartFile> files,
+    int? expectedSessionEpoch,
+    int? expectedAccountId,
+    required T Function(Object? response) parse,
+  }) async {
     final requestEpoch = _sessionEpoch;
     final requestAccountId = currentSession?.id;
     _checkExpectedSession(
@@ -366,13 +391,11 @@ class AuthService extends ChangeNotifier {
     }
 
     try {
-      final response = await _apiClient.postMultipart(
+      final response = await _apiClient.postMultipartFiles(
         path,
         headers: _authorization(token),
         fields: fields,
-        fileField: fileField,
-        fileBytes: fileBytes,
-        fileName: fileName,
+        files: files,
       );
       _checkRequestSession(
         requestEpoch,

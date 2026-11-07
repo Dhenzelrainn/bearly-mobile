@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../../../core/theme/bearly_theme.dart';
+import '../../../core/routes/app_route_names.dart';
 import '../../../core/widgets/product_thumbnail.dart';
 import '../../auth/data/auth_service.dart';
 import '../data/buyer_checkout_repository.dart';
@@ -449,6 +450,16 @@ class _BuyerOrderDetailsPageState extends State<BuyerOrderDetailsPage> {
         'Seller order status · ${buyerOrderStatusLabel(seller.summary.status)}',
         key: ValueKey('buyer-seller-status-${seller.summary.id}'),
       ),
+      if (seller.summary.canRequestReturn &&
+          seller.summary.returnDeadline != null)
+        Text(
+          'Return or refund request available until ${buyerOrderDateTime(seller.summary.returnDeadline, localizations)}',
+          key: ValueKey('buyer-return-eligibility-${seller.summary.id}'),
+        )
+      else if (seller.summary.status == 'completed' && seller.returns.isEmpty)
+        const Text(
+          'Open Returns & refunds to see current eligibility and request history.',
+        ),
       const SizedBox(height: 10),
       for (final item in seller.items) ...[
         _itemSnapshot(context, item, order.currency),
@@ -519,8 +530,31 @@ class _BuyerOrderDetailsPageState extends State<BuyerOrderDetailsPage> {
             ),
         ],
       ],
+      if (seller.summary.status == 'completed' ||
+          seller.returns.isNotEmpty) ...[
+        const SizedBox(height: 10),
+        OutlinedButton.icon(
+          key: ValueKey('buyer-return-open-${seller.summary.id}'),
+          onPressed: () => _openReturns(seller.summary.id),
+          icon: const Icon(Icons.assignment_return_outlined),
+          label: Text(
+            seller.returns.isNotEmpty
+                ? 'View return and refund requests'
+                : seller.summary.canRequestReturn
+                ? 'Request a return or refund'
+                : 'Returns & refunds',
+          ),
+        ),
+      ],
     ],
   );
+
+  Future<void> _openReturns(int sellerOrderId) async {
+    await Navigator.of(
+      context,
+    ).pushNamed(AppRouteNames.buyerReturns, arguments: sellerOrderId);
+    if (mounted) await _controller.load();
+  }
 
   Widget _itemSnapshot(
     BuildContext context,

@@ -5,6 +5,18 @@ import 'package:http/http.dart' as http;
 
 import '../config/api_config.dart';
 
+class ApiMultipartFile {
+  const ApiMultipartFile({
+    required this.field,
+    required this.bytes,
+    required this.fileName,
+  });
+
+  final String field;
+  final List<int> bytes;
+  final String fileName;
+}
+
 enum ApiErrorKind {
   unauthenticated,
   forbidden,
@@ -214,13 +226,42 @@ class ApiClient {
     required List<int> fileBytes,
     required String fileName,
   }) async {
+    return postMultipartFiles(
+      path,
+      queryParameters: queryParameters,
+      headers: headers,
+      fields: fields,
+      files: [
+        ApiMultipartFile(
+          field: fileField,
+          bytes: fileBytes,
+          fileName: fileName,
+        ),
+      ],
+    );
+  }
+
+  /// Posts fields and multiple private attachments without logging content.
+  Future<Object?> postMultipartFiles(
+    String path, {
+    Map<String, Object?>? queryParameters,
+    Map<String, String>? headers,
+    required Map<String, String> fields,
+    required List<ApiMultipartFile> files,
+  }) async {
     final request = http.MultipartRequest(
       'POST',
       _buildUri(path, queryParameters),
     )..headers.addAll(_buildHeaders(headers, hasBody: false));
     request.fields.addAll(fields);
-    request.files.add(
-      http.MultipartFile.fromBytes(fileField, fileBytes, filename: fileName),
+    request.files.addAll(
+      files.map(
+        (file) => http.MultipartFile.fromBytes(
+          file.field,
+          file.bytes,
+          filename: file.fileName,
+        ),
+      ),
     );
 
     final http.Response response;
