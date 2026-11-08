@@ -2,6 +2,7 @@ import '../../auth/data/auth_service.dart';
 import '../models/logistics_dashboard.dart';
 import '../models/logistics_dispatch.dart';
 import '../models/logistics_monitoring.dart';
+import '../models/logistics_pickup_request.dart';
 import '../models/logistics_rider.dart';
 import '../models/logistics_rider_application.dart';
 import '../models/logistics_sorting.dart';
@@ -16,6 +17,36 @@ class LogisticsRepository {
       LogisticsDashboard.fromResponse(
         await _authService.getWithSession('/api/mobile/logistics/dashboard'),
       );
+
+  Future<LogisticsPickupRequestPage> pickupRequests({
+    String? status,
+    int page = 1,
+    int perPage = 20,
+  }) async {
+    final query = Uri(
+      queryParameters: {
+        'page': '$page',
+        'per_page': '$perPage',
+        if (status != null && status.isNotEmpty) 'status': status,
+      },
+    ).query;
+    return LogisticsPickupRequestPage.fromResponse(
+      await _authService.getWithSession(
+        '/api/mobile/logistics/pickup-requests?$query',
+      ),
+    );
+  }
+
+  Future<LogisticsPickupRequest> pickupRequest(int pickupRequestId) async {
+    final response = await _authService.getWithSession(
+      '/api/mobile/logistics/pickup-requests/$pickupRequestId',
+    );
+    if (response is! Map || response['data'] is! Map) {
+      throw const FormatException('Missing pickup request details.');
+    }
+    final data = response['data'] as Map;
+    return LogisticsPickupRequest.fromJson(data['pickup_request']);
+  }
 
   Future<LogisticsWaybillLookup> lookupWaybill(
     String identifier,

@@ -60,6 +60,8 @@ import '../../features/logistics/data/logistics_repository.dart';
 import '../../features/logistics/data/logistics_notifications_repository.dart';
 import '../../features/logistics/data/logistics_messages_repository.dart';
 import '../../features/logistics/presentation/logistics_home_page.dart';
+import '../../features/logistics/presentation/logistics_pickup_requests_page.dart';
+import '../../features/logistics/presentation/logistics_pickup_request_detail_page.dart';
 import '../../features/logistics/presentation/logistics_riders_page.dart';
 import '../../features/logistics/presentation/logistics_rider_application_page.dart';
 import '../../features/logistics/presentation/logistics_messages_page.dart';
@@ -520,6 +522,29 @@ class AppRoutes {
           ),
           settings: settings,
         );
+      case AppRouteNames.logisticsPickupRequests:
+        return MaterialPageRoute(
+          builder: (_) =>
+              LogisticsPickupRequestsPage(repository: logisticsRepository),
+          settings: settings,
+        );
+      case AppRouteNames.logisticsPickupRequestDetails:
+        final pickupRequestId = settings.arguments;
+        if (pickupRequestId is int && pickupRequestId > 0) {
+          return MaterialPageRoute(
+            builder: (_) => LogisticsPickupRequestDetailPage(
+              repository: logisticsRepository,
+              pickupRequestId: pickupRequestId,
+            ),
+            settings: settings,
+          );
+        }
+        return MaterialPageRoute(
+          builder: (_) => const Scaffold(
+            body: Center(child: Text('Pickup request is unavailable.')),
+          ),
+          settings: settings,
+        );
       case AppRouteNames.logisticsNotifications:
         final initialUnreadCount = settings.arguments is int
             ? settings.arguments! as int
@@ -717,6 +742,8 @@ class AppRoutes {
       AppRouteNames.logisticsRiders,
       AppRouteNames.logisticsRiderDetails,
       AppRouteNames.logisticsRiderApplicationDetails,
+      AppRouteNames.logisticsPickupRequests,
+      AppRouteNames.logisticsPickupRequestDetails,
       AppRouteNames.logisticsMessages,
       AppRouteNames.logisticsNotifications,
     }.contains(name)) {

@@ -163,6 +163,14 @@ class _LogisticsHomePageState extends State<LogisticsHomePage> {
     await _refresh();
   }
 
+  Future<void> _openPickupRequests() async {
+    await Navigator.of(
+      context,
+    ).pushNamed(AppRouteNames.logisticsPickupRequests);
+    if (!mounted) return;
+    await _refresh();
+  }
+
   Future<void> _openOperationalPage(Widget page) async {
     await Navigator.of(
       context,
@@ -392,6 +400,16 @@ class _LogisticsHomePageState extends State<LogisticsHomePage> {
           },
         ),
         const SizedBox(height: 18),
+        SizedBox(
+          width: double.infinity,
+          child: FilledButton.icon(
+            key: const ValueKey('logistics-open-pickup-requests'),
+            onPressed: _openPickupRequests,
+            icon: const Icon(Icons.inventory_2_outlined),
+            label: const Text('Pickup Requests'),
+          ),
+        ),
+        const SizedBox(height: 8),
         SizedBox(
           width: double.infinity,
           child: OutlinedButton.icon(
