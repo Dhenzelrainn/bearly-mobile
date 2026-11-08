@@ -48,6 +48,51 @@ class LogisticsRepository {
     return LogisticsPickupRequest.fromJson(data['pickup_request']);
   }
 
+  Future<LogisticsPickupRequest> verifyPickupRequest(int pickupRequestId) =>
+      _pickupAction(pickupRequestId, 'verify', const {});
+
+  Future<LogisticsPickupRequest> rejectPickupRequest(
+    int pickupRequestId, {
+    required String reason,
+  }) => _pickupAction(pickupRequestId, 'reject', {
+    'cancellation_reason': reason.trim(),
+  });
+
+  Future<LogisticsPickupRequest> assignPickupRequest(
+    int pickupRequestId, {
+    required int riderProfileId,
+    String? notes,
+  }) => _pickupAction(pickupRequestId, 'assign', {
+    'rider_profile_id': riderProfileId,
+    if (notes?.trim().isNotEmpty == true) 'notes': notes!.trim(),
+  });
+
+  Future<LogisticsPickupRequest> replacePickupRequestRider(
+    int pickupRequestId, {
+    required int riderProfileId,
+    required String reason,
+  }) => _pickupAction(pickupRequestId, 'replace-rider', {
+    'rider_profile_id': riderProfileId,
+    'reason': reason.trim(),
+  });
+
+  Future<LogisticsPickupRequest> _pickupAction(
+    int pickupRequestId,
+    String action,
+    Map<String, Object?> body,
+  ) => _authService.requestWithSession<LogisticsPickupRequest>(
+    method: AuthenticatedRequestMethod.post,
+    path: '/api/mobile/logistics/pickup-requests/$pickupRequestId/$action',
+    body: body,
+    parse: (response) {
+      if (response is! Map || response['data'] is! Map) {
+        throw const FormatException('Missing pickup action response data.');
+      }
+      final data = response['data'] as Map;
+      return LogisticsPickupRequest.fromJson(data['pickup_request']);
+    },
+  );
+
   Future<LogisticsWaybillLookup> lookupWaybill(
     String identifier,
   ) async => LogisticsWaybillLookup.fromResponse(

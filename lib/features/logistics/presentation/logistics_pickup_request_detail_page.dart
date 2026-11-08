@@ -25,6 +25,15 @@ class LogisticsPickupRequestDetailPage extends StatefulWidget {
 class _LogisticsPickupRequestDetailPageState
     extends State<LogisticsPickupRequestDetailPage> {
   late Future<LogisticsPickupRequest> _pickup;
+  bool _actionBusy = false;
+  String? _actionError;
+  String? _actionMessage;
+  final TextEditingController _rejectionReasonController =
+      TextEditingController();
+  final TextEditingController _assignmentNotesController =
+      TextEditingController();
+  final TextEditingController _replacementReasonController =
+      TextEditingController();
 
   @override
   void initState() {
@@ -32,15 +41,260 @@ class _LogisticsPickupRequestDetailPageState
     _pickup = widget.repository.pickupRequest(widget.pickupRequestId);
   }
 
+  @override
+  void dispose() {
+    _rejectionReasonController.dispose();
+    _assignmentNotesController.dispose();
+    _replacementReasonController.dispose();
+    super.dispose();
+  }
+
   Future<void> _refresh() async {
     final next = widget.repository.pickupRequest(widget.pickupRequestId);
     setState(() {
       _pickup = next;
+      _actionError = null;
+      _actionMessage = null;
     });
     try {
       await next;
     } catch (_) {
       // The FutureBuilder keeps the failure visible with its retry action.
+    }
+  }
+
+  Future<void> _verifyRequest() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Verify pickup request?'),
+        content: const Text(
+          'This confirms the request for review. Rider assignment remains a separate step.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Keep pending'),
+          ),
+          FilledButton(
+            key: const ValueKey('logistics-pickup-verify-confirm'),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Verify'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) {
+      await _runAction(
+        () => widget.repository.verifyPickupRequest(widget.pickupRequestId),
+        'Pickup request verified.',
+      );
+    }
+  }
+
+  Future<void> _rejectRequest() async {
+    final formKey = GlobalKey<FormState>();
+    _rejectionReasonController.clear();
+    final submittedReason = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Reject pickup request'),
+        content: Form(
+          key: formKey,
+          child: TextFormField(
+            key: const ValueKey('logistics-pickup-rejection-reason'),
+            controller: _rejectionReasonController,
+            autofocus: true,
+            maxLength: 1000,
+            maxLines: 3,
+            decoration: const InputDecoration(
+              labelText: 'Reason',
+              hintText: 'Explain why this request is rejected',
+            ),
+            validator: (value) => value?.trim().isNotEmpty == true
+                ? null
+                : 'Enter a rejection reason.',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            key: const ValueKey('logistics-pickup-reject-confirm'),
+            onPressed: () {
+              if (formKey.currentState?.validate() == true) {
+                Navigator.pop(context, _rejectionReasonController.text.trim());
+              }
+            },
+            child: const Text('Reject'),
+          ),
+        ],
+      ),
+    );
+    if (submittedReason != null) {
+      await _runAction(
+        () => widget.repository.rejectPickupRequest(
+          widget.pickupRequestId,
+          reason: submittedReason,
+        ),
+        'Pickup request rejected.',
+      );
+    }
+  }
+
+  Future<void> _chooseRider(
+    LogisticsPickupRequest pickup, {
+    required bool replacing,
+  }) async {
+    if (pickup.eligibleRiderCandidates.isEmpty) return;
+
+    final formKey = GlobalKey<FormState>();
+    _assignmentNotesController.clear();
+    _replacementReasonController.clear();
+    var selectedRiderId = pickup.eligibleRiderCandidates
+        .firstWhere(
+          (candidate) => candidate.recommended,
+          orElse: () => pickup.eligibleRiderCandidates.first,
+        )
+        .profileId;
+
+    final selection = await showDialog<_PickupRiderSelection>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: Text(replacing ? 'Replace assigned Rider' : 'Assign a Rider'),
+          content: Form(
+            key: formKey,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  DropdownButtonFormField<int>(
+                    key: const ValueKey('logistics-pickup-rider-selection'),
+                    initialValue: selectedRiderId,
+                    decoration: const InputDecoration(labelText: 'Local Rider'),
+                    items: pickup.eligibleRiderCandidates
+                        .map(
+                          (candidate) => DropdownMenuItem<int>(
+                            value: candidate.profileId,
+                            child: Text(
+                              '${candidate.name}${candidate.recommended ? ' · Recommended' : ''}',
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        )
+                        .toList(growable: false),
+                    onChanged: (value) {
+                      if (value != null) {
+                        setDialogState(() => selectedRiderId = value);
+                      }
+                    },
+                  ),
+                  if (replacing) ...[
+                    const SizedBox(height: 12),
+                    TextFormField(
+                      key: const ValueKey(
+                        'logistics-pickup-replacement-reason',
+                      ),
+                      controller: _replacementReasonController,
+                      maxLength: 1000,
+                      maxLines: 3,
+                      decoration: const InputDecoration(
+                        labelText: 'Reason for replacement',
+                      ),
+                      validator: (value) {
+                        final trimmed = value?.trim() ?? '';
+                        return trimmed.length >= 5
+                            ? null
+                            : 'Enter at least 5 characters.';
+                      },
+                    ),
+                  ] else ...[
+                    const SizedBox(height: 12),
+                    TextField(
+                      key: const ValueKey('logistics-pickup-assignment-notes'),
+                      controller: _assignmentNotesController,
+                      maxLength: 1000,
+                      maxLines: 2,
+                      decoration: const InputDecoration(
+                        labelText: 'Assignment notes (optional)',
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              key: ValueKey(
+                replacing
+                    ? 'logistics-pickup-replacement-confirm'
+                    : 'logistics-pickup-assignment-confirm',
+              ),
+              onPressed: () {
+                if (formKey.currentState?.validate() == false) return;
+                Navigator.pop(
+                  context,
+                  _PickupRiderSelection(
+                    riderProfileId: selectedRiderId,
+                    notes: _assignmentNotesController.text.trim(),
+                    reason: _replacementReasonController.text.trim(),
+                  ),
+                );
+              },
+              child: Text(replacing ? 'Replace Rider' : 'Confirm assignment'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (selection == null) return;
+
+    await _runAction(
+      () => replacing
+          ? widget.repository.replacePickupRequestRider(
+              widget.pickupRequestId,
+              riderProfileId: selection.riderProfileId,
+              reason: selection.reason,
+            )
+          : widget.repository.assignPickupRequest(
+              widget.pickupRequestId,
+              riderProfileId: selection.riderProfileId,
+              notes: selection.notes,
+            ),
+      replacing ? 'Rider assignment updated.' : 'Rider assigned to pickup.',
+    );
+  }
+
+  Future<void> _runAction(
+    Future<LogisticsPickupRequest> Function() action,
+    String successMessage,
+  ) async {
+    if (_actionBusy) return;
+    setState(() {
+      _actionBusy = true;
+      _actionError = null;
+      _actionMessage = null;
+    });
+    try {
+      final updated = await action();
+      if (!mounted) return;
+      setState(() {
+        _pickup = Future.value(updated);
+        _actionMessage = successMessage;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _actionError = _actionErrorMessage(error));
+    } finally {
+      if (mounted) setState(() => _actionBusy = false);
     }
   }
 
@@ -167,6 +421,10 @@ class _LogisticsPickupRequestDetailPageState
                   ],
                 ],
               ),
+              if (_hasAuthorizedActions(pickup)) ...[
+                const SizedBox(height: 12),
+                _operationalActions(pickup),
+              ],
               if (pickup.eligibleRiderCandidates.isNotEmpty) ...[
                 const SizedBox(height: 12),
                 _section(
@@ -246,6 +504,127 @@ class _LogisticsPickupRequestDetailPageState
       ].where((part) => part.isNotEmpty).join(' · '),
     ),
   );
+
+  bool _hasAuthorizedActions(LogisticsPickupRequest pickup) =>
+      pickup.status == 'requested' ||
+      pickup.status == 'verified' ||
+      (pickup.status == 'scheduled' &&
+          const {
+            'assigned',
+            'accepted',
+            'arrived',
+          }.contains(pickup.assignedRider?.assignmentStatus));
+
+  Widget _operationalActions(LogisticsPickupRequest pickup) => _section(
+    context,
+    title: 'Pickup actions',
+    subtitle: 'Actions follow the existing Logistics Web workflow.',
+    children: [
+      if (_actionBusy) const LinearProgressIndicator(),
+      if (_actionMessage != null) ...[
+        Text(
+          _actionMessage!,
+          key: const ValueKey('logistics-pickup-action-success'),
+          style: const TextStyle(color: BearlyColors.success),
+        ),
+        const SizedBox(height: 8),
+      ],
+      if (_actionError != null) ...[
+        Text(
+          _actionError!,
+          key: const ValueKey('logistics-pickup-action-error'),
+          style: TextStyle(color: Theme.of(context).colorScheme.error),
+        ),
+        const SizedBox(height: 8),
+        OutlinedButton.icon(
+          key: const ValueKey('logistics-pickup-action-refresh'),
+          onPressed: _actionBusy ? null : _refresh,
+          icon: const Icon(Icons.refresh),
+          label: const Text('Refresh request'),
+        ),
+      ],
+      if (pickup.status == 'requested') ...[
+        SizedBox(
+          width: double.infinity,
+          child: FilledButton.icon(
+            key: const ValueKey('logistics-pickup-verify'),
+            onPressed: _actionBusy ? null : _verifyRequest,
+            icon: const Icon(Icons.fact_check_outlined),
+            label: const Text('Verify request'),
+          ),
+        ),
+        const SizedBox(height: 8),
+        SizedBox(
+          width: double.infinity,
+          child: OutlinedButton.icon(
+            key: const ValueKey('logistics-pickup-reject'),
+            onPressed: _actionBusy ? null : _rejectRequest,
+            icon: const Icon(Icons.block_outlined),
+            label: const Text('Reject request'),
+          ),
+        ),
+      ] else if (pickup.status == 'verified') ...[
+        if (pickup.eligibleRiderCandidates.isEmpty)
+          const Text('No eligible Local Rider is currently available.')
+        else
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              key: const ValueKey('logistics-pickup-assign'),
+              onPressed: _actionBusy
+                  ? null
+                  : () => _chooseRider(pickup, replacing: false),
+              icon: const Icon(Icons.delivery_dining_outlined),
+              label: const Text('Assign Rider & schedule pickup'),
+            ),
+          ),
+        const SizedBox(height: 8),
+        SizedBox(
+          width: double.infinity,
+          child: OutlinedButton.icon(
+            key: const ValueKey('logistics-pickup-reject'),
+            onPressed: _actionBusy ? null : _rejectRequest,
+            icon: const Icon(Icons.block_outlined),
+            label: const Text('Reject request'),
+          ),
+        ),
+      ] else if (pickup.status == 'scheduled' &&
+          const {
+            'assigned',
+            'accepted',
+            'arrived',
+          }.contains(pickup.assignedRider?.assignmentStatus)) ...[
+        if (pickup.eligibleRiderCandidates.isEmpty)
+          const Text(
+            'No eligible replacement Local Rider is currently available.',
+          )
+        else
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              key: const ValueKey('logistics-pickup-replace-rider'),
+              onPressed: _actionBusy
+                  ? null
+                  : () => _chooseRider(pickup, replacing: true),
+              icon: const Icon(Icons.swap_horiz_rounded),
+              label: const Text('Replace Rider'),
+            ),
+          ),
+      ],
+    ],
+  );
+}
+
+class _PickupRiderSelection {
+  const _PickupRiderSelection({
+    required this.riderProfileId,
+    required this.notes,
+    required this.reason,
+  });
+
+  final int riderProfileId;
+  final String notes;
+  final String reason;
 }
 
 Widget _section(
@@ -285,6 +664,38 @@ String _errorMessage(Object? error) {
     return 'Your Logistics session is no longer authorized.';
   }
   return 'Could not load this pickup request. Check your connection and retry.';
+}
+
+String _actionErrorMessage(Object error) {
+  if (error is ApiHttpException) {
+    final response = error.responseData;
+    if (response is Map) {
+      final errors = response['errors'];
+      if (errors is Map) {
+        for (final value in errors.values) {
+          if (value is List && value.isNotEmpty && value.first is String) {
+            return value.first as String;
+          }
+        }
+      }
+      final message = response['message'];
+      if (message is String && message.trim().isNotEmpty) return message;
+    }
+    if (error.statusCode == 409) {
+      return 'This request or Rider availability changed. Refresh and try again.';
+    }
+    if (error.statusCode == 404) {
+      return 'This pickup request or Rider is no longer available to your provider.';
+    }
+    if (error.statusCode == 401 || error.statusCode == 403) {
+      return 'Your Logistics session is no longer authorized.';
+    }
+    if (error.statusCode == 429) {
+      return 'Too many actions were sent. Wait a moment and retry.';
+    }
+  }
+  if (error is ApiException) return error.message;
+  return 'The pickup action could not be completed. Refresh and retry.';
 }
 
 String _formatDate(DateTime? value) {

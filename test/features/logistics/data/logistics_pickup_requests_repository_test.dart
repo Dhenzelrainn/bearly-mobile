@@ -66,6 +66,55 @@ void main() {
       ]);
     },
   );
+
+  test(
+    'sends verify, reject, assign and replacement actions to scoped routes',
+    () async {
+      final requests = <http.Request>[];
+      final repository = LogisticsRepository(
+        authService: _auth((request) async {
+          requests.add(request);
+          return http.Response(jsonEncode(_detailResponse), 200);
+        }),
+      );
+
+      await repository.verifyPickupRequest(42);
+      await repository.rejectPickupRequest(
+        42,
+        reason: '  Missing parcel labels.  ',
+      );
+      await repository.assignPickupRequest(
+        42,
+        riderProfileId: 18,
+        notes: '  Call on arrival.  ',
+      );
+      await repository.replacePickupRequestRider(
+        42,
+        riderProfileId: 19,
+        reason: '  Coverage changed today.  ',
+      );
+
+      expect(requests.map((request) => request.method), everyElement('POST'));
+      expect(requests.map((request) => request.url.path), [
+        '/api/mobile/logistics/pickup-requests/42/verify',
+        '/api/mobile/logistics/pickup-requests/42/reject',
+        '/api/mobile/logistics/pickup-requests/42/assign',
+        '/api/mobile/logistics/pickup-requests/42/replace-rider',
+      ]);
+      expect(jsonDecode(requests[0].body), isEmpty);
+      expect(jsonDecode(requests[1].body), {
+        'cancellation_reason': 'Missing parcel labels.',
+      });
+      expect(jsonDecode(requests[2].body), {
+        'rider_profile_id': 18,
+        'notes': 'Call on arrival.',
+      });
+      expect(jsonDecode(requests[3].body), {
+        'rider_profile_id': 19,
+        'reason': 'Coverage changed today.',
+      });
+    },
+  );
 }
 
 AuthService _auth(Future<http.Response> Function(http.Request) handler) =>
