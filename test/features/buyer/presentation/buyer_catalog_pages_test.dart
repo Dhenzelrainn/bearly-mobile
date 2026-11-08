@@ -378,7 +378,16 @@ void main() {
           if (request.url.path == '/api/mobile/buyer/chat/product') {
             expect(jsonDecode(request.body), {'product_id': 41});
             return _jsonResponse({
-              'data': {'conversation_id': 71, 'title': 'Bearly Studio'},
+              'data': {
+                'conversation_id': 71,
+                'title': 'Bearly Studio',
+                'context': 'Handmade Bear',
+                'conversation': _mobileConversationJson(
+                  71,
+                  title: 'Bearly Studio',
+                  subject: 'Handmade Bear',
+                ),
+              },
               'message': 'Conversation ready.',
             }, 201);
           }
@@ -388,18 +397,33 @@ void main() {
               'data': {
                 'conversation': {
                   'id': 71,
+                  'subject': 'Handmade Bear',
                   'status': 'open',
-                  'title': 'Bearly Studio',
-                  'context': 'Handmade Bear',
+                  'type': 'direct',
+                  'counterparts': [
+                    {'name': 'Bearly Studio', 'role': 'Seller'},
+                  ],
+                  'latest_message': {
+                    'id': null,
+                    'preview': 'No messages yet.',
+                    'sent_at': null,
+                    'from_me': false,
+                    'has_attachments': false,
+                  },
+                  'unread': 0,
                 },
                 'messages': [],
-                'receipt_updates': [],
+                'pagination': {
+                  'per_page': 20,
+                  'has_more': false,
+                  'next_before_id': null,
+                },
               },
             });
           }
           if (request.url.path.endsWith('/conversations/71/read')) {
             return _jsonResponse({
-              'data': {'unread': 0},
+              'data': {'unread': 0, 'unread_count': 0},
             });
           }
           if (request.url.path.endsWith('/wishlist')) {
@@ -426,7 +450,7 @@ void main() {
         );
         expect(find.text('Bearly Studio'), findsOneWidget);
         expect(
-          find.text('Start the conversation with the Seller.'),
+          find.text('No messages in this conversation yet.'),
           findsOneWidget,
         );
       },
@@ -679,6 +703,28 @@ AuthSession _buyerSession() => const AuthSession(
 
 http.Response _jsonResponse(Object value, [int statusCode = 200]) =>
     http.Response(jsonEncode(value), statusCode);
+
+Map<String, Object?> _mobileConversationJson(
+  int id, {
+  required String title,
+  required String subject,
+}) => {
+  'id': id,
+  'subject': subject,
+  'status': 'open',
+  'type': 'direct',
+  'counterparts': [
+    {'name': title, 'role': 'Seller'},
+  ],
+  'latest_message': {
+    'id': null,
+    'preview': 'No messages yet.',
+    'sent_at': null,
+    'from_me': false,
+    'has_attachments': false,
+  },
+  'unread': 0,
+};
 
 http.Response _wishlistPage(List<Map<String, Object?>> entries) =>
     _jsonResponse({

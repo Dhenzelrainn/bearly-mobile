@@ -14,6 +14,7 @@ import '../../features/buyer/data/buyer_catalog_repository.dart';
 import '../../features/buyer/data/buyer_deals_repository.dart';
 import '../../features/buyer/data/buyer_vouchers_repository.dart';
 import '../../features/buyer/data/buyer_chat_repository.dart';
+import '../../features/buyer/data/buyer_mobile_messages_repository.dart';
 import '../../features/buyer/data/buyer_notifications_repository.dart';
 import '../../features/buyer/data/buyer_cart_controller.dart';
 import '../../features/buyer/data/buyer_address_controller.dart';
@@ -45,6 +46,9 @@ import '../../features/rider/data/rider_notifications_repository.dart';
 import '../../features/rider/data/rider_messages_repository.dart';
 import '../../features/rider/data/rider_cash_custody_repository.dart';
 import '../../features/messaging/data/mobile_messaging_data_source.dart';
+import '../../features/messaging/models/mobile_messaging_models.dart';
+import '../../features/messaging/presentation/mobile_messages_page.dart';
+import '../../features/messaging/presentation/mobile_message_conversation_page.dart';
 import '../../features/rider/models/rider_assignment.dart';
 import '../../features/rider/presentation/rider_module_page.dart';
 import '../../features/rider/presentation/rider_pending_page.dart';
@@ -72,6 +76,9 @@ class AppRoutes {
       authService: authService,
     );
     final riderMessagesRepository = RiderMessagesRepository(
+      authService: authService,
+    );
+    final buyerMessagesRepository = BuyerMobileMessagesRepository(
       authService: authService,
     );
     final riderCashCustodyRepository = RiderCashCustodyRepository(
@@ -251,6 +258,8 @@ class AppRoutes {
               authService: authService,
               checkoutRepository: resolveCheckoutRepository(),
               orderId: orderId,
+              onContactSeller:
+                  buyerMessagesRepository.startSellerOrderConversation,
               onSignInAgain: () => Navigator.of(
                 context,
               ).pushNamedAndRemoveUntil(AppRouteNames.login, (_) => false),
@@ -295,9 +304,7 @@ class AppRoutes {
               repository: BuyerCatalogRepository(authService: authService),
               cartController: cartController,
               wishlistController: wishlistController,
-              onChatSeller: (id) => BuyerChatRepository(
-                authService: authService,
-              ).startProductConversation(id),
+              onChatSeller: buyerMessagesRepository.startProductConversation,
             ),
             settings: settings,
           );
@@ -334,15 +341,10 @@ class AppRoutes {
           settings: settings,
         );
       case AppRouteNames.buyerMessages:
-        final chatRepository = BuyerChatRepository(authService: authService);
         return MaterialPageRoute(
-          builder: (context) => BuyerMessagesPage(
-            repository: chatRepository,
-            onOpenConversation: (id) async {
-              await Navigator.of(
-                context,
-              ).pushNamed(AppRouteNames.buyerChatThread, arguments: id);
-            },
+          builder: (_) => MobileMessagesPage(
+            repository: buyerMessagesRepository,
+            title: 'Messages',
           ),
           settings: settings,
         );
@@ -359,6 +361,15 @@ class AppRoutes {
         );
       case AppRouteNames.buyerChatThread:
         final conversationId = settings.arguments;
+        if (conversationId is MobileConversation) {
+          return MaterialPageRoute(
+            builder: (_) => MobileMessageConversationPage(
+              repository: buyerMessagesRepository,
+              conversation: conversationId,
+            ),
+            settings: settings,
+          );
+        }
         if (conversationId is int && conversationId > 0) {
           return MaterialPageRoute(
             builder: (_) => BuyerChatThreadPage(

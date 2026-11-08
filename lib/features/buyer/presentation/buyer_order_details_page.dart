@@ -6,6 +6,7 @@ import '../../../core/theme/bearly_theme.dart';
 import '../../../core/routes/app_route_names.dart';
 import '../../../core/widgets/product_thumbnail.dart';
 import '../../auth/data/auth_service.dart';
+import '../../messaging/models/mobile_messaging_models.dart';
 import '../data/buyer_checkout_repository.dart';
 import '../data/buyer_order_detail_controller.dart';
 import '../data/buyer_review_repository.dart';
@@ -22,6 +23,7 @@ class BuyerOrderDetailsPage extends StatefulWidget {
     required this.orderId,
     required this.onSignInAgain,
     this.reviewRepository,
+    this.onContactSeller,
   });
 
   final AuthService authService;
@@ -29,6 +31,7 @@ class BuyerOrderDetailsPage extends StatefulWidget {
   final int orderId;
   final VoidCallback onSignInAgain;
   final BuyerReviewRepository? reviewRepository;
+  final Future<MobileConversation> Function(int sellerOrderId)? onContactSeller;
 
   @override
   State<BuyerOrderDetailsPage> createState() => _BuyerOrderDetailsPageState();
@@ -450,6 +453,18 @@ class _BuyerOrderDetailsPageState extends State<BuyerOrderDetailsPage> {
         'Seller order status · ${buyerOrderStatusLabel(seller.summary.status)}',
         key: ValueKey('buyer-seller-status-${seller.summary.id}'),
       ),
+      if (widget.onContactSeller != null) ...[
+        const SizedBox(height: 10),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: OutlinedButton.icon(
+            key: ValueKey('buyer-order-contact-seller-${seller.summary.id}'),
+            onPressed: () => _contactSeller(seller.summary.id),
+            icon: const Icon(Icons.chat_bubble_outline_rounded),
+            label: const Text('Contact seller'),
+          ),
+        ),
+      ],
       if (seller.summary.canRequestReturn &&
           seller.summary.returnDeadline != null)
         Text(
@@ -554,6 +569,27 @@ class _BuyerOrderDetailsPageState extends State<BuyerOrderDetailsPage> {
       context,
     ).pushNamed(AppRouteNames.buyerReturns, arguments: sellerOrderId);
     if (mounted) await _controller.load();
+  }
+
+  Future<void> _contactSeller(int sellerOrderId) async {
+    final openConversation = widget.onContactSeller;
+    if (openConversation == null) return;
+    try {
+      final conversation = await openConversation(sellerOrderId);
+      if (!mounted) return;
+      await Navigator.of(
+        context,
+      ).pushNamed(AppRouteNames.buyerChatThread, arguments: conversation);
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'This Seller conversation could not be opened. Refresh the order and try again.',
+          ),
+        ),
+      );
+    }
   }
 
   Widget _itemSnapshot(

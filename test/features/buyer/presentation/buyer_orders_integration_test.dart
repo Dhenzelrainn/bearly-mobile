@@ -68,6 +68,82 @@ void main() {
       );
     });
 
+    testWidgets('Seller Order starts its authorized shared messaging thread', (
+      tester,
+    ) async {
+      final h = _Harness(
+        detailHandler: (_) async => _json(
+          _detailResponse(
+            sellers: [
+              _sellerDetailJson(
+                id: 994,
+                reference: 'SELL-994',
+                store: 'Bearly Studio',
+                status: 'processing',
+                shipments: const [],
+                item: _itemJson(),
+              ),
+            ],
+          ),
+        ),
+        chatHandler: (request) async {
+          if (request.method == 'POST' &&
+              request.url.path == '/api/mobile/buyer/chat/seller-orders/994') {
+            return _json({
+              'data': {'conversation': _messageConversation(501)},
+            }, 201);
+          }
+          if (request.method == 'GET' &&
+              request.url.path ==
+                  '/api/mobile/buyer/chat/conversations/501/messages') {
+            return _json({
+              'data': {
+                'conversation': _messageConversation(501),
+                'messages': [],
+                'pagination': {
+                  'per_page': 20,
+                  'has_more': false,
+                  'next_before_id': null,
+                },
+              },
+            });
+          }
+          if (request.method == 'POST' &&
+              request.url.path.endsWith('/conversations/501/read')) {
+            return _json({
+              'data': {'unread': 0, 'unread_count': 0},
+            });
+          }
+          return _json({'message': 'Unexpected chat request.'}, 404);
+        },
+      );
+
+      await _mountOrders(tester, h);
+      await tester.tap(find.text('BRL-812'));
+      await tester.pumpAndSettle();
+
+      final contact = find.byKey(
+        const ValueKey('buyer-order-contact-seller-994'),
+      );
+      await _scrollTo(tester, contact);
+      await tester.tap(contact);
+      await tester.pumpAndSettle();
+
+      expect(find.text('Bearly Studio'), findsOneWidget);
+      expect(
+        find.text('No messages in this conversation yet.'),
+        findsOneWidget,
+      );
+      expect(
+        h.requests.any(
+          (request) =>
+              request.method == 'POST' &&
+              request.url.path == '/api/mobile/buyer/chat/seller-orders/994',
+        ),
+        isTrue,
+      );
+    });
+
     testWidgets(
       'expired completed Seller order opens read-only returns workspace',
       (tester) async {
@@ -1776,6 +1852,7 @@ class _Harness {
     this.receiptHandler,
     this.reviewHandler,
     this.returnsHandler,
+    this.chatHandler,
   }) {
     apiClient = ApiClient(
       httpClient: client,
@@ -1801,6 +1878,7 @@ class _Harness {
   final Future<http.Response> Function(http.Request)? receiptHandler;
   final Future<http.Response> Function(http.Request)? reviewHandler;
   final Future<http.Response> Function(http.Request)? returnsHandler;
+  final Future<http.Response> Function(http.Request)? chatHandler;
   final List<http.Request> requests = [];
 
   late final MockClient client = MockClient(_respond);
@@ -1814,6 +1892,11 @@ class _Harness {
 
   Future<http.Response> _respond(http.Request request) async {
     requests.add(request);
+    if (request.url.path.startsWith('/api/mobile/buyer/chat/')) {
+      return chatHandler == null
+          ? _json({'message': 'Unexpected chat request.'}, 405)
+          : chatHandler!(request);
+    }
     if (request.method == 'POST' &&
         request.url.path == '/api/mobile/buyer/reviews') {
       return reviewHandler == null
@@ -1863,6 +1946,24 @@ class _Harness {
     return _json({'message': 'Not found.'}, 404);
   }
 }
+
+Map<String, Object?> _messageConversation(int id) => {
+  'id': id,
+  'subject': 'Order BRL-812',
+  'status': 'open',
+  'type': 'direct',
+  'counterparts': [
+    {'name': 'Bearly Studio', 'role': 'Seller'},
+  ],
+  'latest_message': {
+    'id': null,
+    'preview': 'No messages yet.',
+    'sent_at': null,
+    'from_me': false,
+    'has_attachments': false,
+  },
+  'unread': 0,
+};
 
 class _MemoryTokenStore implements SessionTokenStore {
   String? token;

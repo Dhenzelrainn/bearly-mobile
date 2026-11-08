@@ -13,6 +13,7 @@ import '../data/buyer_catalog_repository.dart';
 import '../data/buyer_wishlist_controller.dart';
 import '../models/buyer_catalog_models.dart';
 import '../models/buyer_checkout_models.dart';
+import '../../messaging/models/mobile_messaging_models.dart';
 import 'buyer_wishlist_heart_button.dart';
 
 class BuyerProductDetailPage extends StatefulWidget {
@@ -29,7 +30,7 @@ class BuyerProductDetailPage extends StatefulWidget {
   final BuyerCatalogRepository repository;
   final BuyerCartController cartController;
   final BuyerWishlistController wishlistController;
-  final Future<int> Function(int productId)? onChatSeller;
+  final Future<MobileConversation> Function(int productId)? onChatSeller;
 
   @override
   State<BuyerProductDetailPage> createState() => _BuyerProductDetailPageState();
@@ -362,11 +363,11 @@ class _BuyerProductDetailPageState extends State<BuyerProductDetailPage> {
     if (_openingSellerChat) return;
     setState(() => _openingSellerChat = true);
     try {
-      final conversationId = await startConversation(product.id);
+      final conversation = await startConversation(product.id);
       if (!mounted) return;
       await Navigator.of(
         context,
-      ).pushNamed(AppRouteNames.buyerChatThread, arguments: conversationId);
+      ).pushNamed(AppRouteNames.buyerChatThread, arguments: conversation);
     } on ApiException {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(

@@ -467,7 +467,9 @@ class _MobileMessageConversationPageState
         controller: _scrollController,
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.fromLTRB(12, 12, 12, 16),
-        itemCount: _messages.length + (_hasMore || _loadingOlder ? 1 : 0),
+        itemCount: _messages.isEmpty
+            ? 1
+            : _messages.length + (_hasMore || _loadingOlder ? 1 : 0),
         itemBuilder: (context, index) {
           if ((_hasMore || _loadingOlder) && index == 0) {
             return Center(

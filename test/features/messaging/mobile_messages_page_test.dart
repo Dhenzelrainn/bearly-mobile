@@ -62,6 +62,18 @@ void main() {
     expect(repository.readRequests, 2);
   });
 
+  testWidgets('shows an empty state for a new conversation', (tester) async {
+    final repository = FakeMobileMessagingDataSource()..messages = [];
+    await tester.pumpWidget(
+      MaterialApp(home: MobileMessagesPage(repository: repository)),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Bearly Support').first);
+    await tester.pumpAndSettle();
+
+    expect(find.text('No messages in this conversation yet.'), findsOneWidget);
+  });
+
   testWidgets('shows refresh errors while keeping the inbox visible', (
     tester,
   ) async {
