@@ -12,6 +12,39 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
 void main() {
+  testWidgets('cash custody entry is shown for local Riders only', (
+    tester,
+  ) async {
+    final authService = _testAuthService(localFulfillment: true);
+    var openedCashCustody = false;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: RiderHomePage(
+          repository: RiderRepository(authService: authService),
+          onOpenCashCustody: () async => openedCashCustody = true,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Cash Custody'));
+    await tester.tap(find.text('Cash Custody'));
+    await tester.pumpAndSettle();
+    expect(openedCashCustody, isTrue);
+
+    final courierAuth = _testAuthService(localFulfillment: false);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: RiderHomePage(
+          key: const ValueKey('courier-dashboard'),
+          repository: RiderRepository(authService: courierAuth),
+          onOpenCashCustody: () async {},
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Cash Custody'), findsNothing);
+  });
+
   testWidgets('refreshes assigned delivery count after returning from list', (
     tester,
   ) async {
@@ -114,6 +147,46 @@ void main() {
     );
   });
 }
+
+AuthService _testAuthService({required bool localFulfillment}) =>
+    AuthService(
+        apiClient: ApiClient(
+          httpClient: MockClient((request) async {
+            expect(request.url.path, '/api/mobile/rider/dashboard');
+            return http.Response(
+              jsonEncode({
+                'rider': {
+                  'name': 'Test Rider',
+                  'work_type': localFulfillment ? 'local' : 'courier',
+                  'capabilities': {
+                    'local_pickup': localFulfillment,
+                    'local_delivery': localFulfillment,
+                  },
+                  'vehicle_type': localFulfillment ? 'Motorcycle' : 'Van',
+                  'plate_number': 'TEST-1',
+                  'availability_status': 'available',
+                  'logistics_provider': 'Test Logistics',
+                },
+                'metrics': {
+                  'assigned_pickups': 0,
+                  'pickup_in_progress': 0,
+                  'assigned_deliveries': 0,
+                  'out_for_delivery': 0,
+                },
+              }),
+              200,
+            );
+          }),
+          baseUri: Uri.parse('http://127.0.0.1:8000'),
+        ),
+        tokenStore: _MemoryTokenStore()..token = 'test-token',
+      )
+      ..currentSession = const AuthSession(
+        id: 18,
+        name: 'Test Rider',
+        email: 'rider@example.test',
+        role: AccountRole.rider,
+      );
 
 class _MemoryTokenStore implements SessionTokenStore {
   String? token;

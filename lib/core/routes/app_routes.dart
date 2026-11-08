@@ -37,10 +37,12 @@ import '../../features/buyer/presentation/buyer_chat_thread_page.dart';
 import '../../features/buyer/presentation/buyer_notifications_page.dart';
 import '../../features/notifications/presentation/mobile_notifications_page.dart';
 import '../../features/rider/presentation/rider_home_page.dart';
+import '../../features/rider/presentation/rider_cash_custody_page.dart';
 import '../../features/rider/presentation/rider_assignment_pages.dart';
 import '../../features/rider/data/rider_repository.dart';
 import '../../features/rider/data/rider_notifications_repository.dart';
 import '../../features/rider/data/rider_messages_repository.dart';
+import '../../features/rider/data/rider_cash_custody_repository.dart';
 import '../../features/messaging/data/mobile_messaging_data_source.dart';
 import '../../features/rider/models/rider_assignment.dart';
 import '../../features/rider/presentation/rider_module_page.dart';
@@ -69,6 +71,9 @@ class AppRoutes {
       authService: authService,
     );
     final riderMessagesRepository = RiderMessagesRepository(
+      authService: authService,
+    );
+    final riderCashCustodyRepository = RiderCashCustodyRepository(
       authService: authService,
     );
     final logisticsRepository = LogisticsRepository(authService: authService);
@@ -112,7 +117,7 @@ class AppRoutes {
         AccountRole.logistics => AppRouteNames.logisticsDashboard,
       };
       return MaterialPageRoute(
-        builder: (_) => switch (sessionRole) {
+        builder: (context) => switch (sessionRole) {
           AccountRole.buyer => BuyerHomePage(
             authService: authService,
             cartController: cartController,
@@ -125,6 +130,11 @@ class AppRoutes {
             repository: riderRepository,
             notificationsRepository: riderNotificationsRepository,
             messagesRepository: riderMessagesRepository,
+            onOpenCashCustody: () async {
+              await Navigator.of(
+                context,
+              ).pushNamed(AppRouteNames.riderCashCustody);
+            },
           ),
           AccountRole.logistics => LogisticsHomePage(
             authService: authService,
@@ -366,19 +376,29 @@ class AppRoutes {
         );
       case AppRouteNames.rider:
         return MaterialPageRoute(
-          builder: (_) => RiderHomePage(
+          builder: (context) => RiderHomePage(
             repository: riderRepository,
             notificationsRepository: riderNotificationsRepository,
             messagesRepository: riderMessagesRepository,
+            onOpenCashCustody: () async {
+              await Navigator.of(
+                context,
+              ).pushNamed(AppRouteNames.riderCashCustody);
+            },
           ),
           settings: settings,
         );
       case AppRouteNames.riderDashboard:
         return MaterialPageRoute(
-          builder: (_) => RiderHomePage(
+          builder: (context) => RiderHomePage(
             repository: riderRepository,
             notificationsRepository: riderNotificationsRepository,
             messagesRepository: riderMessagesRepository,
+            onOpenCashCustody: () async {
+              await Navigator.of(
+                context,
+              ).pushNamed(AppRouteNames.riderCashCustody);
+            },
           ),
           settings: settings,
         );
@@ -392,6 +412,12 @@ class AppRoutes {
             initialUnreadCount: initialUnreadCount,
           ),
           settings: settings,
+        );
+      case AppRouteNames.riderCashCustody:
+        return _riderLocalRoute(
+          settings,
+          riderRepository,
+          RiderCashCustodyPage(repository: riderCashCustodyRepository),
         );
       case AppRouteNames.logisticsDashboard:
         return MaterialPageRoute(
@@ -593,6 +619,7 @@ class AppRoutes {
       AppRouteNames.riderHistory,
       AppRouteNames.riderMessages,
       AppRouteNames.riderNotifications,
+      AppRouteNames.riderCashCustody,
       AppRouteNames.riderAccount,
     }.contains(name)) {
       return AccountRole.rider;

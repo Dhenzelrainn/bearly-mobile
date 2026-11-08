@@ -17,11 +17,13 @@ class RiderHomePage extends StatefulWidget {
     required this.repository,
     this.notificationsRepository,
     this.messagesRepository,
+    this.onOpenCashCustody,
   });
 
   final RiderRepository repository;
   final MobileNotificationsDataSource? notificationsRepository;
   final MobileMessagingDataSource? messagesRepository;
+  final Future<void> Function()? onOpenCashCustody;
 
   @override
   State<RiderHomePage> createState() => _RiderHomePageState();
@@ -302,6 +304,21 @@ class _RiderHomePageState extends State<RiderHomePage> {
           ),
         ),
         if (dashboard.supportsLocalFulfillment) ...[
+          if (widget.onOpenCashCustody != null) ...[
+            Card(
+              color: Colors.white,
+              child: ListTile(
+                leading: const Icon(Icons.account_balance_wallet_outlined),
+                title: const Text('Cash Custody'),
+                subtitle: const Text(
+                  'View recorded COD collections and refund cash assignments.',
+                ),
+                trailing: const Icon(Icons.chevron_right_rounded),
+                onTap: widget.onOpenCashCustody,
+              ),
+            ),
+            const SizedBox(height: 8),
+          ],
           const SizedBox(height: 14),
           Row(
             children: [
