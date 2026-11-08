@@ -1,4 +1,5 @@
 import '../../../core/models/product_preview.dart';
+import 'rider_operational_status.dart';
 
 enum RiderAssignmentKind { pickup, delivery }
 
@@ -15,6 +16,7 @@ class RiderDashboard {
     this.currentZoneCenter = '',
     this.workType = 'unknown',
     this.supportsLocalFulfillment = false,
+    this.operationalStatus,
     required this.assignedPickups,
     required this.pickupsInProgress,
     required this.assignedDeliveries,
@@ -32,6 +34,7 @@ class RiderDashboard {
   final String currentZoneCenter;
   final String workType;
   final bool supportsLocalFulfillment;
+  final RiderOperationalStatus? operationalStatus;
   final int assignedPickups;
   final int pickupsInProgress;
   final int assignedDeliveries;
@@ -41,6 +44,7 @@ class RiderDashboard {
     final map = _jsonMap(value, 'dashboard');
     final rider = _jsonMap(map['rider'], 'rider');
     final metrics = _jsonMap(map['metrics'], 'metrics');
+    final operationalValue = map['operational_status'];
     final capabilities = rider['capabilities'] is Map
         ? _jsonMap(rider['capabilities'], 'capabilities')
         : const <String, Object?>{};
@@ -64,12 +68,36 @@ class RiderDashboard {
       currentZoneCenter: _string(rider['current_zone_center']),
       workType: workType.isEmpty ? 'unknown' : workType,
       supportsLocalFulfillment: supportsLocalFulfillment,
+      operationalStatus: operationalValue == null
+          ? null
+          : RiderOperationalStatus.fromJson(operationalValue),
       assignedPickups: _integer(metrics['assigned_pickups']),
       pickupsInProgress: _integer(metrics['pickup_in_progress']),
       assignedDeliveries: _integer(metrics['assigned_deliveries']),
       outForDelivery: _integer(metrics['out_for_delivery']),
     );
   }
+
+  RiderDashboard copyWith({RiderOperationalStatus? operationalStatus}) =>
+      RiderDashboard(
+        name: name,
+        vehicleType: vehicleType,
+        plateNumber: plateNumber,
+        availabilityStatus:
+            operationalStatus?.availabilityStatus ?? availabilityStatus,
+        logisticsProvider: logisticsProvider,
+        vehicleModel: vehicleModel,
+        homeSortingCenter: homeSortingCenter,
+        currentZone: currentZone,
+        currentZoneCenter: currentZoneCenter,
+        workType: workType,
+        supportsLocalFulfillment: supportsLocalFulfillment,
+        operationalStatus: operationalStatus ?? this.operationalStatus,
+        assignedPickups: assignedPickups,
+        pickupsInProgress: pickupsInProgress,
+        assignedDeliveries: assignedDeliveries,
+        outForDelivery: outForDelivery,
+      );
 }
 
 class RiderAssignment {

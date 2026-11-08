@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../../../core/network/api_client.dart';
 import '../../../core/routes/app_route_names.dart';
 import '../../../core/theme/bearly_theme.dart';
 import '../../../core/widgets/bearly_logo.dart';
@@ -9,6 +10,7 @@ import '../../notifications/data/mobile_notifications_data_source.dart';
 import '../../messaging/data/mobile_messaging_data_source.dart';
 import '../data/rider_repository.dart';
 import '../models/rider_assignment.dart';
+import '../models/rider_operational_status.dart';
 import '../widgets/rider_shared_widgets.dart';
 
 class RiderHomePage extends StatefulWidget {
@@ -35,6 +37,7 @@ class _RiderHomePageState extends State<RiderHomePage> {
   Future<int>? _notificationCountRequest;
   int _messageUnreadCount = 0;
   Future<int>? _messageCountRequest;
+  bool _availabilityUpdating = false;
 
   @override
   void initState() {
@@ -49,6 +52,54 @@ class _RiderHomePageState extends State<RiderHomePage> {
     setState(() {
       _dashboard = dashboard;
     });
+  }
+
+  Future<void> _changeAvailability(String target) async {
+    if (_availabilityUpdating) return;
+    setState(() => _availabilityUpdating = true);
+    try {
+      final status = await widget.repository.updateAvailability(target);
+      final dashboard = await _dashboard;
+      if (!mounted) return;
+      setState(() {
+        _dashboard = Future.value(
+          dashboard.copyWith(operationalStatus: status),
+        );
+      });
+      _showStatusMessage(
+        target == 'available'
+            ? 'You are online and may receive eligible assignments.'
+            : 'You are offline. Existing work remains assigned to you.',
+      );
+    } catch (error) {
+      if (mounted) _showStatusMessage(_statusError(error));
+    } finally {
+      if (mounted) setState(() => _availabilityUpdating = false);
+    }
+  }
+
+  void _showStatusMessage(String message) {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  String _statusError(Object error) {
+    if (error is ApiHttpException && error.responseData is Map) {
+      final response = Map<String, Object?>.from(error.responseData as Map);
+      final message = response['message'];
+      if (message is String && message.trim().isNotEmpty) return message;
+      final errors = response['errors'];
+      if (errors is Map) {
+        for (final value in errors.values) {
+          if (value is List && value.isNotEmpty && value.first is String) {
+            return value.first as String;
+          }
+          if (value is String && value.isNotEmpty) return value;
+        }
+      }
+    }
+    return 'Could not update your status. Please retry.';
   }
 
   Future<void> _open(String route) async {
@@ -227,41 +278,56 @@ class _RiderHomePageState extends State<RiderHomePage> {
             color: BearlyColors.brown900,
             borderRadius: BorderRadius.circular(18),
           ),
-          child: Row(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Icon(Icons.verified_user_outlined, color: Colors.white),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Availability: ${dashboard.availabilityStatus.replaceAll('_', ' ')}',
-                      style: Theme.of(
-                        context,
-                      ).textTheme.titleMedium?.copyWith(color: Colors.white),
+              Row(
+                children: [
+                  Icon(
+                    dashboard.availabilityStatus == 'available'
+                        ? Icons.wifi_tethering_rounded
+                        : Icons.wifi_tethering_off_rounded,
+                    color: Colors.white,
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          dashboard.availabilityStatus == 'available'
+                              ? 'Online'
+                              : 'Offline',
+                          style: Theme.of(context).textTheme.titleMedium
+                              ?.copyWith(color: Colors.white),
+                        ),
+                        Text(
+                          'Work type: ${_workTypeLabel(dashboard.workType)}',
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(color: Colors.white70),
+                        ),
+                      ],
                     ),
-                    Text(
-                      'Work type: ${_workTypeLabel(dashboard.workType)}',
-                      style: Theme.of(
-                        context,
-                      ).textTheme.bodySmall?.copyWith(color: Colors.white70),
-                    ),
-                    Text(
-                      [
-                        dashboard.vehicleType,
-                        dashboard.vehicleModel,
-                        dashboard.plateNumber,
-                      ].where((value) => value.isNotEmpty).join(' · '),
-                      style: Theme.of(
-                        context,
-                      ).textTheme.bodySmall?.copyWith(color: Colors.white70),
-                    ),
-                  ],
-                ),
+                  ),
+                ],
               ),
+              if (dashboard.operationalStatus case final operational?) ...[
+                const SizedBox(height: 10),
+                _availabilityControls(operational),
+              ],
             ],
           ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          [
+            dashboard.vehicleType,
+            dashboard.vehicleModel,
+            dashboard.plateNumber,
+          ].where((value) => value.isNotEmpty).join(' · '),
+          style: Theme.of(
+            context,
+          ).textTheme.bodySmall?.copyWith(color: BearlyColors.muted),
         ),
         const SizedBox(height: 14),
         Card(
@@ -416,10 +482,136 @@ class _RiderHomePageState extends State<RiderHomePage> {
     ),
   );
 
+  Widget _availabilityControls(RiderOperationalStatus status) {
+    final activeWorkLabel = status.workType == 'courier'
+        ? '${status.activeCourierRuns} active line-haul runs'
+              '${status.activeCourierRunsInProgress > 0 ? ' · ${status.activeCourierRunsInProgress} in progress' : ''}'
+        : '${status.activePickups} pickups · ${status.activeDeliveries} deliveries'
+              '${status.activePickupsInProgress + status.activeDeliveriesInProgress > 0 ? ' · ${status.activePickupsInProgress + status.activeDeliveriesInProgress} in progress' : ''}';
+    final checkedInAt = status.checkedInAt?.toLocal();
+    final checkedInTime = checkedInAt == null
+        ? null
+        : MaterialLocalizations.of(
+            context,
+          ).formatTimeOfDay(TimeOfDay.fromDateTime(checkedInAt));
+    final checkedInDate = checkedInAt == null
+        ? null
+        : '${checkedInAt.month}/${checkedInAt.day}/${checkedInAt.year}';
+    final isOnline = status.availabilityStatus == 'available';
+    final changing = _availabilityUpdating;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          status.activeWorkCount == 0
+              ? 'No active assignments'
+              : '${_operationalStateLabel(status.operationalState)}: $activeWorkLabel',
+          style: Theme.of(
+            context,
+          ).textTheme.bodySmall?.copyWith(color: Colors.white),
+        ),
+        const SizedBox(height: 3),
+        Text(
+          status.availabilityNote,
+          style: Theme.of(
+            context,
+          ).textTheme.bodySmall?.copyWith(color: Colors.white70),
+        ),
+        const SizedBox(height: 3),
+        Text(
+          status.assignmentRulesNote,
+          style: Theme.of(
+            context,
+          ).textTheme.bodySmall?.copyWith(color: Colors.white70),
+        ),
+        const SizedBox(height: 12),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            if (isOnline && status.canGoOffline)
+              OutlinedButton.icon(
+                onPressed: changing
+                    ? null
+                    : () => _changeAvailability('offline'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Colors.white,
+                  side: const BorderSide(color: Colors.white70),
+                ),
+                icon: _availabilityUpdating
+                    ? const SizedBox.square(
+                        dimension: 16,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
+                    : const Icon(Icons.wifi_tethering_off_rounded),
+                label: const Text('Go Offline'),
+              )
+            else if (!isOnline && status.canGoOnline)
+              FilledButton.icon(
+                onPressed: changing
+                    ? null
+                    : () => _changeAvailability('available'),
+                style: FilledButton.styleFrom(
+                  backgroundColor: Colors.white,
+                  foregroundColor: BearlyColors.brown900,
+                ),
+                icon: _availabilityUpdating
+                    ? const SizedBox.square(
+                        dimension: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.wifi_tethering_rounded),
+                label: const Text('Go Online'),
+              ),
+            OutlinedButton.icon(
+              onPressed: changing
+                  ? null
+                  : () => _open(AppRouteNames.riderAttendanceScan),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: Colors.white,
+                side: const BorderSide(color: Colors.white70),
+              ),
+              icon: const Icon(Icons.qr_code_scanner_rounded),
+              label: const Text('Scan attendance QR'),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Text(
+          status.hasActiveShift
+              ? 'Shift started ${checkedInDate ?? ''} at ${checkedInTime ?? ''}'
+              : 'No active shift',
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+            color: Colors.white,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        Text(
+          status.shiftNote,
+          style: Theme.of(
+            context,
+          ).textTheme.bodySmall?.copyWith(color: Colors.white70),
+        ),
+      ],
+    );
+  }
+
   String _workTypeLabel(String workType) => switch (workType) {
     'courier' => 'Courier',
     'local' => 'Local Rider',
     _ => 'Unavailable',
+  };
+
+  String _operationalStateLabel(String value) => switch (value) {
+    'in_progress' => 'In progress',
+    'assigned' => 'Assigned',
+    'available' => 'Online',
+    'offline' => 'Offline',
+    _ => 'Work status',
   };
 
   Widget _stat(String value, String label) => Container(

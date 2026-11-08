@@ -6,12 +6,81 @@ import 'package:bearly_mobile/features/auth/data/auth_service.dart';
 import 'package:bearly_mobile/features/auth/models/account_role.dart';
 import 'package:bearly_mobile/features/rider/data/rider_repository.dart';
 import 'package:bearly_mobile/features/rider/models/rider_assignment.dart';
+import 'package:bearly_mobile/features/rider/models/rider_attendance_result.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
 void main() {
   group('RiderRepository', () {
+    test(
+      'submits only the scanned QR and parses server attendance evidence',
+      () async {
+        final requests = <http.Request>[];
+        final repository = RiderRepository(
+          authService: _authService((request) async {
+            requests.add(request);
+            return http.Response(
+              jsonEncode({
+                'message':
+                    'Attendance checked in with the current Logistics QR.',
+                'data': {
+                  'scan_type': 'check_in',
+                  'scanned_at': '2026-11-08T08:30:00+08:00',
+                  'work_date': '2026-11-08',
+                  'shift_state': 'checked_in',
+                  'shift': {
+                    'id': 34,
+                    'checked_in_at': '2026-11-08T08:30:00+08:00',
+                    'checked_out_at': null,
+                    'check_in_source': 'qr',
+                    'check_out_source': null,
+                  },
+                  'evidence': {
+                    'id': 91,
+                    'scan_type': 'check_in',
+                    'generation': 12,
+                    'scanned_at': '2026-11-08T08:30:00+08:00',
+                  },
+                },
+              }),
+              200,
+            );
+          }),
+        );
+        const qrPayload =
+            'bearly-attendance:v1:7:12:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+
+        final result = await repository.scanAttendance(qrPayload);
+
+        expect(result, isA<RiderAttendanceResult>());
+        expect(result.checkedIn, isTrue);
+        expect(result.workDate, '2026-11-08');
+        expect(result.shiftId, 34);
+        expect(result.evidenceGeneration, 12);
+        expect(requests.single.method, 'POST');
+        expect(requests.single.url.path, '/api/mobile/rider/attendance/scan');
+        expect(jsonDecode(requests.single.body), {'qr_payload': qrPayload});
+        expect(requests.single.headers['authorization'], 'Bearer rider-token');
+      },
+    );
+
+    test('rejects a non-attendance QR before making an API request', () async {
+      var requested = false;
+      final repository = RiderRepository(
+        authService: _authService((_) async {
+          requested = true;
+          return http.Response('{}', 200);
+        }),
+      );
+
+      await expectLater(
+        repository.scanAttendance('not-a-bearly-qr'),
+        throwsArgumentError,
+      );
+      expect(requested, isFalse);
+    });
+
     test('loads dashboard and assigned pickup and delivery jobs', () async {
       final requests = <http.Request>[];
       final service = _authService((request) async {

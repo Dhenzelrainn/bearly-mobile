@@ -38,6 +38,7 @@ import '../../features/buyer/presentation/buyer_notifications_page.dart';
 import '../../features/notifications/presentation/mobile_notifications_page.dart';
 import '../../features/rider/presentation/rider_home_page.dart';
 import '../../features/rider/presentation/rider_cash_custody_page.dart';
+import '../../features/rider/presentation/rider_attendance_scanner_page.dart';
 import '../../features/rider/presentation/rider_assignment_pages.dart';
 import '../../features/rider/data/rider_repository.dart';
 import '../../features/rider/data/rider_notifications_repository.dart';
@@ -419,6 +420,13 @@ class AppRoutes {
           riderRepository,
           RiderCashCustodyPage(repository: riderCashCustodyRepository),
         );
+      case AppRouteNames.riderAttendanceScan:
+        return MaterialPageRoute(
+          builder: (_) => RiderAttendanceScannerPage(
+            onSubmit: riderRepository.scanAttendance,
+          ),
+          settings: settings,
+        );
       case AppRouteNames.logisticsDashboard:
         return MaterialPageRoute(
           builder: (_) => LogisticsHomePage(
@@ -620,6 +628,7 @@ class AppRoutes {
       AppRouteNames.riderMessages,
       AppRouteNames.riderNotifications,
       AppRouteNames.riderCashCustody,
+      AppRouteNames.riderAttendanceScan,
       AppRouteNames.riderAccount,
     }.contains(name)) {
       return AccountRole.rider;

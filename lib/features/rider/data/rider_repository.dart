@@ -2,8 +2,10 @@ import '../../auth/data/auth_service.dart';
 import '../../auth/models/account_role.dart';
 import '../models/rider_account.dart';
 import '../models/rider_assignment.dart';
+import '../models/rider_attendance_result.dart';
 import '../models/rider_earnings.dart';
 import '../models/rider_history.dart';
+import '../models/rider_operational_status.dart';
 
 /// Rider mobile API calls for assignments, profile, and history.
 class RiderRepository {
@@ -68,6 +70,44 @@ class RiderRepository {
       context,
     );
     return account;
+  }
+
+  Future<RiderOperationalStatus> updateAvailability(String status) async {
+    if (status != 'available' && status != 'offline') {
+      throw ArgumentError.value(status, 'status', 'Use available or offline.');
+    }
+
+    return RiderOperationalStatus.fromJson(
+      _data(
+        await _authService.requestWithSession<Object?>(
+          method: AuthenticatedRequestMethod.patch,
+          path: '/api/mobile/rider/availability',
+          body: {'availability_status': status},
+          parse: (response) => response,
+        ),
+      ),
+    );
+  }
+
+  Future<RiderAttendanceResult> scanAttendance(String qrPayload) async {
+    final payload = qrPayload.trim();
+    if (!RegExp(
+      r'^bearly-attendance:v1:\d+:\d+:[a-f0-9]{64}$',
+    ).hasMatch(payload)) {
+      throw ArgumentError.value(
+        qrPayload,
+        'qrPayload',
+        'Scan a current Bearly attendance QR.',
+      );
+    }
+
+    final response = await _authService.requestWithSession<Object?>(
+      method: AuthenticatedRequestMethod.post,
+      path: '/api/mobile/rider/attendance/scan',
+      body: {'qr_payload': payload},
+      parse: (response) => response,
+    );
+    return RiderAttendanceResult.fromResponse(response);
   }
 
   /// Returns a recent server capability or verifies it through the account API.
