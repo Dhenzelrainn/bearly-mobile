@@ -83,6 +83,12 @@ class LogisticsRider {
 
   bool get isCourier => workType == 'courier';
 
+  bool get canManageLocalActions =>
+      workType == 'local' &&
+      accountStatus == 'active' &&
+      verificationStatus == 'approved' &&
+      applicationStatus == 'approved';
+
   factory LogisticsRider.fromResponse(Object? response) {
     final rider = _map(_map(response)?['data'])?['rider'];
     final data = _map(rider);

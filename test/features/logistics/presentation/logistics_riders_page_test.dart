@@ -161,6 +161,204 @@ void main() {
     expect(find.text('Alex Rider'), findsOneWidget);
     expect(find.text('Operations'), findsOneWidget);
   });
+
+  testWidgets(
+    'eligible Local Rider sees management actions and Courier stays read-only',
+    (tester) async {
+      final repository = _FakeLogisticsRepository([_local, _courier]);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: LogisticsRiderDetailsPage(
+            repository: repository,
+            riderUserId: _local.userId,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.drag(find.byType(ListView), const Offset(0, -900));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Local Rider Management'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('logistics-rider-edit-capacity')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('logistics-rider-edit-specialization')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('logistics-rider-refresh-zone')),
+        findsOneWidget,
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: LogisticsRiderDetailsPage(
+            key: const ValueKey('courier-rider-details'),
+            repository: repository,
+            riderUserId: _courier.userId,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Local Rider Management'), findsNothing);
+      expect(
+        find.byKey(const ValueKey('logistics-rider-edit-capacity')),
+        findsNothing,
+      );
+    },
+  );
+
+  testWidgets('capacity save updates details and refreshes from the API', (
+    tester,
+  ) async {
+    final repository = _FakeLogisticsRepository([_local]);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: LogisticsRiderDetailsPage(
+          repository: repository,
+          riderUserId: _local.userId,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.drag(find.byType(ListView), const Offset(0, -900));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('logistics-rider-edit-capacity')),
+    );
+    await tester.tap(
+      find.byKey(const ValueKey('logistics-rider-edit-capacity')),
+    );
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('logistics-rider-capacity-input')),
+      '14',
+    );
+    await tester.tap(
+      find.byKey(const ValueKey('logistics-rider-capacity-save')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(repository.capacityUpdates, 1);
+    expect(find.text('14'), findsOneWidget);
+    expect(repository.riderRequests, 2);
+    expect(find.text('Local Rider capacity updated.'), findsOneWidget);
+  });
+
+  testWidgets(
+    'capacity form blocks invalid values and displays server validation errors',
+    (tester) async {
+      final repository = _FakeLogisticsRepository([_local]);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: LogisticsRiderDetailsPage(
+            repository: repository,
+            riderUserId: _local.userId,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.drag(find.byType(ListView), const Offset(0, -900));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(
+        find.byKey(const ValueKey('logistics-rider-edit-capacity')),
+      );
+      await tester.tap(
+        find.byKey(const ValueKey('logistics-rider-edit-capacity')),
+      );
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const ValueKey('logistics-rider-capacity-input')),
+        '0',
+      );
+      await tester.tap(
+        find.byKey(const ValueKey('logistics-rider-capacity-save')),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Enter a whole number from 1 to 1000.'), findsOneWidget);
+      expect(repository.capacityUpdates, 0);
+
+      await tester.enterText(
+        find.byKey(const ValueKey('logistics-rider-capacity-input')),
+        '14',
+      );
+      repository.managementError = ApiHttpException(
+        statusCode: 422,
+        responseWasJson: true,
+        responseData: {
+          'errors': {
+            'parcel_capacity': ['Capacity cannot be lower than active load.'],
+          },
+        },
+      );
+      await tester.tap(
+        find.byKey(const ValueKey('logistics-rider-capacity-save')),
+      );
+      await tester.pumpAndSettle();
+      expect(repository.capacityUpdates, 1);
+      expect(
+        find.text('Capacity cannot be lower than active load.'),
+        findsOneWidget,
+      );
+    },
+  );
+
+  testWidgets(
+    'specialization requires a reason and zone refresh confirms before saving',
+    (tester) async {
+      final repository = _FakeLogisticsRepository([_local]);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: LogisticsRiderDetailsPage(
+            repository: repository,
+            riderUserId: _local.userId,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.drag(find.byType(ListView), const Offset(0, -900));
+      await tester.pumpAndSettle();
+
+      await tester.ensureVisible(
+        find.byKey(const ValueKey('logistics-rider-edit-specialization')),
+      );
+      await tester.tap(
+        find.byKey(const ValueKey('logistics-rider-edit-specialization')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('logistics-rider-specialization-save')),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.text('Enter a reason of at least 5 characters.'),
+        findsOneWidget,
+      );
+      expect(repository.specializationUpdates, 0);
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+
+      await tester.ensureVisible(
+        find.byKey(const ValueKey('logistics-rider-refresh-zone')),
+      );
+      await tester.tap(
+        find.byKey(const ValueKey('logistics-rider-refresh-zone')),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.textContaining('A zone cannot be selected manually here.'),
+        findsOneWidget,
+      );
+      expect(repository.assignmentRefreshes, 0);
+      await tester.tap(
+        find.byKey(const ValueKey('logistics-rider-zone-refresh-confirm')),
+      );
+      await tester.pumpAndSettle();
+      expect(repository.assignmentRefreshes, 1);
+    },
+  );
 }
 
 class _FakeLogisticsRepository extends LogisticsRepository {
@@ -176,6 +374,11 @@ class _FakeLogisticsRepository extends LogisticsRepository {
   final void Function()? onRider;
   final Future<List<LogisticsRider>> Function()? rosterLoader;
   int rosterRequests = 0;
+  int riderRequests = 0;
+  int capacityUpdates = 0;
+  int specializationUpdates = 0;
+  int assignmentRefreshes = 0;
+  Object? managementError;
 
   @override
   Future<List<LogisticsRider>> riders() async {
@@ -186,8 +389,78 @@ class _FakeLogisticsRepository extends LogisticsRepository {
 
   @override
   Future<LogisticsRider> rider(int userId) async {
+    riderRequests++;
     onRider?.call();
     return values.firstWhere((rider) => rider.userId == userId);
+  }
+
+  @override
+  Future<LogisticsRider> updateRiderCapacity({
+    required int userId,
+    required int parcelCapacity,
+  }) async {
+    capacityUpdates++;
+    if (managementError != null) throw managementError!;
+    return _replaceRider(userId, capacity: parcelCapacity);
+  }
+
+  @override
+  Future<LogisticsRider> updateRiderSpecialization({
+    required int userId,
+    required String specialization,
+    required String reason,
+  }) async {
+    specializationUpdates++;
+    if (managementError != null) throw managementError!;
+    return _replaceRider(userId, specialization: specialization);
+  }
+
+  @override
+  Future<LogisticsRider> refreshRiderAssignment({required int userId}) async {
+    assignmentRefreshes++;
+    if (managementError != null) throw managementError!;
+    return _replaceRider(userId, currentZone: 'Updated Zone');
+  }
+
+  LogisticsRider _replaceRider(
+    int userId, {
+    int? capacity,
+    String? specialization,
+    String? currentZone,
+  }) {
+    final index = values.indexWhere((rider) => rider.userId == userId);
+    final old = values[index];
+    final updated = LogisticsRider(
+      userId: old.userId,
+      profileId: old.profileId,
+      name: old.name,
+      workType: old.workType,
+      workTypeLabel: old.workTypeLabel,
+      accountStatus: old.accountStatus,
+      verificationStatus: old.verificationStatus,
+      applicationStatus: old.applicationStatus,
+      availabilityStatus: old.availabilityStatus,
+      operationalStatus: old.operationalStatus,
+      vehicleType: old.vehicleType,
+      vehicleModel: old.vehicleModel,
+      plateNumber: old.plateNumber,
+      currentZone: currentZone ?? old.currentZone,
+      homeSortingCenter: old.homeSortingCenter,
+      specialization: specialization ?? old.specialization,
+      specializationLabel: specialization == null
+          ? old.specializationLabel
+          : switch (specialization) {
+              'pickup_only' => 'Pickup only',
+              'delivery_only' => 'Delivery only',
+              _ => 'Pickup and delivery',
+            },
+      capacity: capacity ?? old.capacity,
+      capacityLabel: old.capacityLabel,
+      activeJobs: old.activeJobs,
+      completedToday: old.completedToday,
+    );
+    values[index] = updated;
+    return updated;
   }
 }
 

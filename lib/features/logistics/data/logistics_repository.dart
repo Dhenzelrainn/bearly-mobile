@@ -151,4 +151,32 @@ class LogisticsRepository {
   Future<LogisticsRider> rider(int userId) async => LogisticsRider.fromResponse(
     await _authService.getWithSession('/api/mobile/logistics/riders/$userId'),
   );
+
+  Future<LogisticsRider> updateRiderCapacity({
+    required int userId,
+    required int parcelCapacity,
+  }) async => _authService.requestWithSession<LogisticsRider>(
+    method: AuthenticatedRequestMethod.patch,
+    path: '/api/mobile/logistics/riders/$userId/capacity',
+    body: {'parcel_capacity': parcelCapacity},
+    parse: LogisticsRider.fromResponse,
+  );
+
+  Future<LogisticsRider> updateRiderSpecialization({
+    required int userId,
+    required String specialization,
+    required String reason,
+  }) async => _authService.requestWithSession<LogisticsRider>(
+    method: AuthenticatedRequestMethod.patch,
+    path: '/api/mobile/logistics/riders/$userId/specialization',
+    body: {'specialization': specialization, 'reason': reason},
+    parse: LogisticsRider.fromResponse,
+  );
+
+  Future<LogisticsRider> refreshRiderAssignment({required int userId}) async =>
+      _authService.requestWithSession<LogisticsRider>(
+        method: AuthenticatedRequestMethod.patch,
+        path: '/api/mobile/logistics/riders/$userId/assignment',
+        parse: LogisticsRider.fromResponse,
+      );
 }

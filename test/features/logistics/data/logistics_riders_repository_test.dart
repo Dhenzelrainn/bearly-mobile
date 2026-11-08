@@ -54,7 +54,94 @@ void main() {
     expect(rider.verificationStatus, 'approved');
     expect(rider.activeJobs, 2);
   });
+
+  test('sends capacity edits to the provider-scoped Mobile API', () async {
+    final repository = LogisticsRepository(
+      authService: _auth((request) async {
+        expect(request.method, 'PATCH');
+        expect(request.url.path, '/api/mobile/logistics/riders/31/capacity');
+        expect(jsonDecode(request.body), {'parcel_capacity': 14});
+        return http.Response(jsonEncode(_detailResponse(capacity: 14)), 200);
+      }),
+    );
+
+    final rider = await repository.updateRiderCapacity(
+      userId: 31,
+      parcelCapacity: 14,
+    );
+
+    expect(rider.capacity, 14);
+  });
+
+  test('sends specialization and audit reason separately', () async {
+    final repository = LogisticsRepository(
+      authService: _auth((request) async {
+        expect(request.method, 'PATCH');
+        expect(
+          request.url.path,
+          '/api/mobile/logistics/riders/31/specialization',
+        );
+        expect(jsonDecode(request.body), {
+          'specialization': 'pickup_only',
+          'reason': 'Coverage plan changed',
+        });
+        return http.Response(
+          jsonEncode(_detailResponse(specialization: 'pickup_only')),
+          200,
+        );
+      }),
+    );
+
+    final rider = await repository.updateRiderSpecialization(
+      userId: 31,
+      specialization: 'pickup_only',
+      reason: 'Coverage plan changed',
+    );
+
+    expect(rider.specialization, 'pickup_only');
+  });
+
+  test('refreshes home-area assignment without sending a zone id', () async {
+    final repository = LogisticsRepository(
+      authService: _auth((request) async {
+        expect(request.method, 'PATCH');
+        expect(request.url.path, '/api/mobile/logistics/riders/31/assignment');
+        expect(request.body, isEmpty);
+        return http.Response(
+          jsonEncode(_detailResponse(zone: 'North Zone')),
+          200,
+        );
+      }),
+    );
+
+    final rider = await repository.refreshRiderAssignment(userId: 31);
+
+    expect(rider.currentZone, 'North Zone');
+  });
 }
+
+Map<String, Object?> _detailResponse({
+  int capacity = 8,
+  String specialization = 'both',
+  String? zone,
+}) => {
+  'message': 'Updated',
+  'data': {
+    'provider': {'id': 3, 'name': 'North Logistics'},
+    'rider': {
+      ..._rider(31, 'Local Rider'),
+      'capacity': capacity,
+      'specialization': specialization,
+      'specialization_label': specialization == 'pickup_only'
+          ? 'Pickup only'
+          : 'Pickup and delivery',
+      'current_zone': zone,
+      'current_zone_id': zone == null ? null : 7,
+      'home_sorting_center_id': 4,
+      'application_status': 'approved',
+    },
+  },
+};
 
 Map<String, Object?> _rider(int id, String name, {String workType = 'local'}) =>
     {
