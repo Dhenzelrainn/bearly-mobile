@@ -157,6 +157,12 @@ class _LogisticsHomePageState extends State<LogisticsHomePage> {
     LogisticsDispatchPage(repository: widget.repository),
   );
 
+  Future<void> _openRiderManagement() async {
+    await Navigator.of(context).pushNamed(AppRouteNames.logisticsRiders);
+    if (!mounted) return;
+    await _refresh();
+  }
+
   Future<void> _openOperationalPage(Widget page) async {
     await Navigator.of(
       context,
@@ -386,6 +392,16 @@ class _LogisticsHomePageState extends State<LogisticsHomePage> {
           },
         ),
         const SizedBox(height: 18),
+        SizedBox(
+          width: double.infinity,
+          child: OutlinedButton.icon(
+            key: const ValueKey('logistics-open-rider-management'),
+            onPressed: _openRiderManagement,
+            icon: const Icon(Icons.groups_2_outlined),
+            label: const Text('Rider Management'),
+          ),
+        ),
+        const SizedBox(height: 8),
         _handoffsSection(dashboard.incomingHandoffs),
         const SizedBox(height: 14),
         _parcelsSection(dashboard.incomingParcels),

@@ -60,6 +60,7 @@ import '../../features/logistics/data/logistics_repository.dart';
 import '../../features/logistics/data/logistics_notifications_repository.dart';
 import '../../features/logistics/data/logistics_messages_repository.dart';
 import '../../features/logistics/presentation/logistics_home_page.dart';
+import '../../features/logistics/presentation/logistics_riders_page.dart';
 import '../../features/logistics/presentation/logistics_messages_page.dart';
 
 class AppRoutes {
@@ -479,6 +480,28 @@ class AppRoutes {
               LogisticsMessagesPage(repository: logisticsMessagesRepository),
           settings: settings,
         );
+      case AppRouteNames.logisticsRiders:
+        return MaterialPageRoute(
+          builder: (_) => LogisticsRidersPage(repository: logisticsRepository),
+          settings: settings,
+        );
+      case AppRouteNames.logisticsRiderDetails:
+        final userId = settings.arguments;
+        if (userId is int && userId > 0) {
+          return MaterialPageRoute(
+            builder: (_) => LogisticsRiderDetailsPage(
+              repository: logisticsRepository,
+              riderUserId: userId,
+            ),
+            settings: settings,
+          );
+        }
+        return MaterialPageRoute(
+          builder: (_) => const Scaffold(
+            body: Center(child: Text('Rider details are unavailable.')),
+          ),
+          settings: settings,
+        );
       case AppRouteNames.logisticsNotifications:
         final initialUnreadCount = settings.arguments is int
             ? settings.arguments! as int
@@ -673,6 +696,8 @@ class AppRoutes {
 
     if ({
       AppRouteNames.logisticsDashboard,
+      AppRouteNames.logisticsRiders,
+      AppRouteNames.logisticsRiderDetails,
       AppRouteNames.logisticsMessages,
       AppRouteNames.logisticsNotifications,
     }.contains(name)) {

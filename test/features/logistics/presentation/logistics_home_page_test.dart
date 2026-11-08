@@ -188,6 +188,56 @@ void main() {
     expect(find.text('No delivery batches are available yet.'), findsOneWidget);
   });
 
+  testWidgets('dashboard opens Rider Management and refreshes on return', (
+    tester,
+  ) async {
+    var dashboardRequests = 0;
+    Object? receivedArguments;
+    final auth = _authService((request) async {
+      expect(request.url.path, '/api/mobile/logistics/dashboard');
+      dashboardRequests++;
+      return http.Response(
+        jsonEncode(_dashboard(receivedToday: dashboardRequests)),
+        200,
+      );
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: LogisticsHomePage(
+          authService: auth,
+          repository: LogisticsRepository(authService: auth),
+        ),
+        onGenerateRoute: (settings) {
+          receivedArguments = settings.arguments;
+          return MaterialPageRoute<void>(
+            settings: settings,
+            builder: (_) => Scaffold(
+              appBar: AppBar(title: const Text('Rider Management workspace')),
+              body: const Center(child: Text('Rider Management workspace')),
+            ),
+          );
+        },
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(
+      find.byKey(const ValueKey('logistics-open-rider-management')),
+      250,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.tap(
+      find.byKey(const ValueKey('logistics-open-rider-management')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Rider Management workspace'), findsNWidgets(2));
+    expect(receivedArguments, isNull);
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+    expect(dashboardRequests, 2);
+  });
+
   testWidgets(
     'dashboard labels current status separately from historical intake',
     (tester) async {

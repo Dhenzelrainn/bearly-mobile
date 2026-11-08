@@ -2,6 +2,7 @@ import '../../auth/data/auth_service.dart';
 import '../models/logistics_dashboard.dart';
 import '../models/logistics_dispatch.dart';
 import '../models/logistics_monitoring.dart';
+import '../models/logistics_rider.dart';
 import '../models/logistics_sorting.dart';
 
 class LogisticsRepository {
@@ -140,5 +141,14 @@ class LogisticsRepository {
     await _authService.getWithSession(
       '/api/mobile/logistics/delivery-monitoring/${Uri.encodeComponent(batchReference.trim())}',
     ),
+  );
+
+  Future<List<LogisticsRider>> riders() async =>
+      LogisticsRidersResponse.fromResponse(
+        await _authService.getWithSession('/api/mobile/logistics/riders'),
+      ).riders;
+
+  Future<LogisticsRider> rider(int userId) async => LogisticsRider.fromResponse(
+    await _authService.getWithSession('/api/mobile/logistics/riders/$userId'),
   );
 }
