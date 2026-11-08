@@ -40,10 +40,13 @@ import '../../features/notifications/presentation/mobile_notifications_page.dart
 import '../../features/rider/presentation/rider_home_page.dart';
 import '../../features/rider/presentation/rider_cash_custody_page.dart';
 import '../../features/rider/presentation/rider_attendance_scanner_page.dart';
+import '../../features/rider/presentation/rider_live_location_page.dart';
 import '../../features/rider/presentation/rider_assignment_pages.dart';
 import '../../features/rider/data/rider_repository.dart';
 import '../../features/rider/data/rider_notifications_repository.dart';
 import '../../features/rider/data/rider_messages_repository.dart';
+import '../../features/rider/data/rider_location_repository.dart';
+import '../../features/rider/data/rider_device_location.dart';
 import '../../features/rider/data/rider_cash_custody_repository.dart';
 import '../../features/messaging/data/mobile_messaging_data_source.dart';
 import '../../features/messaging/models/mobile_messaging_models.dart';
@@ -81,9 +84,13 @@ class AppRoutes {
     final buyerMessagesRepository = BuyerMobileMessagesRepository(
       authService: authService,
     );
+    final riderLocationRepository = RiderLocationRepository(
+      authService: authService,
+    );
     final riderCashCustodyRepository = RiderCashCustodyRepository(
       authService: authService,
     );
+    const riderDeviceLocation = GeolocatorRiderDeviceLocation();
     final logisticsRepository = LogisticsRepository(authService: authService);
     final logisticsNotificationsRepository = LogisticsNotificationsRepository(
       authService: authService,
@@ -392,6 +399,11 @@ class AppRoutes {
             repository: riderRepository,
             notificationsRepository: riderNotificationsRepository,
             messagesRepository: riderMessagesRepository,
+            onOpenLiveLocation: () async {
+              await Navigator.of(
+                context,
+              ).pushNamed(AppRouteNames.riderLiveLocation);
+            },
             onOpenCashCustody: () async {
               await Navigator.of(
                 context,
@@ -406,6 +418,11 @@ class AppRoutes {
             repository: riderRepository,
             notificationsRepository: riderNotificationsRepository,
             messagesRepository: riderMessagesRepository,
+            onOpenLiveLocation: () async {
+              await Navigator.of(
+                context,
+              ).pushNamed(AppRouteNames.riderLiveLocation);
+            },
             onOpenCashCustody: () async {
               await Navigator.of(
                 context,
@@ -414,14 +431,18 @@ class AppRoutes {
           ),
           settings: settings,
         );
-      case AppRouteNames.riderNotifications:
-        final initialUnreadCount = settings.arguments is int
-            ? settings.arguments! as int
-            : 0;
+      case AppRouteNames.riderLiveLocation:
         return MaterialPageRoute(
-          builder: (_) => MobileNotificationsPage(
-            repository: riderNotificationsRepository,
-            initialUnreadCount: initialUnreadCount,
+          builder: (_) => RiderLiveLocationPage(
+            repository: riderLocationRepository,
+            deviceLocation: riderDeviceLocation,
+          ),
+          settings: settings,
+        );
+      case AppRouteNames.riderAttendanceScan:
+        return MaterialPageRoute(
+          builder: (_) => RiderAttendanceScannerPage(
+            onSubmit: riderRepository.scanAttendance,
           ),
           settings: settings,
         );
@@ -431,10 +452,14 @@ class AppRoutes {
           riderRepository,
           RiderCashCustodyPage(repository: riderCashCustodyRepository),
         );
-      case AppRouteNames.riderAttendanceScan:
+      case AppRouteNames.riderNotifications:
+        final initialUnreadCount = settings.arguments is int
+            ? settings.arguments! as int
+            : 0;
         return MaterialPageRoute(
-          builder: (_) => RiderAttendanceScannerPage(
-            onSubmit: riderRepository.scanAttendance,
+          builder: (_) => MobileNotificationsPage(
+            repository: riderNotificationsRepository,
+            initialUnreadCount: initialUnreadCount,
           ),
           settings: settings,
         );
@@ -638,6 +663,7 @@ class AppRoutes {
       AppRouteNames.riderHistory,
       AppRouteNames.riderMessages,
       AppRouteNames.riderNotifications,
+      AppRouteNames.riderLiveLocation,
       AppRouteNames.riderCashCustody,
       AppRouteNames.riderAttendanceScan,
       AppRouteNames.riderAccount,

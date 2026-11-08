@@ -19,12 +19,14 @@ class RiderHomePage extends StatefulWidget {
     required this.repository,
     this.notificationsRepository,
     this.messagesRepository,
+    this.onOpenLiveLocation,
     this.onOpenCashCustody,
   });
 
   final RiderRepository repository;
   final MobileNotificationsDataSource? notificationsRepository;
   final MobileMessagingDataSource? messagesRepository;
+  final Future<void> Function()? onOpenLiveLocation;
   final Future<void> Function()? onOpenCashCustody;
 
   @override
@@ -272,6 +274,20 @@ class _RiderHomePageState extends State<RiderHomePage> {
           ).textTheme.bodyMedium?.copyWith(color: BearlyColors.muted),
         ),
         const SizedBox(height: 14),
+        if (widget.onOpenLiveLocation != null) ...[
+          Card(
+            child: ListTile(
+              leading: const Icon(Icons.map_outlined),
+              title: const Text('Live GPS & Map'),
+              subtitle: const Text(
+                'Share your location with your assigned Logistics provider and view verified destinations.',
+              ),
+              trailing: const Icon(Icons.chevron_right_rounded),
+              onTap: widget.onOpenLiveLocation,
+            ),
+          ),
+          const SizedBox(height: 8),
+        ],
         Container(
           padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(

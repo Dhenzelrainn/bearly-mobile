@@ -28,6 +28,8 @@
 	<string>Bearly uses the camera to capture registration documents and scan Rider waybills.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Bearly uses your photo library so you can select registration documents.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Bearly shares your live location with your assigned Logistics provider while you use the Rider GPS screen.</string>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
 	<key>UIMainStoryboardFile</key>
