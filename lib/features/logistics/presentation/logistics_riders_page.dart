@@ -5,6 +5,7 @@ import '../../../core/routes/app_route_names.dart';
 import '../../../core/theme/bearly_theme.dart';
 import '../data/logistics_repository.dart';
 import '../models/logistics_rider.dart';
+import '../models/logistics_rider_application.dart';
 
 enum _RiderFilter { all, local, courier }
 
@@ -19,21 +20,25 @@ class LogisticsRidersPage extends StatefulWidget {
 
 class _LogisticsRidersPageState extends State<LogisticsRidersPage> {
   late Future<List<LogisticsRider>> _riders;
+  late Future<List<LogisticsRiderApplication>> _applications;
   _RiderFilter _filter = _RiderFilter.all;
 
   @override
   void initState() {
     super.initState();
     _riders = widget.repository.riders();
+    _applications = widget.repository.riderApplications();
   }
 
   Future<void> _refresh() async {
     final next = widget.repository.riders();
+    final applications = widget.repository.riderApplications();
     setState(() {
       _riders = next;
+      _applications = applications;
     });
     try {
-      await next;
+      await Future.wait([next, applications]);
     } catch (_) {
       // FutureBuilder keeps the error state visible with a retry action.
     }
@@ -43,6 +48,15 @@ class _LogisticsRidersPageState extends State<LogisticsRidersPage> {
     await Navigator.of(
       context,
     ).pushNamed(AppRouteNames.logisticsRiderDetails, arguments: rider.userId);
+    if (!mounted) return;
+    await _refresh();
+  }
+
+  Future<void> _openApplication(LogisticsRiderApplication application) async {
+    await Navigator.of(context).pushNamed(
+      AppRouteNames.logisticsRiderApplicationDetails,
+      arguments: application.id,
+    );
     if (!mounted) return;
     await _refresh();
   }
@@ -80,20 +94,6 @@ class _LogisticsRidersPageState extends State<LogisticsRidersPage> {
           );
         }
         final riders = snapshot.data ?? const <LogisticsRider>[];
-        if (riders.isEmpty) {
-          return RefreshIndicator(
-            onRefresh: _refresh,
-            child: ListView(
-              physics: const AlwaysScrollableScrollPhysics(),
-              children: [
-                SizedBox(height: MediaQuery.sizeOf(context).height * 0.28),
-                _empty(
-                  'No Local Riders or Couriers are linked to this provider.',
-                ),
-              ],
-            ),
-          );
-        }
         final visible = _filtered(riders);
         return RefreshIndicator(
           onRefresh: _refresh,
@@ -102,6 +102,8 @@ class _LogisticsRidersPageState extends State<LogisticsRidersPage> {
             physics: const AlwaysScrollableScrollPhysics(),
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
             children: [
+              _applicationsSection(),
+              const SizedBox(height: 16),
               Text(
                 'Provider roster',
                 style: Theme.of(context).textTheme.headlineSmall,
@@ -114,24 +116,33 @@ class _LogisticsRidersPageState extends State<LogisticsRidersPage> {
                 ).textTheme.bodyMedium?.copyWith(color: BearlyColors.muted),
               ),
               const SizedBox(height: 12),
-              Wrap(
-                spacing: 8,
-                children: [
-                  _filterChip('All', _RiderFilter.all, riders.length),
-                  _filterChip(
-                    'Local Riders',
-                    _RiderFilter.local,
-                    riders.where((rider) => !rider.isCourier).length,
+              if (riders.isNotEmpty) ...[
+                Wrap(
+                  spacing: 8,
+                  children: [
+                    _filterChip('All', _RiderFilter.all, riders.length),
+                    _filterChip(
+                      'Local Riders',
+                      _RiderFilter.local,
+                      riders.where((rider) => !rider.isCourier).length,
+                    ),
+                    _filterChip(
+                      'Couriers',
+                      _RiderFilter.courier,
+                      riders.where((rider) => rider.isCourier).length,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+              ],
+              if (riders.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 44),
+                  child: _empty(
+                    'No Local Riders or Couriers are linked to this provider.',
                   ),
-                  _filterChip(
-                    'Couriers',
-                    _RiderFilter.courier,
-                    riders.where((rider) => rider.isCourier).length,
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              if (visible.isEmpty)
+                )
+              else if (visible.isEmpty)
                 Padding(
                   padding: const EdgeInsets.symmetric(vertical: 44),
                   child: _empty(
@@ -146,6 +157,83 @@ class _LogisticsRidersPageState extends State<LogisticsRidersPage> {
           ),
         );
       },
+    ),
+  );
+
+  Widget _applicationsSection() =>
+      FutureBuilder<List<LogisticsRiderApplication>>(
+        future: _applications,
+        builder: (context, snapshot) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Rider applications',
+                style: Theme.of(context).textTheme.headlineSmall,
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Review applications submitted to your Logistics provider.',
+                style: Theme.of(
+                  context,
+                ).textTheme.bodyMedium?.copyWith(color: BearlyColors.muted),
+              ),
+              const SizedBox(height: 10),
+              if (snapshot.connectionState == ConnectionState.waiting)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 18),
+                  child: Center(child: CircularProgressIndicator()),
+                )
+              else if (snapshot.hasError)
+                Card(
+                  child: ListTile(
+                    leading: const Icon(Icons.cloud_off_outlined),
+                    title: const Text('Could not load Rider applications.'),
+                    trailing: TextButton(
+                      onPressed: _refresh,
+                      child: const Text('Retry'),
+                    ),
+                  ),
+                )
+              else if ((snapshot.data ?? const []).isEmpty)
+                const Card(
+                  child: ListTile(
+                    leading: Icon(Icons.assignment_outlined),
+                    title: Text('No Rider applications need review.'),
+                  ),
+                )
+              else
+                ...snapshot.data!.map(_applicationCard),
+            ],
+          );
+        },
+      );
+
+  Widget _applicationCard(LogisticsRiderApplication application) => Card(
+    key: ValueKey('logistics-rider-application-${application.id}'),
+    margin: const EdgeInsets.only(bottom: 8),
+    child: ListTile(
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      leading: CircleAvatar(
+        child: Icon(
+          application.isCourier
+              ? Icons.airport_shuttle_outlined
+              : Icons.assignment_ind_outlined,
+        ),
+      ),
+      title: Text(
+        application.applicant.name,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
+      subtitle: Padding(
+        padding: const EdgeInsets.only(top: 4),
+        child: Text(
+          '${application.requestedWorkTypeLabel} · ${application.statusLabel} · ${application.documentCount} documents',
+        ),
+      ),
+      trailing: const Icon(Icons.chevron_right_rounded),
+      onTap: () => _openApplication(application),
     ),
   );
 

@@ -32,6 +32,13 @@ void main() {
         case '/api/mobile/logistics/riders':
           rosterRequests++;
           return _json(_roster());
+        case '/api/mobile/logistics/rider-applications':
+          return _json({
+            'data': {
+              'provider': {'id': 3, 'name': 'North Logistics'},
+              'applications': [],
+            },
+          });
         case '/api/mobile/logistics/riders/41':
           return _json({
             'data': {

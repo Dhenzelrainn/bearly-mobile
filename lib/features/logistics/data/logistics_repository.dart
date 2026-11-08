@@ -3,6 +3,7 @@ import '../models/logistics_dashboard.dart';
 import '../models/logistics_dispatch.dart';
 import '../models/logistics_monitoring.dart';
 import '../models/logistics_rider.dart';
+import '../models/logistics_rider_application.dart';
 import '../models/logistics_sorting.dart';
 
 class LogisticsRepository {
@@ -179,4 +180,76 @@ class LogisticsRepository {
         path: '/api/mobile/logistics/riders/$userId/assignment',
         parse: LogisticsRider.fromResponse,
       );
+
+  Future<List<LogisticsRiderApplication>> riderApplications() async =>
+      LogisticsRiderApplication.listFromResponse(
+        await _authService.getWithSession(
+          '/api/mobile/logistics/rider-applications',
+        ),
+      );
+
+  Future<LogisticsRiderApplication> riderApplication(int applicationId) async =>
+      LogisticsRiderApplication.fromResponse(
+        await _authService.getWithSession(
+          '/api/mobile/logistics/rider-applications/$applicationId',
+        ),
+      );
+
+  Future<LogisticsRiderApplicationDocumentContent>
+  downloadRiderApplicationDocument({
+    required int applicationId,
+    required int documentId,
+  }) async {
+    final response = await _authService.downloadWithSession(
+      path:
+          '/api/mobile/logistics/rider-applications/$applicationId/documents/$documentId',
+    );
+    if (response.bytes.isEmpty) {
+      throw const FormatException('The Rider application document is empty.');
+    }
+    return LogisticsRiderApplicationDocumentContent(
+      bytes: response.bytes,
+      mimeType:
+          response.contentType?.split(';').first.trim() ??
+          'application/octet-stream',
+    );
+  }
+
+  Future<LogisticsRiderApplication> reviewRiderApplicationDocument({
+    required int applicationId,
+    required int documentId,
+    required String verificationStatus,
+    String? rejectionReason,
+  }) async => _authService.requestWithSession<LogisticsRiderApplication>(
+    method: AuthenticatedRequestMethod.patch,
+    path:
+        '/api/mobile/logistics/rider-applications/$applicationId/documents/$documentId',
+    body: {
+      'verification_status': verificationStatus,
+      'rejection_reason': ?rejectionReason,
+    },
+    parse: LogisticsRiderApplication.fromResponse,
+  );
+
+  Future<LogisticsRiderApplication> approveRiderApplication({
+    required int applicationId,
+    int? linehaulCapacity,
+  }) async => _authService.requestWithSession<LogisticsRiderApplication>(
+    method: AuthenticatedRequestMethod.post,
+    path: '/api/mobile/logistics/rider-applications/$applicationId/approve',
+    body: linehaulCapacity == null
+        ? null
+        : {'linehaul_capacity': linehaulCapacity},
+    parse: LogisticsRiderApplication.fromResponse,
+  );
+
+  Future<LogisticsRiderApplication> rejectRiderApplication({
+    required int applicationId,
+    required String reason,
+  }) async => _authService.requestWithSession<LogisticsRiderApplication>(
+    method: AuthenticatedRequestMethod.post,
+    path: '/api/mobile/logistics/rider-applications/$applicationId/reject',
+    body: {'reason': reason},
+    parse: LogisticsRiderApplication.fromResponse,
+  );
 }

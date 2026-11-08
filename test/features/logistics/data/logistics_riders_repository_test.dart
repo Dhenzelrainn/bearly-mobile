@@ -118,6 +118,107 @@ void main() {
 
     expect(rider.currentZone, 'North Zone');
   });
+
+  test('lists applications from the authenticated provider endpoint', () async {
+    final repository = LogisticsRepository(
+      authService: _auth((request) async {
+        expect(request.method, 'GET');
+        expect(request.url.path, '/api/mobile/logistics/rider-applications');
+        return http.Response(jsonEncode(_applications), 200);
+      }),
+    );
+
+    final applications = await repository.riderApplications();
+
+    expect(applications, hasLength(1));
+    expect(applications.single.applicant.name, 'Rider Applicant');
+    expect(applications.single.requestedWorkType, 'courier');
+    expect(applications.single.documents.single.filename, 'license.pdf');
+  });
+
+  test(
+    'loads application details and downloads documents with session auth',
+    () async {
+      final requests = <http.Request>[];
+      final repository = LogisticsRepository(
+        authService: _auth((request) async {
+          requests.add(request);
+          if (request.url.path.endsWith('/documents/11')) {
+            return http.Response.bytes(
+              [137, 80, 78, 71],
+              200,
+              headers: {'content-type': 'image/png'},
+            );
+          }
+          expect(
+            request.url.path,
+            '/api/mobile/logistics/rider-applications/91',
+          );
+          return http.Response(jsonEncode(_applicationDetail), 200);
+        }),
+      );
+
+      final application = await repository.riderApplication(91);
+      final document = await repository.downloadRiderApplicationDocument(
+        applicationId: 91,
+        documentId: 11,
+      );
+
+      expect(application.id, 91);
+      expect(application.canDecide, isTrue);
+      expect(
+        requests.last.url.path,
+        '/api/mobile/logistics/rider-applications/91/documents/11',
+      );
+      expect(
+        requests.last.headers['authorization'],
+        'Bearer logistics-test-token',
+      );
+      expect(document.mimeType, 'image/png');
+      expect(document.bytes, [137, 80, 78, 71]);
+    },
+  );
+
+  test(
+    'sends document decisions and application decisions to scoped APIs',
+    () async {
+      final repository = LogisticsRepository(
+        authService: _auth((request) async {
+          final path = request.url.path;
+          if (path.endsWith('/documents/11')) {
+            expect(request.method, 'PATCH');
+            expect(jsonDecode(request.body), {
+              'verification_status': 'rejected',
+              'rejection_reason': 'Unreadable scan',
+            });
+          } else if (path.endsWith('/approve')) {
+            expect(request.method, 'POST');
+            expect(jsonDecode(request.body), {'linehaul_capacity': 40});
+          } else {
+            expect(path, '/api/mobile/logistics/rider-applications/91/reject');
+            expect(request.method, 'POST');
+            expect(jsonDecode(request.body), {'reason': 'Missing documents'});
+          }
+          return http.Response(jsonEncode(_applicationDetail), 200);
+        }),
+      );
+
+      await repository.reviewRiderApplicationDocument(
+        applicationId: 91,
+        documentId: 11,
+        verificationStatus: 'rejected',
+        rejectionReason: 'Unreadable scan',
+      );
+      await repository.approveRiderApplication(
+        applicationId: 91,
+        linehaulCapacity: 40,
+      );
+      await repository.rejectRiderApplication(
+        applicationId: 91,
+        reason: 'Missing documents',
+      );
+    },
+  );
 }
 
 Map<String, Object?> _detailResponse({
@@ -173,6 +274,105 @@ final _roster = {
       _rider(31, 'Local Rider'),
       _rider(32, 'Courier Driver', workType: 'courier'),
     ],
+  },
+};
+
+final _applications = {
+  'data': {
+    'provider': {'id': 3, 'name': 'North Logistics'},
+    'applications': [
+      {
+        'id': 91,
+        'application_no': 'RIDER-91',
+        'status': 'submitted',
+        'status_label': 'Pending',
+        'requested_work_type': 'courier',
+        'requested_work_type_label': 'Courier',
+        'submitted_at': null,
+        'review_started_at': null,
+        'decided_at': null,
+        'decision_reason': null,
+        'revision_notes': null,
+        'account_status': 'pending',
+        'can_review_documents': true,
+        'can_decide': true,
+        'ownership_consistent': true,
+        'vehicle': 'Van',
+        'vehicle_model': 'Cargo Van',
+        'plate_number': 'ABC-1234',
+        'document_count': 1,
+        'applicant': {'name': 'Rider Applicant', 'area': 'North Zone'},
+        'documents': [
+          {
+            'id': 11,
+            'type': 'driver_license',
+            'label': 'Driver License',
+            'filename': 'license.pdf',
+            'mime_type': 'application/pdf',
+            'size_bytes': 50,
+            'status': 'pending',
+            'rejection_reason': null,
+            'verified_at': null,
+            'file_url': '/private/11',
+          },
+        ],
+      },
+    ],
+  },
+};
+
+final _applicationDetail = {
+  'data': {
+    'provider': {'id': 3, 'name': 'North Logistics'},
+    'application': {
+      'id': 91,
+      'application_no': 'RIDER-91',
+      'status': 'submitted',
+      'status_label': 'Pending',
+      'requested_work_type': 'courier',
+      'requested_work_type_label': 'Courier',
+      'submitted_at': null,
+      'review_started_at': null,
+      'decided_at': null,
+      'decision_reason': null,
+      'revision_notes': null,
+      'account_status': 'pending',
+      'can_review_documents': true,
+      'can_decide': true,
+      'ownership_consistent': true,
+      'vehicle': 'Van',
+      'vehicle_model': 'Cargo Van',
+      'plate_number': 'ABC-1234',
+      'document_count': 1,
+      'applicant': {
+        'name': 'Rider Applicant',
+        'email': 'rider@example.test',
+        'phone': '09170000000',
+        'birthday': null,
+        'sex': null,
+        'address': {
+          'street': null,
+          'barangay': null,
+          'city_municipality': null,
+          'province': null,
+          'postal_code': null,
+        },
+      },
+      'documents': [
+        {
+          'id': 11,
+          'type': 'driver_license',
+          'label': 'Driver License',
+          'filename': 'license.pdf',
+          'mime_type': 'application/pdf',
+          'size_bytes': 50,
+          'status': 'pending',
+          'rejection_reason': null,
+          'verified_at': null,
+          'file_url': '/private/11',
+        },
+      ],
+    },
   },
 };
 

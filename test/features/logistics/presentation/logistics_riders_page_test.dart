@@ -4,6 +4,7 @@ import 'package:bearly_mobile/features/auth/data/auth_service.dart';
 import 'package:bearly_mobile/core/network/api_client.dart';
 import 'package:bearly_mobile/features/logistics/data/logistics_repository.dart';
 import 'package:bearly_mobile/features/logistics/models/logistics_rider.dart';
+import 'package:bearly_mobile/features/logistics/models/logistics_rider_application.dart';
 import 'package:bearly_mobile/features/logistics/presentation/logistics_riders_page.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -386,6 +387,9 @@ class _FakeLogisticsRepository extends LogisticsRepository {
     onRoster?.call();
     return rosterLoader == null ? values : await rosterLoader!();
   }
+
+  @override
+  Future<List<LogisticsRiderApplication>> riderApplications() async => const [];
 
   @override
   Future<LogisticsRider> rider(int userId) async {

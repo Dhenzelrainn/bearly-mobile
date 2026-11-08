@@ -34,6 +34,8 @@ class AppRouteNames {
   static const logisticsDashboard = '/logistics/dashboard';
   static const logisticsRiders = '/logistics/riders';
   static const logisticsRiderDetails = '/logistics/riders/details';
+  static const logisticsRiderApplicationDetails =
+      '/logistics/rider-applications/details';
   static const logisticsMessages = '/logistics/messages';
   static const logisticsNotifications = '/logistics/notifications';
   static const buyerCart = '/buyer/cart';
