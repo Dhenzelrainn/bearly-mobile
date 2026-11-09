@@ -41,6 +41,9 @@ class LogisticsDispatchZone {
     required this.routingIssues,
     required this.parcels,
     required this.riders,
+    this.nearbyRiders = const [],
+    this.proximityStatus = 'not_needed',
+    this.proximityMessage,
   });
 
   final int id;
@@ -51,6 +54,9 @@ class LogisticsDispatchZone {
   final int routingIssues;
   final List<LogisticsDispatchParcel> parcels;
   final List<LogisticsDispatchRider> riders;
+  final List<LogisticsNearbyDispatchRider> nearbyRiders;
+  final String proximityStatus;
+  final String? proximityMessage;
 
   factory LogisticsDispatchZone.fromJson(Object? value) {
     final map = _dispatchMap(value, 'dispatch zone');
@@ -69,6 +75,45 @@ class LogisticsDispatchZone {
         map['riders'],
         'eligible riders',
       ).map(LogisticsDispatchRider.fromJson).toList(growable: false),
+      nearbyRiders: _dispatchList(
+        map['nearby_riders'] ?? const [],
+        'nearby eligible riders',
+      ).map(LogisticsNearbyDispatchRider.fromJson).toList(growable: false),
+      proximityStatus: _dispatchString(map['proximity_status']),
+      proximityMessage: _dispatchNullableString(map['proximity_message']),
+    );
+  }
+}
+
+class LogisticsNearbyDispatchRider {
+  const LogisticsNearbyDispatchRider({
+    required this.id,
+    required this.name,
+    required this.zoneCode,
+    required this.remaining,
+    required this.distanceLabel,
+    required this.gpsStatusLabel,
+    required this.recommended,
+  });
+
+  final int id;
+  final String name;
+  final String zoneCode;
+  final int remaining;
+  final String? distanceLabel;
+  final String gpsStatusLabel;
+  final bool recommended;
+
+  factory LogisticsNearbyDispatchRider.fromJson(Object? value) {
+    final map = _dispatchMap(value, 'nearby eligible rider');
+    return LogisticsNearbyDispatchRider(
+      id: _dispatchInt(map['id']),
+      name: _dispatchString(map['name']),
+      zoneCode: _dispatchString(map['zone_code']),
+      remaining: _dispatchInt(map['remaining'], allowZero: true),
+      distanceLabel: _dispatchNullableString(map['distance_label']),
+      gpsStatusLabel: _dispatchString(map['gps_status_label']),
+      recommended: map['is_recommended'] == true,
     );
   }
 }
@@ -190,4 +235,9 @@ int _dispatchInt(Object? value, {bool allowZero = false}) {
   final parsed = value is int ? value : int.tryParse('$value');
   if (parsed == null || parsed < (allowZero ? 0 : 1)) return 0;
   return parsed;
+}
+
+String? _dispatchNullableString(Object? value) {
+  final text = _dispatchString(value);
+  return text.isEmpty ? null : text;
 }

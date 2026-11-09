@@ -7,6 +7,7 @@ import '../models/logistics_pickup_request.dart';
 import '../models/logistics_rider.dart';
 import '../models/logistics_rider_application.dart';
 import '../models/logistics_sorting.dart';
+import '../models/logistics_sorting_workspace.dart';
 
 class LogisticsRepository {
   const LogisticsRepository({required AuthService authService})
@@ -224,6 +225,31 @@ class LogisticsRepository {
           '/api/mobile/logistics/sorting-queue',
         ),
       );
+
+  Future<LogisticsSortingWorkspace> sortingCenterWorkspace({
+    String status = 'awaiting_sorting',
+    String? search,
+    int page = 1,
+    int perPage = 20,
+  }) async {
+    const statuses = {'awaiting_sorting', 'sorted', 'exceptions', 'all'};
+    if (!statuses.contains(status) || page < 1 || perPage < 1 || perPage > 50) {
+      throw ArgumentError('Invalid sorting center filter or pagination.');
+    }
+    final query = Uri(
+      queryParameters: {
+        'status': status,
+        'page': '$page',
+        'per_page': '$perPage',
+        if (search?.trim().isNotEmpty == true) 'search': search!.trim(),
+      },
+    ).query;
+    return LogisticsSortingWorkspace.fromResponse(
+      await _authService.getWithSession(
+        '/api/mobile/logistics/sorting-center/workspace?$query',
+      ),
+    );
+  }
 
   Future<LogisticsSortResult> sortParcel({
     required int parcelId,

@@ -14,6 +14,7 @@ import '../models/logistics_dashboard.dart';
 import 'logistics_dispatch_page.dart';
 import 'logistics_delivery_monitoring_page.dart';
 import 'logistics_incoming_parcels_page.dart';
+import 'logistics_sorting_center_page.dart';
 import 'logistics_sorting_queue_page.dart';
 import 'logistics_waybill_lookup_page.dart';
 
@@ -153,6 +154,10 @@ class _LogisticsHomePageState extends State<LogisticsHomePage> {
 
   Future<void> _openSortingQueue() => _openOperationalPage(
     LogisticsSortingQueuePage(repository: widget.repository),
+  );
+
+  Future<void> _openSortingCenter() => _openOperationalPage(
+    LogisticsSortingCenterPage(repository: widget.repository),
   );
 
   Future<void> _openDispatchBoard() => _openOperationalPage(
@@ -436,6 +441,16 @@ class _LogisticsHomePageState extends State<LogisticsHomePage> {
         const SizedBox(height: 14),
         _parcelsSection(dashboard.incomingParcels),
         const SizedBox(height: 10),
+        SizedBox(
+          width: double.infinity,
+          child: OutlinedButton.icon(
+            key: const ValueKey('logistics-open-sorting-center'),
+            onPressed: _openSortingCenter,
+            icon: const Icon(Icons.warehouse_outlined),
+            label: const Text('Sorting Center'),
+          ),
+        ),
+        const SizedBox(height: 8),
         SizedBox(
           width: double.infinity,
           child: FilledButton.icon(
