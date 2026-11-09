@@ -1,6 +1,7 @@
 import '../../auth/data/auth_service.dart';
 import '../models/logistics_dashboard.dart';
 import '../models/logistics_dispatch.dart';
+import '../models/logistics_incoming_parcel.dart';
 import '../models/logistics_monitoring.dart';
 import '../models/logistics_pickup_request.dart';
 import '../models/logistics_rider.dart';
@@ -46,6 +47,50 @@ class LogisticsRepository {
     }
     final data = response['data'] as Map;
     return LogisticsPickupRequest.fromJson(data['pickup_request']);
+  }
+
+  Future<LogisticsIncomingParcelsResult> incomingParcels({
+    String? status,
+    String? search,
+    String? destination,
+    int page = 1,
+    int perPage = 20,
+  }) async {
+    final query = Uri(
+      queryParameters: {
+        'page': '$page',
+        'per_page': '$perPage',
+        if (status != null && status.isNotEmpty) 'status': status,
+        if (search != null && search.trim().isNotEmpty) 'search': search.trim(),
+        if (destination != null && destination.trim().isNotEmpty)
+          'destination': destination.trim(),
+      },
+    ).query;
+    return LogisticsIncomingParcelsResult.fromResponse(
+      await _authService.getWithSession(
+        '/api/mobile/logistics/incoming-parcels?$query',
+      ),
+    );
+  }
+
+  Future<LogisticsIncomingParcelRecord> incomingParcel(
+    String identifier,
+  ) async {
+    final response = await _authService.getWithSession(
+      '/api/mobile/logistics/incoming-parcels/${Uri.encodeComponent(identifier.trim())}',
+    );
+    if (response is! Map || response['data'] is! Map) {
+      throw const FormatException('Missing incoming parcel details.');
+    }
+    final data = response['data'] as Map;
+    final parcel = LogisticsIncomingParcelRecord.fromJson(data['parcel']);
+    final pieces = data['pieces'];
+    if (pieces is! List) {
+      throw const FormatException('Missing parcel pieces.');
+    }
+    return parcel.withPieces(
+      pieces.map(LogisticsIncomingParcelPiece.fromJson).toList(growable: false),
+    );
   }
 
   Future<LogisticsPickupRequest> verifyPickupRequest(int pickupRequestId) =>

@@ -13,6 +13,7 @@ import '../data/logistics_messages_repository.dart';
 import '../models/logistics_dashboard.dart';
 import 'logistics_dispatch_page.dart';
 import 'logistics_delivery_monitoring_page.dart';
+import 'logistics_incoming_parcels_page.dart';
 import 'logistics_sorting_queue_page.dart';
 import 'logistics_waybill_lookup_page.dart';
 
@@ -140,6 +141,10 @@ class _LogisticsHomePageState extends State<LogisticsHomePage> {
       repository: widget.repository,
       receiptEnabled: true,
     ),
+  );
+
+  Future<void> _openIncomingParcels() => _openOperationalPage(
+    LogisticsIncomingParcelsPage(repository: widget.repository),
   );
 
   Future<void> _openIncomingHandoff() => _openOperationalPage(
@@ -323,6 +328,16 @@ class _LogisticsHomePageState extends State<LogisticsHomePage> {
             onPressed: _openWaybillLookup,
             icon: const Icon(Icons.qr_code_scanner_rounded),
             label: const Text('Scan Waybill'),
+          ),
+        ),
+        const SizedBox(height: 8),
+        SizedBox(
+          width: double.infinity,
+          child: OutlinedButton.icon(
+            key: const ValueKey('logistics-open-incoming-parcels'),
+            onPressed: _openIncomingParcels,
+            icon: const Icon(Icons.inventory_2_outlined),
+            label: const Text('Incoming Parcels'),
           ),
         ),
         const SizedBox(height: 8),

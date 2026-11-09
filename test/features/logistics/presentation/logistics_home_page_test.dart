@@ -37,6 +37,11 @@ void main() {
 
     expect(find.text('Victoria Logistics'), findsOneWidget);
     expect(find.text('Victoria Sorting Center'), findsOneWidget);
+    await tester.scrollUntilVisible(
+      find.text('Received today'),
+      250,
+      scrollable: find.byType(Scrollable).first,
+    );
     expect(find.text('Received today'), findsOneWidget);
     expect(requests, 1);
 
@@ -52,8 +57,16 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(requests, 2);
+    await tester.scrollUntilVisible(
+      find.text('Received today'),
+      250,
+      scrollable: find.byType(Scrollable).first,
+    );
+    final refreshedReceivedCard = find
+        .ancestor(of: find.text('Received today'), matching: find.byType(Card))
+        .first;
     expect(
-      find.descendant(of: receivedCard, matching: find.text('2')),
+      find.descendant(of: refreshedReceivedCard, matching: find.text('2')),
       findsOneWidget,
     );
   });
@@ -140,6 +153,11 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(dashboardRequests, 2);
+    await tester.scrollUntilVisible(
+      find.text('Received today'),
+      250,
+      scrollable: find.byType(Scrollable).first,
+    );
     final receivedCard = find
         .ancestor(of: find.text('Received today'), matching: find.byType(Card))
         .first;
@@ -181,7 +199,13 @@ void main() {
       250,
       scrollable: find.byType(Scrollable).first,
     );
-    await tester.tap(find.byKey(const ValueKey('logistics-open-delivery-monitoring')));
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('logistics-open-delivery-monitoring')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('logistics-open-delivery-monitoring')),
+    );
     await tester.pumpAndSettle();
 
     expect(find.text('Delivery Monitoring'), findsOneWidget);
@@ -226,6 +250,10 @@ void main() {
       250,
       scrollable: find.byType(Scrollable).first,
     );
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('logistics-open-rider-management')),
+    );
+    await tester.pumpAndSettle();
     await tester.tap(
       find.byKey(const ValueKey('logistics-open-rider-management')),
     );

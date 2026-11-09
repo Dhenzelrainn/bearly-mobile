@@ -12,12 +12,14 @@ class LogisticsWaybillLookupPage extends StatefulWidget {
     super.key,
     required this.repository,
     this.scannerPreviewBuilder,
+    this.initialIdentifier,
     this.receiptEnabled = false,
     this.handoffEnabled = false,
   });
 
   final LogisticsRepository repository;
   final WaybillScannerPreviewBuilder? scannerPreviewBuilder;
+  final String? initialIdentifier;
   final bool receiptEnabled;
   final bool handoffEnabled;
 
@@ -40,6 +42,12 @@ class _LogisticsWaybillLookupPageState
   bool _receiptBlocked = false;
   bool _handoffBlocked = false;
   String _scanMethod = 'manual';
+
+  @override
+  void initState() {
+    super.initState();
+    _identifierController.text = widget.initialIdentifier ?? '';
+  }
 
   @override
   void dispose() {
@@ -777,22 +785,22 @@ class _LogisticsWaybillLookupPageState
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         ListTile(
-      contentPadding: EdgeInsets.zero,
-      leading: const Icon(Icons.local_mall_outlined),
-      title: Text(parcel.reference),
-      subtitle: Text(
-        [
-          'Current status: ${_statusLabel(parcel.status)}',
-          if (parcel.currentSortingCenter != null)
-            'Currently at ${parcel.currentSortingCenter!.name}',
-          if (lastCenter != null && parcel.currentSortingCenter == null)
-            'Last recorded at ${lastCenter.name}',
-          if (intakeRecorded) 'Center intake is historical',
-        ].join(' · '),
-      ),
-      trailing: parcel.terminal
-          ? const Icon(Icons.check_circle_outline_rounded)
-          : null,
+          contentPadding: EdgeInsets.zero,
+          leading: const Icon(Icons.local_mall_outlined),
+          title: Text(parcel.reference),
+          subtitle: Text(
+            [
+              'Current status: ${_statusLabel(parcel.status)}',
+              if (parcel.currentSortingCenter != null)
+                'Currently at ${parcel.currentSortingCenter!.name}',
+              if (lastCenter != null && parcel.currentSortingCenter == null)
+                'Last recorded at ${lastCenter.name}',
+              if (intakeRecorded) 'Center intake is historical',
+            ].join(' · '),
+          ),
+          trailing: parcel.terminal
+              ? const Icon(Icons.check_circle_outline_rounded)
+              : null,
         ),
         for (final product in parcel.products)
           ListTile(
