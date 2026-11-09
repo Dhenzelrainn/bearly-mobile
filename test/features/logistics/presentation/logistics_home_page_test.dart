@@ -99,6 +99,9 @@ void main() {
 
     await tester.pageBack();
     await tester.pumpAndSettle();
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('logistics-open-incoming-handoff')),
+    );
     await tester.tap(
       find.byKey(const ValueKey('logistics-open-incoming-handoff')),
     );
@@ -111,13 +114,67 @@ void main() {
 
     await tester.pageBack();
     await tester.pumpAndSettle();
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('logistics-open-incoming-receipt')),
+    );
     await tester.tap(
       find.byKey(const ValueKey('logistics-open-incoming-receipt')),
     );
     await tester.pumpAndSettle();
-    expect(find.text('Incoming Parcel Receipt'), findsOneWidget);
+    expect(find.text('Incoming Parcels'), findsOneWidget);
     expect(find.text('Read-only parcel lookup'), findsNothing);
   });
+
+  testWidgets(
+    'dashboard opens the City Handoffs workspace and refreshes on return',
+    (tester) async {
+      tester.view.physicalSize = const Size(800, 900);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+
+      var dashboardReads = 0;
+      var handoffReads = 0;
+      final auth = _authService((request) async {
+        if (request.url.path == '/api/mobile/logistics/dashboard') {
+          dashboardReads++;
+          return http.Response(jsonEncode(_dashboard()), 200);
+        }
+        expect(request.url.path, '/api/mobile/logistics/city-handoffs');
+        handoffReads++;
+        return http.Response(jsonEncode(_emptyCityHandoffs()), 200);
+      });
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: LogisticsHomePage(
+            authService: auth,
+            repository: LogisticsRepository(authService: auth),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.scrollUntilVisible(
+        find.byKey(const ValueKey('logistics-open-city-handoffs-workspace')),
+        240,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.tap(
+        find.byKey(const ValueKey('logistics-open-city-handoffs-workspace')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('City Handoffs'), findsOneWidget);
+      expect(
+        find.text('No incoming City Handoffs match these filters.'),
+        findsOneWidget,
+      );
+      expect(handoffReads, 1);
+
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+      expect(dashboardReads, 2);
+    },
+  );
 
   testWidgets('refreshes dashboard after returning from an operations page', (
     tester,
@@ -143,11 +200,14 @@ void main() {
     await tester.pumpAndSettle();
     expect(dashboardRequests, 1);
 
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('logistics-open-incoming-receipt')),
+    );
     await tester.tap(
       find.byKey(const ValueKey('logistics-open-incoming-receipt')),
     );
     await tester.pumpAndSettle();
-    expect(find.text('Incoming Parcel Receipt'), findsOneWidget);
+    expect(find.text('Incoming Parcels'), findsOneWidget);
 
     await tester.pageBack();
     await tester.pumpAndSettle();
@@ -466,6 +526,27 @@ Map<String, Object?> _dashboard({
       'incoming_handoffs': handoffs.length,
     },
     'incoming': {'handoffs': handoffs, 'parcels': parcels},
+  },
+};
+
+Map<String, Object?> _emptyCityHandoffs() => {
+  'data': {
+    'provider': {'id': 3, 'name': 'Victoria Logistics'},
+    'active_sorting_center': {
+      'id': 3,
+      'name': 'Victoria Sorting Center',
+      'code': 'SC-VIC-3',
+    },
+    'view': 'incoming',
+    'items': [],
+    'available_couriers': [],
+    'filters': {'status': 'sent', 'search': null},
+    'pagination': {
+      'current_page': 1,
+      'last_page': 1,
+      'per_page': 20,
+      'total': 0,
+    },
   },
 };
 

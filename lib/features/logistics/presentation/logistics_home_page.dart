@@ -14,6 +14,7 @@ import '../models/logistics_dashboard.dart';
 import 'logistics_dispatch_page.dart';
 import 'logistics_delivery_monitoring_page.dart';
 import 'logistics_incoming_parcels_page.dart';
+import 'logistics_city_handoffs_page.dart';
 import 'logistics_sorting_center_page.dart';
 import 'logistics_sorting_queue_page.dart';
 import 'logistics_waybill_lookup_page.dart';
@@ -150,6 +151,10 @@ class _LogisticsHomePageState extends State<LogisticsHomePage> {
       repository: widget.repository,
       handoffEnabled: true,
     ),
+  );
+
+  Future<void> _openCityHandoffs() => _openOperationalPage(
+    LogisticsCityHandoffsWorkspacePage(repository: widget.repository),
   );
 
   Future<void> _openSortingQueue() => _openOperationalPage(
@@ -364,6 +369,16 @@ class _LogisticsHomePageState extends State<LogisticsHomePage> {
             onPressed: _openIncomingHandoff,
             icon: const Icon(Icons.swap_horiz_rounded),
             label: const Text('Incoming City Handoff'),
+          ),
+        ),
+        const SizedBox(height: 8),
+        SizedBox(
+          width: double.infinity,
+          child: OutlinedButton.icon(
+            key: const ValueKey('logistics-open-city-handoffs-workspace'),
+            onPressed: _openCityHandoffs,
+            icon: const Icon(Icons.swap_horiz_rounded),
+            label: const Text('City Handoffs & Courier Runs'),
           ),
         ),
         const SizedBox(height: 18),

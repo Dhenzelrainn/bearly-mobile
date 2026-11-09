@@ -1,5 +1,6 @@
 import '../../auth/data/auth_service.dart';
 import '../models/logistics_dashboard.dart';
+import '../models/logistics_city_handoffs.dart';
 import '../models/logistics_dispatch.dart';
 import '../models/logistics_incoming_parcel.dart';
 import '../models/logistics_monitoring.dart';
@@ -19,6 +20,38 @@ class LogisticsRepository {
       LogisticsDashboard.fromResponse(
         await _authService.getWithSession('/api/mobile/logistics/dashboard'),
       );
+
+  Future<LogisticsCityHandoffsPage> cityHandoffs({
+    String view = 'incoming',
+    String status = 'sent',
+    String? search,
+    int page = 1,
+    int perPage = 20,
+  }) async {
+    const transferStatuses = {'sent', 'accepted', 'all'};
+    const runStatuses = {'active', 'completed', 'all'};
+    if (!{'incoming', 'outgoing', 'runs'}.contains(view) ||
+        !(view == 'runs' ? runStatuses : transferStatuses).contains(status) ||
+        page < 1 ||
+        perPage < 1 ||
+        perPage > 50) {
+      throw ArgumentError('Invalid City Handoffs filter or pagination.');
+    }
+    final query = Uri(
+      queryParameters: {
+        'view': view,
+        'status': status,
+        'page': '$page',
+        'per_page': '$perPage',
+        if (search?.trim().isNotEmpty == true) 'search': search!.trim(),
+      },
+    ).query;
+    return LogisticsCityHandoffsPage.fromResponse(
+      await _authService.getWithSession(
+        '/api/mobile/logistics/city-handoffs?$query',
+      ),
+    );
+  }
 
   Future<LogisticsPickupRequestPage> pickupRequests({
     String? status,
