@@ -1,6 +1,7 @@
 import '../../auth/data/auth_service.dart';
 import '../models/logistics_dashboard.dart';
 import '../models/logistics_city_handoffs.dart';
+import '../models/logistics_cash_custody.dart';
 import '../models/logistics_dispatch.dart';
 import '../models/logistics_incoming_parcel.dart';
 import '../models/logistics_monitoring.dart';
@@ -20,6 +21,28 @@ class LogisticsRepository {
       LogisticsDashboard.fromResponse(
         await _authService.getWithSession('/api/mobile/logistics/dashboard'),
       );
+
+  Future<LogisticsCashCustody> cashCustody({
+    int codPage = 1,
+    int refundPage = 1,
+    int perPage = 20,
+  }) async {
+    if (codPage < 1 || refundPage < 1 || perPage < 1 || perPage > 50) {
+      throw ArgumentError('Invalid cash custody pagination.');
+    }
+    final query = Uri(
+      queryParameters: {
+        'cod_page': '$codPage',
+        'refund_page': '$refundPage',
+        'per_page': '$perPage',
+      },
+    ).query;
+    return LogisticsCashCustody.fromResponse(
+      await _authService.getWithSession(
+        '/api/mobile/logistics/cash-custody?$query',
+      ),
+    );
+  }
 
   Future<LogisticsCityHandoffsPage> cityHandoffs({
     String view = 'incoming',

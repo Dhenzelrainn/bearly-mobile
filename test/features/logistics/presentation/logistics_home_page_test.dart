@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:bearly_mobile/core/network/api_client.dart';
+import 'package:bearly_mobile/core/routes/app_route_names.dart';
 import 'package:bearly_mobile/features/auth/data/auth_service.dart';
 import 'package:bearly_mobile/features/auth/models/account_role.dart';
 import 'package:bearly_mobile/features/logistics/data/logistics_repository.dart';
@@ -11,6 +12,49 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
 void main() {
+  testWidgets(
+    'dashboard opens Logistics Cash Custody and refreshes on return',
+    (tester) async {
+      var dashboardReads = 0;
+      final auth = _authService((request) async {
+        expect(request.url.path, '/api/mobile/logistics/dashboard');
+        dashboardReads++;
+        return http.Response(jsonEncode(_dashboard()), 200);
+      });
+
+      await tester.pumpWidget(
+        MaterialApp(
+          routes: {
+            AppRouteNames.logisticsCashCustody: (context) => Scaffold(
+              appBar: AppBar(
+                leading: BackButton(onPressed: () => Navigator.pop(context)),
+              ),
+              body: const Center(child: Text('Cash custody route opened')),
+            ),
+          },
+          home: LogisticsHomePage(
+            authService: auth,
+            repository: LogisticsRepository(authService: auth),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.scrollUntilVisible(
+        find.byKey(const ValueKey('logistics-open-cash-custody')),
+        240,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.tap(
+        find.byKey(const ValueKey('logistics-open-cash-custody')),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Cash custody route opened'), findsOneWidget);
+      await tester.tap(find.byType(BackButton));
+      await tester.pumpAndSettle();
+      expect(dashboardReads, 2);
+    },
+  );
+
   testWidgets('loads provider, center, metrics, and refreshes server data', (
     tester,
   ) async {

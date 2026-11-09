@@ -59,6 +59,7 @@ import '../../features/rider/presentation/rider_pending_page.dart';
 import '../../features/rider/presentation/rider_register_page.dart';
 import '../../features/logistics/data/logistics_repository.dart';
 import '../../features/logistics/data/logistics_notifications_repository.dart';
+import '../../features/logistics/presentation/logistics_cash_custody_page.dart';
 import '../../features/logistics/data/logistics_messages_repository.dart';
 import '../../features/logistics/presentation/logistics_home_page.dart';
 import '../../features/logistics/presentation/logistics_pickup_requests_page.dart';
@@ -498,6 +499,12 @@ class AppRoutes {
           ),
           settings: settings,
         );
+      case AppRouteNames.logisticsCashCustody:
+        return MaterialPageRoute(
+          builder: (_) =>
+              LogisticsCashCustodyPage(repository: logisticsRepository),
+          settings: settings,
+        );
       case AppRouteNames.logisticsMessages:
         return MaterialPageRoute(
           builder: (_) =>
@@ -765,6 +772,7 @@ class AppRoutes {
       AppRouteNames.logisticsRiderDetails,
       AppRouteNames.logisticsRiderApplicationDetails,
       AppRouteNames.logisticsPickupRequests,
+      AppRouteNames.logisticsCashCustody,
       AppRouteNames.logisticsPickupRequestDetails,
       AppRouteNames.logisticsMessages,
       AppRouteNames.logisticsNotifications,

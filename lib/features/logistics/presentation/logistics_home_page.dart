@@ -187,6 +187,12 @@ class _LogisticsHomePageState extends State<LogisticsHomePage> {
     await _refresh();
   }
 
+  Future<void> _openCashCustody() async {
+    await Navigator.of(context).pushNamed(AppRouteNames.logisticsCashCustody);
+    if (!mounted) return;
+    await _refresh();
+  }
+
   Future<void> _openOperationalPage(Widget page) async {
     await Navigator.of(
       context,
@@ -443,6 +449,16 @@ class _LogisticsHomePageState extends State<LogisticsHomePage> {
             onPressed: _openPickupRequests,
             icon: const Icon(Icons.inventory_2_outlined),
             label: const Text('Pickup Requests'),
+          ),
+        ),
+        const SizedBox(height: 8),
+        SizedBox(
+          width: double.infinity,
+          child: OutlinedButton.icon(
+            key: const ValueKey('logistics-open-cash-custody'),
+            onPressed: _openCashCustody,
+            icon: const Icon(Icons.account_balance_wallet_outlined),
+            label: const Text('Cash Custody'),
           ),
         ),
         const SizedBox(height: 8),

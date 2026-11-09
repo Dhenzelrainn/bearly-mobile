@@ -38,6 +38,7 @@ class AppRouteNames {
   static const logisticsRiderApplicationDetails =
       '/logistics/rider-applications/details';
   static const logisticsPickupRequests = '/logistics/pickup-requests';
+  static const logisticsCashCustody = '/logistics/cash-custody';
   static const logisticsPickupRequestDetails =
       '/logistics/pickup-requests/details';
   static const logisticsMessages = '/logistics/messages';
