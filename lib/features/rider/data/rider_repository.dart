@@ -3,6 +3,7 @@ import '../../auth/models/account_role.dart';
 import '../models/rider_account.dart';
 import '../models/rider_assignment.dart';
 import '../models/rider_attendance_result.dart';
+import '../models/rider_courier_run.dart';
 import '../models/rider_earnings.dart';
 import '../models/rider_history.dart';
 import '../models/rider_operational_status.dart';
@@ -381,6 +382,61 @@ class RiderRepository {
         ),
       ),
     );
+  }
+
+  Future<RiderCourierRunPage> courierRuns({
+    String view = 'active',
+    int page = 1,
+    int perPage = 20,
+  }) async {
+    if (!const {'active', 'history', 'all'}.contains(view) ||
+        page < 1 ||
+        perPage < 1 ||
+        perPage > 50) {
+      throw ArgumentError('Use a supported Courier run view and page size.');
+    }
+    final response = await _authService.getWithSession(
+      '/api/mobile/rider/courier-runs',
+      queryParameters: {'view': view, 'page': page, 'per_page': perPage},
+    );
+    if (response is! Map) {
+      throw const FormatException(
+        'Bearly returned an invalid Courier run list.',
+      );
+    }
+    return RiderCourierRunPage.fromJson(Map<String, dynamic>.from(response));
+  }
+
+  Future<RiderCourierRun> courierRunDetail(int runId) async {
+    if (runId < 1) throw ArgumentError.value(runId, 'runId');
+    final response = await _authService.getWithSession(
+      '/api/mobile/rider/courier-runs/$runId',
+    );
+    return RiderCourierRun.fromJson(_data(response) as Map<String, dynamic>);
+  }
+
+  Future<RiderCourierRun> performCourierRunAction(
+    int runId,
+    String action,
+  ) async {
+    if (runId < 1) throw ArgumentError.value(runId, 'runId');
+    final endpoint = switch (action) {
+      'start_loading' => 'start-loading',
+      'loaded' => 'loaded',
+      'depart' => 'depart',
+      'arrive' => 'arrive',
+      _ => throw ArgumentError.value(
+        action,
+        'action',
+        'Unsupported run action.',
+      ),
+    };
+    final response = await _authService.requestWithSession<Object?>(
+      method: AuthenticatedRequestMethod.post,
+      path: '/api/mobile/rider/courier-runs/$runId/$endpoint',
+      parse: (value) => value,
+    );
+    return RiderCourierRun.fromJson(_data(response) as Map<String, dynamic>);
   }
 
   Future<List<RiderAssignment>> _jobs(Object? value) async {

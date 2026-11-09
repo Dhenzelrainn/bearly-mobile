@@ -16,6 +16,7 @@ import 'package:bearly_mobile/features/rider/presentation/rider_assignment_pages
 import 'package:bearly_mobile/features/rider/presentation/rider_earnings_page.dart';
 import 'package:bearly_mobile/features/rider/presentation/rider_history_page.dart';
 import 'package:bearly_mobile/features/rider/presentation/rider_home_page.dart';
+import 'package:bearly_mobile/features/rider/presentation/rider_courier_runs_page.dart';
 import 'package:bearly_mobile/features/rider/presentation/rider_messages_page.dart';
 import 'package:bearly_mobile/features/rider/presentation/rider_module_page.dart';
 import 'package:flutter/material.dart';
@@ -159,14 +160,21 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Work type: Courier'), findsOneWidget);
-      expect(find.text('Courier assignments'), findsOneWidget);
-      expect(
-        find.textContaining('Courier assignment, manifest, scanning'),
-        findsOneWidget,
-      );
+      expect(find.text('Courier Runs'), findsOneWidget);
       _expectCourierTabs(tester, selectedIndex: 0);
       expect(find.text('Pickup assignments'), findsNothing);
       expect(find.text('Delivery assignments'), findsNothing);
+
+      await tester.tap(find.text('Courier Runs'));
+      await tester.pumpAndSettle();
+      expect(
+        find.text('No active Courier runs are assigned to you.'),
+        findsOneWidget,
+      );
+      expect(find.text('Assigned Pickups'), findsNothing);
+      expect(find.text('Assigned Deliveries'), findsNothing);
+      await tester.pageBack();
+      await tester.pumpAndSettle();
 
       await tester.tap(find.text('Account').last);
       await tester.pumpAndSettle();
@@ -418,7 +426,7 @@ void main() {
       await tester.tap(find.text('Review Rider application'));
       await tester.pumpAndSettle();
       expect(
-        find.textContaining('Selected Logistics / Sorting Center'),
+        find.text('Selected Logistics / Sorting Center'),
         findsOneWidget,
       );
     },
@@ -568,6 +576,13 @@ Widget _navigationApp({
                   utf8.encode(jsonEncode(_emptyEarningsPayload(workType))),
                   200,
                 ),
+                '/api/mobile/rider/courier-runs' => http.Response(
+                  jsonEncode({
+                    'data': [],
+                    'meta': {'current_page': 1, 'last_page': 1, 'total': 0},
+                  }),
+                  200,
+                ),
                 _ => http.Response('Not found', 404),
               };
             }),
@@ -587,7 +602,14 @@ Widget _navigationApp({
 
   return MaterialApp(
     navigatorObservers: observer == null ? const [] : [observer],
-    home: RiderHomePage(repository: repository),
+    home: Builder(
+      builder: (context) => RiderHomePage(
+        repository: repository,
+        onOpenCourierRuns: () async {
+          await Navigator.of(context).pushNamed(AppRouteNames.riderCourierRuns);
+        },
+      ),
+    ),
     onGenerateRoute: useProductionRoutes
         ? (settings) => AppRoutes.onGenerateRoute(
             settings,
@@ -597,7 +619,19 @@ Widget _navigationApp({
           )
         : (settings) {
             final Widget page = switch (settings.name) {
-              AppRouteNames.rider => RiderHomePage(repository: repository),
+              AppRouteNames.rider => Builder(
+                builder: (context) => RiderHomePage(
+                  repository: repository,
+                  onOpenCourierRuns: () async {
+                    await Navigator.of(
+                      context,
+                    ).pushNamed(AppRouteNames.riderCourierRuns);
+                  },
+                ),
+              ),
+              AppRouteNames.riderCourierRuns => RiderCourierRunsPage(
+                repository: repository,
+              ),
               AppRouteNames.riderRequests => RiderLocalFulfillmentGuard(
                 repository: repository,
                 currentRoute: settings.name,

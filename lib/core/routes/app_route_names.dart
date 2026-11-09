@@ -29,6 +29,7 @@ class AppRouteNames {
   static const riderNotifications = '/rider/notifications';
   static const riderLiveLocation = '/rider/live-location';
   static const riderCashCustody = '/rider/cash-custody';
+  static const riderCourierRuns = '/rider/courier-runs';
   static const riderAttendanceScan = '/rider/attendance/scan';
   static const riderAccount = '/rider/account';
   static const logisticsDashboard = '/logistics/dashboard';

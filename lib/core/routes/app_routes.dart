@@ -48,6 +48,7 @@ import '../../features/rider/data/rider_messages_repository.dart';
 import '../../features/rider/data/rider_location_repository.dart';
 import '../../features/rider/data/rider_device_location.dart';
 import '../../features/rider/data/rider_cash_custody_repository.dart';
+import '../../features/rider/presentation/rider_courier_runs_page.dart';
 import '../../features/messaging/data/mobile_messaging_data_source.dart';
 import '../../features/messaging/models/mobile_messaging_models.dart';
 import '../../features/messaging/presentation/mobile_messages_page.dart';
@@ -149,6 +150,11 @@ class AppRoutes {
             repository: riderRepository,
             notificationsRepository: riderNotificationsRepository,
             messagesRepository: riderMessagesRepository,
+            onOpenCourierRuns: () async {
+              await Navigator.of(
+                context,
+              ).pushNamed(AppRouteNames.riderCourierRuns);
+            },
             onOpenCashCustody: () async {
               await Navigator.of(
                 context,
@@ -413,6 +419,11 @@ class AppRoutes {
                 context,
               ).pushNamed(AppRouteNames.riderCashCustody);
             },
+            onOpenCourierRuns: () async {
+              await Navigator.of(
+                context,
+              ).pushNamed(AppRouteNames.riderCourierRuns);
+            },
           ),
           settings: settings,
         );
@@ -432,7 +443,17 @@ class AppRoutes {
                 context,
               ).pushNamed(AppRouteNames.riderCashCustody);
             },
+            onOpenCourierRuns: () async {
+              await Navigator.of(
+                context,
+              ).pushNamed(AppRouteNames.riderCourierRuns);
+            },
           ),
+          settings: settings,
+        );
+      case AppRouteNames.riderCourierRuns:
+        return MaterialPageRoute(
+          builder: (_) => RiderCourierRunsPage(repository: riderRepository),
           settings: settings,
         );
       case AppRouteNames.riderLiveLocation:
@@ -731,6 +752,7 @@ class AppRoutes {
       AppRouteNames.riderNotifications,
       AppRouteNames.riderLiveLocation,
       AppRouteNames.riderCashCustody,
+      AppRouteNames.riderCourierRuns,
       AppRouteNames.riderAttendanceScan,
       AppRouteNames.riderAccount,
     }.contains(name)) {

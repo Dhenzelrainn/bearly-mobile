@@ -21,6 +21,7 @@ class RiderHomePage extends StatefulWidget {
     this.messagesRepository,
     this.onOpenLiveLocation,
     this.onOpenCashCustody,
+    this.onOpenCourierRuns,
   });
 
   final RiderRepository repository;
@@ -28,6 +29,7 @@ class RiderHomePage extends StatefulWidget {
   final MobileMessagingDataSource? messagesRepository;
   final Future<void> Function()? onOpenLiveLocation;
   final Future<void> Function()? onOpenCashCustody;
+  final Future<void> Function()? onOpenCourierRuns;
 
   @override
   State<RiderHomePage> createState() => _RiderHomePageState();
@@ -106,6 +108,11 @@ class _RiderHomePageState extends State<RiderHomePage> {
 
   Future<void> _open(String route) async {
     await Navigator.pushNamed(context, route);
+    if (mounted) _refresh();
+  }
+
+  Future<void> _openCourierRuns() async {
+    await widget.onOpenCourierRuns?.call();
     if (mounted) _refresh();
   }
 
@@ -444,16 +451,18 @@ class _RiderHomePageState extends State<RiderHomePage> {
               ),
             ),
           ],
-        ] else ...[
+        ] else if (dashboard.workType == 'courier') ...[
           const SizedBox(height: 18),
-          const Card(
+          Card(
             color: Colors.white,
             child: ListTile(
-              leading: Icon(Icons.local_shipping_outlined),
-              title: Text('Courier assignments'),
-              subtitle: Text(
-                'Courier assignment, manifest, scanning, departure, arrival, and handoff actions are not available in Mobile yet. Use your Logistics provider\'s approved Courier Web workflow until Courier Mobile support is ready.',
+              leading: const Icon(Icons.local_shipping_outlined),
+              title: const Text('Courier Runs'),
+              subtitle: const Text(
+                'View assigned line-haul manifests, run progress and next steps.',
               ),
+              trailing: const Icon(Icons.chevron_right_rounded),
+              onTap: widget.onOpenCourierRuns == null ? null : _openCourierRuns,
             ),
           ),
         ],
