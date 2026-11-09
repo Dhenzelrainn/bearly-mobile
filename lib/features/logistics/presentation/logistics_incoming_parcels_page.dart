@@ -2,14 +2,20 @@ import 'package:flutter/material.dart';
 
 import '../../../core/network/api_client.dart';
 import '../../../core/theme/bearly_theme.dart';
+import '../../rider/presentation/rider_waybill_scanner_page.dart';
 import '../data/logistics_repository.dart';
 import '../models/logistics_incoming_parcel.dart';
 import 'logistics_waybill_lookup_page.dart';
 
 class LogisticsIncomingParcelsPage extends StatefulWidget {
-  const LogisticsIncomingParcelsPage({super.key, required this.repository});
+  const LogisticsIncomingParcelsPage({
+    super.key,
+    required this.repository,
+    this.scannerPreviewBuilder,
+  });
 
   final LogisticsRepository repository;
+  final WaybillScannerPreviewBuilder? scannerPreviewBuilder;
 
   @override
   State<LogisticsIncomingParcelsPage> createState() =>
@@ -131,6 +137,7 @@ class _LogisticsIncomingParcelsPageState
         builder: (_) => LogisticsIncomingParcelDetailPage(
           repository: widget.repository,
           waybill: parcel.waybill,
+          scannerPreviewBuilder: widget.scannerPreviewBuilder,
         ),
       ),
     );
@@ -163,7 +170,7 @@ class _LogisticsIncomingParcelsPageState
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'Scanning opens read-only lookup. It does not record receipt or change parcel status.',
+                  'Open a waybill group to scan an individual Parcel, review server eligibility, and record one-piece intake.',
                   style: Theme.of(
                     context,
                   ).textTheme.bodySmall?.copyWith(color: BearlyColors.muted),
@@ -372,10 +379,12 @@ class LogisticsIncomingParcelDetailPage extends StatefulWidget {
     super.key,
     required this.repository,
     required this.waybill,
+    this.scannerPreviewBuilder,
   });
 
   final LogisticsRepository repository;
   final String waybill;
+  final WaybillScannerPreviewBuilder? scannerPreviewBuilder;
 
   @override
   State<LogisticsIncomingParcelDetailPage> createState() =>
@@ -384,7 +393,14 @@ class LogisticsIncomingParcelDetailPage extends StatefulWidget {
 
 class _LogisticsIncomingParcelDetailPageState
     extends State<LogisticsIncomingParcelDetailPage> {
+  final _barcodeController = TextEditingController();
   late Future<LogisticsIncomingParcelRecord> _parcel;
+  String? _selectedParcelNumber;
+  String? _selectedSizeClass;
+  String? _actionMessage;
+  bool _isReceiving = false;
+  bool _requiresRefresh = false;
+  String _scanMethod = 'manual';
 
   @override
   void initState() {
@@ -392,11 +408,20 @@ class _LogisticsIncomingParcelDetailPageState
     _parcel = widget.repository.incomingParcel(widget.waybill);
   }
 
+  @override
+  void dispose() {
+    _barcodeController.dispose();
+    super.dispose();
+  }
+
   Future<void> _refresh() async {
     final next = widget.repository.incomingParcel(widget.waybill);
-    setState(() => _parcel = next);
+    setState(() {
+      _parcel = next;
+    });
     try {
       await next;
+      if (mounted) setState(() => _requiresRefresh = false);
     } catch (_) {
       // FutureBuilder displays the current request error and retains retry.
     }
@@ -410,6 +435,178 @@ class _LogisticsIncomingParcelDetailPageState
       ),
     ),
   );
+
+  Future<void> _scanPiece(LogisticsIncomingParcelRecord parcel) async {
+    final scannedValue = await Navigator.of(context).push<String>(
+      MaterialPageRoute<String>(
+        builder: (_) => RiderWaybillScannerPage(
+          previewBuilder: widget.scannerPreviewBuilder,
+        ),
+      ),
+    );
+    if (!mounted || scannedValue == null || scannedValue.trim().isEmpty) return;
+    _barcodeController.text = scannedValue;
+    _selectPiece(parcel, scannedValue, scanMethod: 'barcode');
+  }
+
+  void _selectPiece(
+    LogisticsIncomingParcelRecord parcel,
+    String value, {
+    required String scanMethod,
+  }) {
+    final barcode = value.trim();
+    LogisticsIncomingParcelPiece? matched;
+    for (final piece in parcel.pieces) {
+      if (piece.parcel == barcode) {
+        matched = piece;
+        break;
+      }
+    }
+
+    setState(() {
+      _scanMethod = scanMethod;
+      _selectedParcelNumber = matched?.parcel;
+      _selectedSizeClass = null;
+      _actionMessage = matched == null
+          ? 'No Parcel in this Waybill matches that exact barcode.'
+          : 'Selected piece ${matched.pieceSequence}: ${matched.parcel}.';
+    });
+  }
+
+  Future<void> _confirmReceipt(
+    LogisticsIncomingParcelRecord parcel,
+    LogisticsIncomingParcelPiece piece,
+  ) async {
+    if (_isReceiving ||
+        _requiresRefresh ||
+        !piece.receiptEligibility.eligible ||
+        _selectedSizeClass == null) {
+      return;
+    }
+
+    final centerName =
+        parcel.receivingSortingCenter?.name ?? 'your Sorting Center';
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Confirm single-parcel intake'),
+        content: Text(
+          'Receive ${piece.parcel} as ${_selectedSizeClass!} at $centerName?',
+        ),
+        actions: [
+          TextButton(
+            key: const ValueKey('logistics-piece-receipt-cancel'),
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            key: const ValueKey('logistics-piece-receipt-confirm-dialog'),
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Confirm intake'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true && mounted) await _receivePiece(parcel, piece);
+  }
+
+  Future<void> _receivePiece(
+    LogisticsIncomingParcelRecord parcel,
+    LogisticsIncomingParcelPiece piece,
+  ) async {
+    if (_isReceiving || _requiresRefresh) return;
+    setState(() {
+      _isReceiving = true;
+      _actionMessage = 'Recording intake for ${piece.parcel}…';
+    });
+
+    try {
+      final receipt = await widget.repository.receiveParcel(
+        waybill: parcel.waybill,
+        parcel: piece.parcel,
+        sizeClass: _selectedSizeClass!,
+        scanMethod: _scanMethod,
+      );
+      if (!mounted) return;
+      final receivedPieces = parcel.pieces
+          .map(
+            (current) => current.parcel == receipt.piece.parcel
+                ? receipt.piece
+                : current,
+          )
+          .toList(growable: false);
+      setState(() {
+        _parcel = Future.value(
+          receipt.waybill.withPieces(
+            receivedPieces,
+            receivingCenter: parcel.receivingSortingCenter,
+            availableSizeClasses: parcel.sizeClasses,
+          ),
+        );
+        _actionMessage = receipt.evidence?.occurredAt == null
+            ? 'Bearly confirmed intake for ${receipt.piece.parcel}.'
+            : 'Bearly confirmed intake for ${receipt.piece.parcel} at ${_date(receipt.evidence!.occurredAt!)}.';
+      });
+      await _refresh();
+    } on ApiHttpException catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _actionMessage = switch (error.statusCode) {
+          401 => 'Your session expired. Sign in again to continue.',
+          403 => 'This Logistics account cannot receive this Parcel.',
+          404 => 'This Parcel is not available to your Logistics provider.',
+          409 =>
+            'The Parcel state changed. Refresh and review its eligibility.',
+          422 => error.message,
+          429 => 'Too many intake scans. Wait a moment and try again.',
+          _ =>
+            'Parcel intake was rejected. Refresh and review the current state.',
+        };
+      });
+      if (error.statusCode == 409) await _refresh();
+    } on ApiTimeoutException {
+      if (mounted) {
+        setState(() {
+          _requiresRefresh = true;
+          _actionMessage =
+              'The request timed out. Refresh server state before any further intake attempt.';
+        });
+      }
+    } on ApiTransportException {
+      if (mounted) {
+        setState(() {
+          _requiresRefresh = true;
+          _actionMessage =
+              'The connection was lost. Refresh server state before any further intake attempt.';
+        });
+      }
+    } on ApiException catch (error) {
+      if (mounted) {
+        setState(() {
+          _requiresRefresh = true;
+          _actionMessage = error.message;
+        });
+      }
+    } on FormatException {
+      if (mounted) {
+        setState(() {
+          _requiresRefresh = true;
+          _actionMessage =
+              'Bearly returned an incomplete receipt confirmation. Refresh server state before trying again.';
+        });
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _requiresRefresh = true;
+          _actionMessage =
+              'Receipt state could not be confirmed. Refresh server state before trying again.';
+        });
+      }
+    } finally {
+      if (mounted) setState(() => _isReceiving = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) => Scaffold(
@@ -510,6 +707,20 @@ class _LogisticsIncomingParcelDetailPageState
         ),
       ),
       const SizedBox(height: 8),
+      _pieceIntakeControls(parcel),
+      if (_actionMessage != null) ...[
+        const SizedBox(height: 8),
+        Card(
+          child: ListTile(
+            key: const ValueKey('logistics-piece-intake-message'),
+            leading: Icon(
+              _requiresRefresh ? Icons.sync_problem : Icons.info_outline,
+            ),
+            title: Text(_actionMessage!),
+          ),
+        ),
+      ],
+      const SizedBox(height: 8),
       OutlinedButton.icon(
         key: const ValueKey('logistics-incoming-open-readonly-scanner'),
         onPressed: _openReadOnlyLookup,
@@ -529,6 +740,155 @@ class _LogisticsIncomingParcelDetailPageState
         ...parcel.pieces.map(_pieceCard),
     ],
   );
+
+  Widget _pieceIntakeControls(LogisticsIncomingParcelRecord parcel) {
+    final selectedPieces = parcel.pieces.where(
+      (piece) => piece.parcel == _selectedParcelNumber,
+    );
+    final selectedPiece = selectedPieces.isEmpty ? null : selectedPieces.first;
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Receive one parcel',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Scan or enter the individual Parcel barcode. Intake applies only to the exact selected piece.',
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(color: BearlyColors.muted),
+            ),
+            if (parcel.receivingSortingCenter case final center?) ...[
+              const SizedBox(height: 8),
+              Text('Receiving center: ${center.name} (${center.code})'),
+            ] else ...[
+              const SizedBox(height: 8),
+              const Text('An active Sorting Center is required before intake.'),
+            ],
+            const SizedBox(height: 10),
+            TextField(
+              key: const ValueKey('logistics-piece-barcode-input'),
+              controller: _barcodeController,
+              maxLength: 120,
+              enabled: !_isReceiving,
+              autocorrect: false,
+              enableSuggestions: false,
+              textCapitalization: TextCapitalization.characters,
+              decoration: const InputDecoration(
+                labelText: 'Individual Parcel barcode',
+                border: OutlineInputBorder(),
+              ),
+              onChanged: (_) {
+                if (_selectedParcelNumber != null) {
+                  setState(() {
+                    _selectedParcelNumber = null;
+                    _selectedSizeClass = null;
+                    _actionMessage = null;
+                    _scanMethod = 'manual';
+                  });
+                }
+              },
+              onSubmitted: (value) =>
+                  _selectPiece(parcel, value, scanMethod: 'manual'),
+            ),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    key: const ValueKey('logistics-scan-piece-barcode'),
+                    onPressed: _isReceiving ? null : () => _scanPiece(parcel),
+                    icon: const Icon(Icons.qr_code_scanner_rounded),
+                    label: const Text('Scan piece'),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: FilledButton.tonal(
+                    key: const ValueKey('logistics-select-piece-barcode'),
+                    onPressed: _isReceiving
+                        ? null
+                        : () => _selectPiece(
+                            parcel,
+                            _barcodeController.text,
+                            scanMethod: 'manual',
+                          ),
+                    child: const Text('Find exact piece'),
+                  ),
+                ),
+              ],
+            ),
+            if (selectedPiece != null) ...[
+              const Divider(height: 24),
+              Text(
+                'Selected piece ${selectedPiece.pieceSequence}: ${selectedPiece.parcel}',
+                style: Theme.of(context).textTheme.titleSmall,
+              ),
+              const SizedBox(height: 6),
+              Text(selectedPiece.receiptEligibility.message),
+              if (selectedPiece.receiptEligibility.eligible &&
+                  parcel.sizeClasses.isNotEmpty) ...[
+                const SizedBox(height: 10),
+                DropdownButtonFormField<String>(
+                  key: const ValueKey('logistics-piece-size-class'),
+                  initialValue: _selectedSizeClass,
+                  decoration: const InputDecoration(
+                    labelText: 'Parcel size class',
+                    border: OutlineInputBorder(),
+                  ),
+                  items: parcel.sizeClasses
+                      .map(
+                        (sizeClass) => DropdownMenuItem(
+                          value: sizeClass,
+                          child: Text(_statusLabel(sizeClass)),
+                        ),
+                      )
+                      .toList(growable: false),
+                  onChanged: _isReceiving
+                      ? null
+                      : (value) => setState(() => _selectedSizeClass = value),
+                ),
+                const SizedBox(height: 10),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    key: const ValueKey('logistics-confirm-piece-intake'),
+                    onPressed:
+                        _isReceiving ||
+                            _requiresRefresh ||
+                            _selectedSizeClass == null
+                        ? null
+                        : () => _confirmReceipt(parcel, selectedPiece),
+                    icon: _isReceiving
+                        ? const SizedBox.square(
+                            dimension: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.inventory_2_outlined),
+                    label: Text(
+                      _isReceiving
+                          ? 'Recording intake'
+                          : 'Confirm single-parcel intake',
+                    ),
+                  ),
+                ),
+              ] else if (selectedPiece.receiptEligibility.eligible) ...[
+                const SizedBox(height: 8),
+                const Text(
+                  'No size classes are currently available from the server.',
+                ),
+              ],
+            ],
+          ],
+        ),
+      ),
+    );
+  }
 
   Widget _count(String label, int value) => Column(
     crossAxisAlignment: CrossAxisAlignment.start,

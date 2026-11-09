@@ -85,11 +85,23 @@ class LogisticsRepository {
     final data = response['data'] as Map;
     final parcel = LogisticsIncomingParcelRecord.fromJson(data['parcel']);
     final pieces = data['pieces'];
+    final center = data['receiving_sorting_center'];
+    final rawSizeClasses = data['size_classes'];
     if (pieces is! List) {
       throw const FormatException('Missing parcel pieces.');
     }
     return parcel.withPieces(
       pieces.map(LogisticsIncomingParcelPiece.fromJson).toList(growable: false),
+      receivingCenter: center == null
+          ? null
+          : LogisticsSortingCenter.fromJson(center),
+      availableSizeClasses: rawSizeClasses is List
+          ? rawSizeClasses
+                .whereType<String>()
+                .map((value) => value.trim())
+                .where((value) => value.isNotEmpty)
+                .toList(growable: false)
+          : const [],
     );
   }
 
@@ -146,38 +158,28 @@ class LogisticsRepository {
     ),
   );
 
-  Future<void> receiveWaybill(
-    String identifier, {
+  Future<LogisticsIncomingParcelReceipt> receiveParcel({
+    required String waybill,
+    required String parcel,
+    required String sizeClass,
     required String scanMethod,
-  }) async {
-    await _authService.requestWithSession<void>(
-      method: AuthenticatedRequestMethod.post,
-      path:
-          '/api/mobile/logistics/waybills/${Uri.encodeComponent(identifier.trim())}/receive',
-      body: {'scan_method': scanMethod},
-      parse: (response) {
-        if (response is! Map || response['data'] is! Map) {
-          throw const FormatException('Missing receipt response data.');
-        }
-
-        final data = response['data'] as Map;
-        final shipment = data['shipment'];
-        final parcels = data['parcels'];
-        if (data['waybill'] is! String ||
-            shipment is! Map ||
-            shipment['status'] != 'at_sorting_center' ||
-            parcels is! List ||
-            parcels.isEmpty ||
-            parcels.any(
-              (parcel) => parcel is! Map || parcel['status'] != 'received',
-            )) {
-          throw const FormatException(
-            'Bearly returned an incomplete receipt confirmation.',
-          );
-        }
-      },
-    );
-  }
+  }) => _authService.requestWithSession<LogisticsIncomingParcelReceipt>(
+    method: AuthenticatedRequestMethod.post,
+    path:
+        '/api/mobile/logistics/incoming-parcels/${Uri.encodeComponent(waybill.trim())}/pieces/${Uri.encodeComponent(parcel.trim())}/receive',
+    body: {'scan_method': scanMethod, 'size_class': sizeClass},
+    parse: (response) {
+      final receipt = LogisticsIncomingParcelReceipt.fromResponse(response);
+      if (receipt.waybill.waybill != waybill.trim() ||
+          receipt.piece.parcel != parcel.trim() ||
+          receipt.piece.status != 'received' ||
+          receipt.piece.sizeClass != sizeClass ||
+          receipt.evidence?.event != 'received_at_center') {
+        throw const FormatException('Missing receipt response data.');
+      }
+      return receipt;
+    },
+  );
 
   Future<void> acceptHandoff(
     String identifier, {

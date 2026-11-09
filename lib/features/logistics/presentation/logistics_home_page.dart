@@ -137,10 +137,7 @@ class _LogisticsHomePageState extends State<LogisticsHomePage> {
   );
 
   Future<void> _openIncomingReceipt() => _openOperationalPage(
-    LogisticsWaybillLookupPage(
-      repository: widget.repository,
-      receiptEnabled: true,
-    ),
+    LogisticsIncomingParcelsPage(repository: widget.repository),
   );
 
   Future<void> _openIncomingParcels() => _openOperationalPage(
@@ -347,7 +344,7 @@ class _LogisticsHomePageState extends State<LogisticsHomePage> {
             key: const ValueKey('logistics-open-incoming-receipt'),
             onPressed: _openIncomingReceipt,
             icon: const Icon(Icons.move_to_inbox_outlined),
-            label: const Text('Incoming Parcel Receipt'),
+            label: const Text('Incoming Parcel Intake'),
           ),
         ),
         const SizedBox(height: 8),

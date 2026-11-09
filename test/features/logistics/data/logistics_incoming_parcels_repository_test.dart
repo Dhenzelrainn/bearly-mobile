@@ -76,7 +76,45 @@ void main() {
       'received_at_center',
     );
     expect(parcel.pieces.single.intakeHistory.single.scanMethod, 'camera');
+    expect(parcel.receivingSortingCenter?.code, 'SC-VIC-3');
+    expect(parcel.sizeClasses, ['small', 'bulky']);
+    expect(parcel.pieces.single.receiptEligibility.eligible, false);
   });
+
+  test(
+    'receives one selected parcel with server size class and scan method',
+    () async {
+      final requests = <http.Request>[];
+      final repository = LogisticsRepository(
+        authService: _auth((request) async {
+          requests.add(request);
+          return http.Response(jsonEncode(_receiptResponse), 200);
+        }),
+      );
+
+      final receipt = await repository.receiveParcel(
+        waybill: 'BRLY-L10-001',
+        parcel: 'PCL-L10-002',
+        sizeClass: 'bulky',
+        scanMethod: 'barcode',
+      );
+
+      expect(requests.single.method, 'POST');
+      expect(
+        requests.single.url.path,
+        '/api/mobile/logistics/incoming-parcels/BRLY-L10-001/pieces/PCL-L10-002/receive',
+      );
+      expect(jsonDecode(requests.single.body), {
+        'scan_method': 'barcode',
+        'size_class': 'bulky',
+      });
+      expect(receipt.piece.parcel, 'PCL-L10-002');
+      expect(receipt.piece.status, 'received');
+      expect(receipt.piece.sizeClass, 'bulky');
+      expect(receipt.evidence?.event, 'received_at_center');
+      expect(receipt.evidence?.sortingCenterCode, 'SC-VIC-3');
+    },
+  );
 }
 
 const _pageResponse = {
@@ -150,6 +188,13 @@ const _detailResponse = {
       ],
       'parcel_statuses': ['received'],
     },
+    'receiving_sorting_center': {
+      'id': 3,
+      'name': 'Victoria Center',
+      'code': 'SC-VIC-3',
+      'status': 'active',
+    },
+    'size_classes': ['small', 'bulky'],
     'pieces': [
       {
         'parcel': 'PCL-L10-001',
@@ -157,6 +202,12 @@ const _detailResponse = {
         'status': 'received',
         'weight_kg': '1.00',
         'size_class': 'small',
+        'receipt_eligibility': {
+          'eligible': false,
+          'code': 'already_received',
+          'message':
+              'This parcel has already been received at a Sorting Center.',
+        },
         'current_sorting_center': {
           'id': 3,
           'name': 'Victoria Center',
@@ -175,6 +226,51 @@ const _detailResponse = {
         ],
       },
     ],
+  },
+};
+
+const _receiptResponse = {
+  'data': {
+    'waybill': {
+      'waybill': 'BRLY-L10-001',
+      'shipment_reference': 'SHP-L10-001',
+      'shipment_status': 'picked_up',
+      'purpose': 'outbound',
+      'purpose_label': 'Buyer delivery',
+      'status': 'awaiting_intake',
+      'expected_piece_count': 2,
+      'parcel_record_count': 2,
+      'received_piece_count': 1,
+      'remaining_piece_count': 1,
+      'received_at': '2026-11-09T08:00:00Z',
+      'seller': 'North Shop',
+      'received_from': 'Rider A',
+      'destination': 'San Pablo City, Laguna',
+      'current_sorting_centers': [],
+      'parcel_statuses': ['created', 'received'],
+    },
+    'piece': {
+      'parcel': 'PCL-L10-002',
+      'piece_sequence': 2,
+      'status': 'received',
+      'weight_kg': '2.0',
+      'size_class': 'bulky',
+      'current_sorting_center': {
+        'id': 3,
+        'name': 'Victoria Center',
+        'code': 'SC-VIC-3',
+        'status': 'active',
+      },
+      'intake_history': [],
+    },
+    'receipt_evidence': {
+      'event': 'received_at_center',
+      'from_status': 'created',
+      'to_status': 'received',
+      'scan_method': 'barcode',
+      'occurred_at': '2026-11-09T08:00:00Z',
+      'sorting_center': {'name': 'Victoria Center', 'code': 'SC-VIC-3'},
+    },
   },
 };
 

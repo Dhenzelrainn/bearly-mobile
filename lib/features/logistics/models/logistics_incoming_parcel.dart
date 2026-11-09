@@ -53,6 +53,8 @@ class LogisticsIncomingParcelRecord {
     required this.currentSortingCenters,
     required this.parcelStatuses,
     this.pieces = const [],
+    this.receivingSortingCenter,
+    this.sizeClasses = const [],
   });
 
   final String waybill;
@@ -72,6 +74,8 @@ class LogisticsIncomingParcelRecord {
   final List<LogisticsSortingCenter> currentSortingCenters;
   final List<String> parcelStatuses;
   final List<LogisticsIncomingParcelPiece> pieces;
+  final LogisticsSortingCenter? receivingSortingCenter;
+  final List<String> sizeClasses;
 
   factory LogisticsIncomingParcelRecord.fromJson(Object? value) {
     final map = _map(value, 'incoming parcel');
@@ -98,12 +102,15 @@ class LogisticsIncomingParcelRecord {
           .map(LogisticsSortingCenter.fromJson)
           .toList(growable: false),
       parcelStatuses: _stringList(map['parcel_statuses']),
+      sizeClasses: _stringList(map['size_classes']),
     );
   }
 
   LogisticsIncomingParcelRecord withPieces(
-    List<LogisticsIncomingParcelPiece> value,
-  ) => LogisticsIncomingParcelRecord(
+    List<LogisticsIncomingParcelPiece> value, {
+    LogisticsSortingCenter? receivingCenter,
+    List<String>? availableSizeClasses,
+  }) => LogisticsIncomingParcelRecord(
     waybill: waybill,
     shipmentReference: shipmentReference,
     shipmentStatus: shipmentStatus,
@@ -121,6 +128,8 @@ class LogisticsIncomingParcelRecord {
     currentSortingCenters: currentSortingCenters,
     parcelStatuses: parcelStatuses,
     pieces: value,
+    receivingSortingCenter: receivingCenter ?? receivingSortingCenter,
+    sizeClasses: availableSizeClasses ?? sizeClasses,
   );
 }
 
@@ -133,6 +142,7 @@ class LogisticsIncomingParcelPiece {
     required this.sizeClass,
     required this.currentSortingCenter,
     required this.intakeHistory,
+    required this.receiptEligibility,
   });
 
   final String parcel;
@@ -142,6 +152,7 @@ class LogisticsIncomingParcelPiece {
   final String? sizeClass;
   final LogisticsSortingCenter? currentSortingCenter;
   final List<LogisticsParcelIntakeEvent> intakeHistory;
+  final LogisticsReceiptEligibility receiptEligibility;
 
   factory LogisticsIncomingParcelPiece.fromJson(Object? value) {
     final map = _map(value, 'parcel piece');
@@ -157,10 +168,38 @@ class LogisticsIncomingParcelPiece {
       currentSortingCenter: center == null
           ? null
           : LogisticsSortingCenter.fromJson(center),
+      receiptEligibility: LogisticsReceiptEligibility.fromJson(
+        map['receipt_eligibility'],
+      ),
       intakeHistory: _list(
         map['intake_history'],
         'intake history',
       ).map(LogisticsParcelIntakeEvent.fromJson).toList(growable: false),
+    );
+  }
+}
+
+class LogisticsIncomingParcelReceipt {
+  const LogisticsIncomingParcelReceipt({
+    required this.waybill,
+    required this.piece,
+    required this.evidence,
+  });
+
+  final LogisticsIncomingParcelRecord waybill;
+  final LogisticsIncomingParcelPiece piece;
+  final LogisticsParcelIntakeEvent? evidence;
+
+  factory LogisticsIncomingParcelReceipt.fromResponse(Object? value) {
+    final root = _map(value, 'response');
+    final data = _map(root['data'], 'receipt data');
+    final evidence = data['receipt_evidence'];
+    return LogisticsIncomingParcelReceipt(
+      waybill: LogisticsIncomingParcelRecord.fromJson(data['waybill']),
+      piece: LogisticsIncomingParcelPiece.fromJson(data['piece']),
+      evidence: evidence == null
+          ? null
+          : LogisticsParcelIntakeEvent.fromJson(evidence),
     );
   }
 }

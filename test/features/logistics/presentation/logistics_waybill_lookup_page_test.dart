@@ -444,52 +444,31 @@ void main() {
   );
 
   testWidgets(
-    'camera-scanned receipt remains explicit and records camera method',
+    'legacy receipt lookup is read-only and directs operators to parcel intake',
     (tester) async {
       final requests = <http.Request>[];
       final auth = _authService((request) async {
         requests.add(request);
-        if (request.method == 'POST') {
-          expect(jsonDecode(request.body), {'scan_method': 'camera'});
-          return http.Response(jsonEncode(_receiptResponse()), 200);
-        }
         return http.Response(jsonEncode(_lookup(receiptEligible: true)), 200);
       });
 
-      await tester.pumpWidget(
-        _app(
-          auth,
-          receiptEnabled: true,
-          scannerPreviewBuilder: (context, callbacks) => Center(
-            child: ElevatedButton(
-              key: const ValueKey('emit-receipt-scan'),
-              onPressed: () => callbacks.onBarcodeDetected('BRLY-L2-001'),
-              child: const Text('Simulate barcode'),
-            ),
-          ),
-        ),
+      await tester.pumpWidget(_app(auth, receiptEnabled: true));
+      await tester.enterText(
+        find.byKey(const ValueKey('logistics-waybill-input')),
+        'BRLY-L2-001',
       );
-      await tester.tap(find.byKey(const ValueKey('logistics-scan-waybill')));
-      await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const ValueKey('emit-receipt-scan')));
-      await tester.pumpAndSettle();
-      expect(requests, isEmpty);
-
       await tester.tap(find.byKey(const ValueKey('logistics-lookup-waybill')));
       await tester.pumpAndSettle();
+
       expect(requests.map((request) => request.method), ['GET']);
-      final confirmButton = find.byKey(
-        const ValueKey('logistics-confirm-receipt'),
+      expect(
+        find.textContaining('Waybill-wide receipt is retired'),
+        findsOneWidget,
       );
-      await tester.ensureVisible(confirmButton);
-      await tester.pumpAndSettle();
-      await tester.tap(confirmButton);
-      await tester.pumpAndSettle();
-      await tester.tap(
-        find.byKey(const ValueKey('logistics-receipt-confirm-dialog')),
+      expect(
+        find.byKey(const ValueKey('logistics-confirm-receipt')),
+        findsNothing,
       );
-      await tester.pumpAndSettle();
-      expect(requests.map((request) => request.method), ['GET', 'POST', 'GET']);
     },
   );
 
@@ -536,35 +515,39 @@ void main() {
     );
   });
 
-  testWidgets('invalid, unauthorized, and server errors show clear states', (
-    tester,
-  ) async {
-    for (final scenario in [
-      (422, 'Enter a valid waybill or barcode value and try again.'),
-      (403, 'This Logistics account cannot perform waybill lookups right now.'),
-      (503, 'The server could not complete the lookup. Try again shortly.'),
-    ]) {
-      final auth = _authService(
-        (_) async => http.Response('{"message":"Unavailable"}', scenario.$1),
-      );
-
-      await tester.pumpWidget(_app(auth));
-      await tester.enterText(
-        find.byKey(const ValueKey('logistics-waybill-input')),
-        'BRLY-TEST',
-      );
-      await tester.tap(find.byKey(const ValueKey('logistics-lookup-waybill')));
-      await tester.pumpAndSettle();
-      expect(find.text(scenario.$2), findsOneWidget);
-      await tester.pumpWidget(const SizedBox.shrink());
-    }
-  });
+  testWidgets(
+    'invalid, unauthorized, and server lookup errors show clear states',
+    (tester) async {
+      for (final scenario in [
+        (422, 'Enter a valid waybill or barcode value and try again.'),
+        (
+          403,
+          'This Logistics account cannot perform waybill lookups right now.',
+        ),
+        (503, 'The server could not complete the lookup. Try again shortly.'),
+      ]) {
+        final auth = _authService(
+          (_) async => http.Response('{"message":"Unavailable"}', scenario.$1),
+        );
+        await tester.pumpWidget(_app(auth));
+        await tester.enterText(
+          find.byKey(const ValueKey('logistics-waybill-input')),
+          'BRLY-TEST',
+        );
+        await tester.tap(
+          find.byKey(const ValueKey('logistics-lookup-waybill')),
+        );
+        await tester.pumpAndSettle();
+        expect(find.text(scenario.$2), findsOneWidget);
+        await tester.pumpWidget(const SizedBox.shrink());
+      }
+    },
+  );
 
   testWidgets('transport errors show retryable network state', (tester) async {
     final auth = _authService((_) async {
       throw http.ClientException('offline');
     });
-
     await tester.pumpWidget(_app(auth));
     await tester.enterText(
       find.byKey(const ValueKey('logistics-waybill-input')),
@@ -572,7 +555,6 @@ void main() {
     );
     await tester.tap(find.byKey(const ValueKey('logistics-lookup-waybill')));
     await tester.pumpAndSettle();
-
     expect(
       find.text('Could not reach Bearly. Check your connection and try again.'),
       findsOneWidget,
@@ -583,7 +565,6 @@ void main() {
     tester,
   ) async {
     final auth = _authService((_) async => http.Response('{}', 404));
-
     await tester.pumpWidget(
       _app(
         auth,
@@ -604,7 +585,6 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Deny camera'));
     await tester.pumpAndSettle();
-
     expect(find.textContaining('Camera permission was denied'), findsOneWidget);
     await tester.tap(find.text('Return to manual entry'));
     await tester.pumpAndSettle();
@@ -624,7 +604,6 @@ void main() {
       requests++;
       return response.future;
     });
-
     await tester.pumpWidget(_app(auth));
     await tester.enterText(
       find.byKey(const ValueKey('logistics-waybill-input')),
@@ -632,13 +611,11 @@ void main() {
     );
     await tester.tap(find.byKey(const ValueKey('logistics-lookup-waybill')));
     await tester.pump();
-
     final button = tester.widget<FilledButton>(
       find.byKey(const ValueKey('logistics-lookup-waybill')),
     );
     expect(button.onPressed, isNull);
     expect(requests, 1);
-
     response.complete(http.Response(jsonEncode(_lookup()), 200));
     await tester.pumpAndSettle();
     expect(requests, 1);
@@ -647,341 +624,6 @@ void main() {
       findsOneWidget,
     );
   });
-
-  testWidgets(
-    'eligible receipt requires confirmation and refreshes server state',
-    (tester) async {
-      final requests = <http.Request>[];
-      var lookupCount = 0;
-      final auth = _authService((request) async {
-        requests.add(request);
-        if (request.method == 'POST') {
-          expect(
-            request.url.path,
-            '/api/mobile/logistics/waybills/BRLY-L2-001/receive',
-          );
-          expect(
-            request.headers['authorization'],
-            'Bearer logistics-test-token',
-          );
-          expect(jsonDecode(request.body), {'scan_method': 'manual'});
-          return http.Response(jsonEncode(_receiptResponse()), 200);
-        }
-        lookupCount++;
-        return http.Response(
-          jsonEncode(
-            _lookup(
-              receiptEligible: lookupCount == 1,
-              parcelStatus: lookupCount == 1 ? 'picked_up' : 'received',
-              shipmentStatus: lookupCount == 1
-                  ? 'picked_up'
-                  : 'at_sorting_center',
-              receiptCode: lookupCount == 1 ? 'eligible' : 'already_received',
-            ),
-          ),
-          200,
-        );
-      });
-
-      await tester.pumpWidget(_app(auth, receiptEnabled: true));
-      await tester.enterText(
-        find.byKey(const ValueKey('logistics-waybill-input')),
-        'BRLY-L2-001',
-      );
-      await tester.tap(find.byKey(const ValueKey('logistics-lookup-waybill')));
-      await tester.pumpAndSettle();
-
-      expect(find.text('Victoria Sorting Center (SC-3)'), findsOneWidget);
-      final confirmButton = find.byKey(
-        const ValueKey('logistics-confirm-receipt'),
-      );
-      await tester.ensureVisible(confirmButton);
-      await tester.pumpAndSettle();
-      await tester.tap(confirmButton);
-      await tester.pumpAndSettle();
-      expect(requests, hasLength(1));
-      expect(find.text('Confirm incoming parcel receipt'), findsOneWidget);
-      await tester.tap(
-        find.byKey(const ValueKey('logistics-receipt-confirm-dialog')),
-      );
-      await tester.pumpAndSettle();
-
-      expect(requests.map((request) => request.method), ['GET', 'POST', 'GET']);
-      await tester.drag(find.byType(Scrollable).first, const Offset(0, 1200));
-      await tester.pumpAndSettle();
-      expect(
-        find.text(
-          'The server confirms this parcel was received at the Sorting Center.',
-        ),
-        findsOneWidget,
-      );
-      expect(
-        find.byKey(const ValueKey('logistics-confirm-receipt')),
-        findsNothing,
-      );
-    },
-  );
-
-  testWidgets('canceling receipt confirmation sends no mutation', (
-    tester,
-  ) async {
-    final requests = <http.Request>[];
-    final auth = _authService((request) async {
-      requests.add(request);
-      return http.Response(jsonEncode(_lookup(receiptEligible: true)), 200);
-    });
-
-    await tester.pumpWidget(_app(auth, receiptEnabled: true));
-    await tester.enterText(
-      find.byKey(const ValueKey('logistics-waybill-input')),
-      'BRLY-L2-001',
-    );
-    await tester.tap(find.byKey(const ValueKey('logistics-lookup-waybill')));
-    await tester.pumpAndSettle();
-    final confirmButton = find.byKey(
-      const ValueKey('logistics-confirm-receipt'),
-    );
-    await tester.ensureVisible(confirmButton);
-    await tester.pumpAndSettle();
-    await tester.tap(confirmButton);
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('logistics-receipt-cancel')));
-    await tester.pumpAndSettle();
-
-    expect(requests, hasLength(1));
-    expect(requests.single.method, 'GET');
-    expect(
-      find.byKey(const ValueKey('logistics-confirm-receipt')),
-      findsOneWidget,
-    );
-  });
-
-  testWidgets('ineligible parcels never show an actionable receipt button', (
-    tester,
-  ) async {
-    final auth = _authService(
-      (_) async => http.Response(jsonEncode(_lookup()), 200),
-    );
-    await tester.pumpWidget(_app(auth, receiptEnabled: true));
-    await tester.enterText(
-      find.byKey(const ValueKey('logistics-waybill-input')),
-      'BRLY-L2-001',
-    );
-    await tester.tap(find.byKey(const ValueKey('logistics-lookup-waybill')));
-    await tester.pumpAndSettle();
-
-    expect(find.text('Confirm Receipt'), findsNothing);
-    expect(
-      find.textContaining('not eligible for ordinary receipt'),
-      findsOneWidget,
-    );
-  });
-
-  testWidgets('uncertain receipt requires a fresh lookup before another post', (
-    tester,
-  ) async {
-    var getRequests = 0;
-    var postRequests = 0;
-    final auth = _authService((request) async {
-      if (request.method == 'POST') {
-        postRequests++;
-        throw http.ClientException('connection lost after send');
-      }
-      getRequests++;
-      return http.Response(jsonEncode(_lookup(receiptEligible: true)), 200);
-    });
-
-    await tester.pumpWidget(_app(auth, receiptEnabled: true));
-    await tester.enterText(
-      find.byKey(const ValueKey('logistics-waybill-input')),
-      'BRLY-L2-001',
-    );
-    await tester.tap(find.byKey(const ValueKey('logistics-lookup-waybill')));
-    await tester.pumpAndSettle();
-    final confirmButton = find.byKey(
-      const ValueKey('logistics-confirm-receipt'),
-    );
-    await tester.ensureVisible(confirmButton);
-    await tester.pumpAndSettle();
-    await tester.tap(confirmButton);
-    await tester.pumpAndSettle();
-    await tester.tap(
-      find.byKey(const ValueKey('logistics-receipt-confirm-dialog')),
-    );
-    await tester.pumpAndSettle();
-
-    expect(getRequests, 1);
-    expect(postRequests, 1);
-    await tester.drag(find.byType(Scrollable).first, const Offset(0, 1200));
-    await tester.pumpAndSettle();
-    expect(find.textContaining('result is uncertain'), findsOneWidget);
-    expect(
-      find.byKey(const ValueKey('logistics-confirm-receipt')),
-      findsNothing,
-    );
-    await tester.tap(find.byKey(const ValueKey('logistics-lookup-waybill')));
-    await tester.pumpAndSettle();
-
-    expect(getRequests, 2);
-    expect(postRequests, 1);
-    expect(
-      find.byKey(const ValueKey('logistics-confirm-receipt')),
-      findsOneWidget,
-    );
-  });
-
-  testWidgets('receipt button disables while the mutation is pending', (
-    tester,
-  ) async {
-    final response = Completer<http.Response>();
-    var postRequests = 0;
-    final auth = _authService((request) async {
-      if (request.method == 'POST') {
-        postRequests++;
-        return response.future;
-      }
-      return http.Response(jsonEncode(_lookup(receiptEligible: true)), 200);
-    });
-
-    await tester.pumpWidget(_app(auth, receiptEnabled: true));
-    await tester.enterText(
-      find.byKey(const ValueKey('logistics-waybill-input')),
-      'BRLY-L2-001',
-    );
-    await tester.tap(find.byKey(const ValueKey('logistics-lookup-waybill')));
-    await tester.pumpAndSettle();
-    final confirmButton = find.byKey(
-      const ValueKey('logistics-confirm-receipt'),
-    );
-    await tester.ensureVisible(confirmButton);
-    await tester.pumpAndSettle();
-    await tester.tap(confirmButton);
-    await tester.pumpAndSettle();
-    await tester.tap(
-      find.byKey(const ValueKey('logistics-receipt-confirm-dialog')),
-    );
-    await tester.pump();
-
-    final pendingButton = tester.widget<FilledButton>(
-      find.byKey(const ValueKey('logistics-confirm-receipt')),
-    );
-    expect(pendingButton.onPressed, isNull);
-    expect(postRequests, 1);
-
-    response.complete(http.Response(jsonEncode(_receiptResponse()), 200));
-    await tester.pumpAndSettle();
-    expect(postRequests, 1);
-  });
-
-  testWidgets(
-    'receipt conflicts, validation, and authorization errors are clear',
-    (tester) async {
-      for (final scenario in [
-        (409, 'The server reports a parcel state conflict.'),
-        (422, 'The receipt request was invalid.'),
-        (403, 'This Logistics account cannot receive parcels right now.'),
-      ]) {
-        var posts = 0;
-        final auth = _authService((request) async {
-          if (request.method == 'POST') {
-            posts++;
-            return http.Response('{"message":"Rejected"}', scenario.$1);
-          }
-          return http.Response(jsonEncode(_lookup(receiptEligible: true)), 200);
-        });
-
-        await tester.pumpWidget(_app(auth, receiptEnabled: true));
-        await tester.enterText(
-          find.byKey(const ValueKey('logistics-waybill-input')),
-          'BRLY-L2-001',
-        );
-        await tester.tap(
-          find.byKey(const ValueKey('logistics-lookup-waybill')),
-        );
-        await tester.pumpAndSettle();
-        final confirmButton = find.byKey(
-          const ValueKey('logistics-confirm-receipt'),
-        );
-        await tester.ensureVisible(confirmButton);
-        await tester.pumpAndSettle();
-        await tester.tap(confirmButton);
-        await tester.pumpAndSettle();
-        await tester.tap(
-          find.byKey(const ValueKey('logistics-receipt-confirm-dialog')),
-        );
-        await tester.pumpAndSettle();
-
-        await tester.drag(find.byType(Scrollable).first, const Offset(0, 1200));
-        await tester.pumpAndSettle();
-        expect(posts, 1);
-        expect(find.textContaining(scenario.$2), findsOneWidget);
-        if (scenario.$1 == 409) {
-          expect(
-            find.byKey(const ValueKey('logistics-confirm-receipt')),
-            findsNothing,
-          );
-          expect(
-            find.byKey(const ValueKey('logistics-lookup-waybill')),
-            findsOneWidget,
-          );
-        }
-        await tester.pumpWidget(const SizedBox.shrink());
-      }
-    },
-  );
-
-  testWidgets(
-    'receipt timeout is uncertain and requires lookup reconciliation',
-    (tester) async {
-      var posts = 0;
-      var gets = 0;
-      final auth = _authService((request) async {
-        if (request.method == 'POST') {
-          posts++;
-          throw TimeoutException('timed out');
-        }
-        gets++;
-        return http.Response(jsonEncode(_lookup(receiptEligible: true)), 200);
-      });
-
-      await tester.pumpWidget(_app(auth, receiptEnabled: true));
-      await tester.enterText(
-        find.byKey(const ValueKey('logistics-waybill-input')),
-        'BRLY-L2-001',
-      );
-      await tester.tap(find.byKey(const ValueKey('logistics-lookup-waybill')));
-      await tester.pumpAndSettle();
-      final confirmButton = find.byKey(
-        const ValueKey('logistics-confirm-receipt'),
-      );
-      await tester.ensureVisible(confirmButton);
-      await tester.pumpAndSettle();
-      await tester.tap(confirmButton);
-      await tester.pumpAndSettle();
-      await tester.tap(
-        find.byKey(const ValueKey('logistics-receipt-confirm-dialog')),
-      );
-      await tester.pumpAndSettle();
-
-      expect(posts, 1);
-      expect(gets, 1);
-      await tester.drag(find.byType(Scrollable).first, const Offset(0, 1200));
-      await tester.pumpAndSettle();
-      expect(find.textContaining('result is uncertain'), findsOneWidget);
-      expect(
-        find.byKey(const ValueKey('logistics-confirm-receipt')),
-        findsNothing,
-      );
-      await tester.tap(find.byKey(const ValueKey('logistics-lookup-waybill')));
-      await tester.pumpAndSettle();
-      expect(gets, 2);
-      expect(posts, 1);
-      expect(
-        find.byKey(const ValueKey('logistics-confirm-receipt')),
-        findsOneWidget,
-      );
-    },
-  );
 }
 
 Widget _app(
@@ -1135,34 +777,6 @@ Map<String, Object?> _handoffResponse(String waybill) => {
           'code': 'SC-PILA',
           'status': 'active',
           'address': 'Pila',
-        },
-      },
-    ],
-  },
-};
-
-Map<String, Object?> _receiptResponse() => {
-  'message': 'Parcel received at sorting center.',
-  'data': {
-    'waybill': 'BRLY-L2-001',
-    'shipment': {'reference': 'SHP-L2-001', 'status': 'at_sorting_center'},
-    'receiving_sorting_center': {
-      'id': 3,
-      'name': 'Victoria Sorting Center',
-      'code': 'SC-3',
-      'status': 'active',
-      'address': 'Victoria, Laguna',
-    },
-    'parcels': [
-      {
-        'reference': 'PCL-L2-001',
-        'status': 'received',
-        'current_sorting_center': {
-          'id': 3,
-          'name': 'Victoria Sorting Center',
-          'code': 'SC-3',
-          'status': 'active',
-          'address': 'Victoria, Laguna',
         },
       },
     ],

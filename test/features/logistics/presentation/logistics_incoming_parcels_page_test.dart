@@ -7,6 +7,7 @@ import 'package:bearly_mobile/features/auth/models/account_role.dart';
 import 'package:bearly_mobile/features/logistics/data/logistics_repository.dart';
 import 'package:bearly_mobile/features/logistics/presentation/logistics_home_page.dart';
 import 'package:bearly_mobile/features/logistics/presentation/logistics_incoming_parcels_page.dart';
+import 'package:bearly_mobile/features/rider/presentation/rider_waybill_scanner_page.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -47,6 +48,38 @@ void main() {
       findsOneWidget,
     );
     expect(paths, contains('/api/mobile/logistics/incoming-parcels'));
+  });
+
+  testWidgets('dashboard intake action opens the single-parcel workspace', (
+    tester,
+  ) async {
+    final auth = _auth((request) async {
+      return http.Response(
+        jsonEncode(
+          request.url.path == '/api/mobile/logistics/dashboard'
+              ? _dashboard
+              : _pageResponse(),
+        ),
+        200,
+      );
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: LogisticsHomePage(
+          authService: auth,
+          repository: LogisticsRepository(authService: auth),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('logistics-open-incoming-receipt')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Incoming Parcels'), findsOneWidget);
+    expect(find.text('Receive one parcel'), findsNothing);
   });
 
   testWidgets(
@@ -170,9 +203,11 @@ void main() {
     );
     await tester.pumpAndSettle();
 
+    expect(find.textContaining('1 of 3 pieces received'), findsOneWidget);
+    await tester.drag(find.byType(ListView).last, const Offset(0, -1000));
+    await tester.pumpAndSettle();
     expect(find.text('Parcel pieces'), findsOneWidget);
     expect(find.text('Received at Sorting Center'), findsOneWidget);
-    expect(find.textContaining('1 of 3 pieces received'), findsOneWidget);
     await tester.tap(
       find.byKey(const ValueKey('logistics-incoming-open-readonly-scanner')),
     );
@@ -191,11 +226,310 @@ void main() {
     expect(requests.map((request) => request.method), ['GET', 'GET', 'GET']);
     expect(find.textContaining('Pila'), findsOneWidget);
   });
+
+  testWidgets(
+    'receives exactly the scanned parcel after server eligibility and confirmation',
+    (tester) async {
+      final requests = <http.Request>[];
+      var received = false;
+      final auth = _auth((request) async {
+        requests.add(request);
+        if (request.url.path == '/api/mobile/logistics/incoming-parcels') {
+          return http.Response(
+            jsonEncode(_pageResponse(parcels: [_parcel()])),
+            200,
+          );
+        }
+        if (request.url.path.endsWith('/receive')) {
+          received = true;
+          return http.Response(jsonEncode(_receiptResponse), 200);
+        }
+        if (request.url.path ==
+            '/api/mobile/logistics/incoming-parcels/BRLY-L10-001') {
+          return http.Response(
+            jsonEncode(_intakeDetailResponse(received: received)),
+            200,
+          );
+        }
+        throw StateError('Unexpected request ${request.url}');
+      });
+
+      await tester.pumpWidget(_page(auth));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('incoming-parcel-BRLY-L10-001')),
+      );
+      await tester.pumpAndSettle();
+
+      final barcode = find.byKey(
+        const ValueKey('logistics-piece-barcode-input'),
+      );
+      await tester.ensureVisible(barcode);
+      await tester.enterText(barcode, 'PCL-L10-002');
+      await tester.tap(
+        find.byKey(const ValueKey('logistics-select-piece-barcode')),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Selected piece 2: PCL-L10-002.'), findsOneWidget);
+      expect(
+        find.text('Eligible for ordinary receipt at this Sorting Center.'),
+        findsOneWidget,
+      );
+
+      final sizeField = find.byKey(
+        const ValueKey('logistics-piece-size-class'),
+      );
+      await tester.ensureVisible(sizeField);
+      await tester.tap(sizeField);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Small').last);
+      await tester.pumpAndSettle();
+      final confirm = find.byKey(
+        const ValueKey('logistics-confirm-piece-intake'),
+      );
+      await tester.ensureVisible(confirm);
+      await tester.tap(confirm);
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('logistics-piece-receipt-confirm-dialog')),
+      );
+      await tester.pumpAndSettle();
+
+      final post = requests.singleWhere((request) => request.method == 'POST');
+      expect(
+        post.url.path,
+        '/api/mobile/logistics/incoming-parcels/BRLY-L10-001/pieces/PCL-L10-002/receive',
+      );
+      expect(jsonDecode(post.body), {
+        'scan_method': 'manual',
+        'size_class': 'small',
+      });
+      expect(requests.map((request) => request.method), [
+        'GET',
+        'GET',
+        'POST',
+        'GET',
+      ]);
+      await tester.drag(find.byType(ListView).last, const Offset(0, 1200));
+      await tester.pumpAndSettle();
+      expect(find.text('1 of 2 pieces received · 1 remaining'), findsOneWidget);
+      expect(find.text('0 of 2 pieces received · 2 remaining'), findsNothing);
+      await tester.drag(find.byType(ListView).last, const Offset(0, -1000));
+      await tester.pumpAndSettle();
+      expect(
+        find.textContaining('Bearly confirmed intake for PCL-L10-002'),
+        findsOneWidget,
+      );
+    },
+  );
+
+  testWidgets(
+    'manual barcode must exactly match a piece before intake actions appear',
+    (tester) async {
+      final auth = _auth((request) async {
+        if (request.url.path == '/api/mobile/logistics/incoming-parcels') {
+          return http.Response(
+            jsonEncode(_pageResponse(parcels: [_parcel()])),
+            200,
+          );
+        }
+        return http.Response(jsonEncode(_intakeDetailResponse()), 200);
+      });
+
+      await tester.pumpWidget(_page(auth));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('incoming-parcel-BRLY-L10-001')),
+      );
+      await tester.pumpAndSettle();
+      final barcode = find.byKey(
+        const ValueKey('logistics-piece-barcode-input'),
+      );
+      await tester.ensureVisible(barcode);
+      await tester.enterText(barcode, 'PCL-WRONG');
+      await tester.tap(
+        find.byKey(const ValueKey('logistics-select-piece-barcode')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text('No Parcel in this Waybill matches that exact barcode.'),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('logistics-piece-size-class')),
+        findsNothing,
+      );
+      expect(
+        find.byKey(const ValueKey('logistics-confirm-piece-intake')),
+        findsNothing,
+      );
+    },
+  );
+
+  testWidgets('individual camera scan selects the exact server-listed parcel', (
+    tester,
+  ) async {
+    final methods = <String>[];
+    final auth = _auth((request) async {
+      methods.add(request.method);
+      if (request.url.path == '/api/mobile/logistics/incoming-parcels') {
+        return http.Response(
+          jsonEncode(_pageResponse(parcels: [_parcel()])),
+          200,
+        );
+      }
+      return http.Response(jsonEncode(_intakeDetailResponse()), 200);
+    });
+
+    await tester.pumpWidget(
+      _page(
+        auth,
+        scannerPreviewBuilder: (context, callbacks) => Center(
+          child: ElevatedButton(
+            key: const ValueKey('emit-piece-scan'),
+            onPressed: () => callbacks.onBarcodeDetected('PCL-L10-002'),
+            child: const Text('Simulate parcel barcode'),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('incoming-parcel-BRLY-L10-001')),
+    );
+    await tester.pumpAndSettle();
+    final scan = find.byKey(const ValueKey('logistics-scan-piece-barcode'));
+    await tester.ensureVisible(scan);
+    await tester.tap(scan);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('emit-piece-scan')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Selected piece 2: PCL-L10-002.'), findsOneWidget);
+    expect(methods, ['GET', 'GET']);
+  });
+
+  testWidgets('pending single-piece intake disables repeat submission', (
+    tester,
+  ) async {
+    final receiptResponse = Completer<http.Response>();
+    var posts = 0;
+    var received = false;
+    final auth = _auth((request) async {
+      if (request.url.path == '/api/mobile/logistics/incoming-parcels') {
+        return http.Response(
+          jsonEncode(_pageResponse(parcels: [_parcel()])),
+          200,
+        );
+      }
+      if (request.method == 'POST') {
+        posts++;
+        received = true;
+        return receiptResponse.future;
+      }
+      return http.Response(
+        jsonEncode(_intakeDetailResponse(received: received)),
+        200,
+      );
+    });
+
+    await tester.pumpWidget(_page(auth));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('incoming-parcel-BRLY-L10-001')),
+    );
+    await tester.pumpAndSettle();
+    final barcode = find.byKey(const ValueKey('logistics-piece-barcode-input'));
+    await tester.ensureVisible(barcode);
+    await tester.enterText(barcode, 'PCL-L10-002');
+    await tester.tap(
+      find.byKey(const ValueKey('logistics-select-piece-barcode')),
+    );
+    await tester.pumpAndSettle();
+    final sizeClass = find.byKey(const ValueKey('logistics-piece-size-class'));
+    await tester.ensureVisible(sizeClass);
+    await tester.tap(sizeClass);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Small').last);
+    await tester.pumpAndSettle();
+    final confirm = find.byKey(
+      const ValueKey('logistics-confirm-piece-intake'),
+    );
+    await tester.ensureVisible(confirm);
+    await tester.tap(confirm);
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('logistics-piece-receipt-confirm-dialog')),
+    );
+    await tester.pump();
+
+    expect(posts, 1);
+    expect(tester.widget<FilledButton>(confirm).onPressed, isNull);
+    await tester.tap(confirm);
+    await tester.pump();
+    expect(posts, 1);
+
+    receiptResponse.complete(http.Response(jsonEncode(_receiptResponse), 200));
+    await tester.pumpAndSettle();
+    expect(posts, 1);
+  });
+
+  testWidgets(
+    'server-ineligible parcel shows its reason without intake controls',
+    (tester) async {
+      final auth = _auth((request) async {
+        if (request.url.path == '/api/mobile/logistics/incoming-parcels') {
+          return http.Response(
+            jsonEncode(_pageResponse(parcels: [_parcel()])),
+            200,
+          );
+        }
+        return http.Response(
+          jsonEncode(_intakeDetailResponse(received: true)),
+          200,
+        );
+      });
+
+      await tester.pumpWidget(_page(auth));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('incoming-parcel-BRLY-L10-001')),
+      );
+      await tester.pumpAndSettle();
+      final barcode = find.byKey(
+        const ValueKey('logistics-piece-barcode-input'),
+      );
+      await tester.ensureVisible(barcode);
+      await tester.enterText(barcode, 'PCL-L10-002');
+      await tester.tap(
+        find.byKey(const ValueKey('logistics-select-piece-barcode')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text('This parcel has already been received at a Sorting Center.'),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('logistics-piece-size-class')),
+        findsNothing,
+      );
+      expect(
+        find.byKey(const ValueKey('logistics-confirm-piece-intake')),
+        findsNothing,
+      );
+    },
+  );
 }
 
-Widget _page(AuthService auth) => MaterialApp(
+Widget _page(
+  AuthService auth, {
+  WaybillScannerPreviewBuilder? scannerPreviewBuilder,
+}) => MaterialApp(
   home: LogisticsIncomingParcelsPage(
     repository: LogisticsRepository(authService: auth),
+    scannerPreviewBuilder: scannerPreviewBuilder,
   ),
 );
 
@@ -290,6 +624,145 @@ final _detailResponse = {
         ],
       },
     ],
+  },
+};
+
+Map<String, Object?> _intakeDetailResponse({bool received = false}) => {
+  'data': {
+    'parcel': {
+      'waybill': 'BRLY-L10-001',
+      'shipment_reference': 'SHP-L10-001',
+      'shipment_status': received ? 'picked_up' : 'picked_up',
+      'purpose': 'outbound',
+      'purpose_label': 'Buyer delivery',
+      'status': received ? 'received' : 'awaiting_intake',
+      'expected_piece_count': 2,
+      'parcel_record_count': 2,
+      'received_piece_count': received ? 1 : 0,
+      'remaining_piece_count': received ? 1 : 2,
+      'received_at': received ? '2026-11-09T08:00:00Z' : null,
+      'seller': 'North Shop',
+      'received_from': 'Rider A',
+      'destination': 'San Pablo City, Laguna',
+      'current_sorting_centers': [],
+      'parcel_statuses': received
+          ? ['created', 'received']
+          : ['picked_up', 'created'],
+    },
+    'receiving_sorting_center': {
+      'id': 3,
+      'name': 'Victoria Center',
+      'code': 'SC-VIC-3',
+      'status': 'active',
+    },
+    'size_classes': ['small', 'bulky'],
+    'pieces': [
+      {
+        'parcel': 'PCL-L10-001',
+        'piece_sequence': 1,
+        'status': received ? 'picked_up' : 'picked_up',
+        'weight_kg': '1.0',
+        'size_class': null,
+        'receipt_eligibility': {
+          'eligible': !received,
+          'code': received ? 'eligible' : 'eligible',
+          'message': 'Eligible for ordinary receipt at this Sorting Center.',
+        },
+        'current_sorting_center': null,
+        'intake_history': [],
+      },
+      {
+        'parcel': 'PCL-L10-002',
+        'piece_sequence': 2,
+        'status': received ? 'received' : 'created',
+        'weight_kg': '2.0',
+        'size_class': received ? 'small' : null,
+        'receipt_eligibility': {
+          'eligible': !received,
+          'code': received ? 'already_received' : 'eligible',
+          'message': received
+              ? 'This parcel has already been received at a Sorting Center.'
+              : 'Eligible for ordinary receipt at this Sorting Center.',
+        },
+        'current_sorting_center': received
+            ? {
+                'id': 3,
+                'name': 'Victoria Center',
+                'code': 'SC-VIC-3',
+                'status': 'active',
+              }
+            : null,
+        'intake_history': received
+            ? [
+                {
+                  'event': 'received_at_center',
+                  'from_status': 'created',
+                  'to_status': 'received',
+                  'scan_method': 'manual',
+                  'occurred_at': '2026-11-09T08:00:00Z',
+                  'sorting_center': {
+                    'name': 'Victoria Center',
+                    'code': 'SC-VIC-3',
+                  },
+                },
+              ]
+            : [],
+      },
+    ],
+  },
+};
+
+const _receiptResponse = {
+  'data': {
+    'waybill': {
+      'waybill': 'BRLY-L10-001',
+      'shipment_reference': 'SHP-L10-001',
+      'shipment_status': 'picked_up',
+      'purpose': 'outbound',
+      'purpose_label': 'Buyer delivery',
+      'status': 'received',
+      'expected_piece_count': 2,
+      'parcel_record_count': 2,
+      'received_piece_count': 1,
+      'remaining_piece_count': 1,
+      'received_at': '2026-11-09T08:00:00Z',
+      'seller': 'North Shop',
+      'received_from': 'Rider A',
+      'destination': 'San Pablo City, Laguna',
+      'current_sorting_centers': [],
+      'parcel_statuses': ['created', 'received'],
+    },
+    'piece': {
+      'parcel': 'PCL-L10-002',
+      'piece_sequence': 2,
+      'status': 'received',
+      'weight_kg': '2.0',
+      'size_class': 'small',
+      'current_sorting_center': {
+        'id': 3,
+        'name': 'Victoria Center',
+        'code': 'SC-VIC-3',
+        'status': 'active',
+      },
+      'intake_history': [
+        {
+          'event': 'received_at_center',
+          'from_status': 'created',
+          'to_status': 'received',
+          'scan_method': 'manual',
+          'occurred_at': '2026-11-09T08:00:00Z',
+          'sorting_center': {'name': 'Victoria Center', 'code': 'SC-VIC-3'},
+        },
+      ],
+    },
+    'receipt_evidence': {
+      'event': 'received_at_center',
+      'from_status': 'created',
+      'to_status': 'received',
+      'scan_method': 'manual',
+      'occurred_at': '2026-11-09T08:00:00Z',
+      'sorting_center': {'name': 'Victoria Center', 'code': 'SC-VIC-3'},
+    },
   },
 };
 

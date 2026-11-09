@@ -20,6 +20,8 @@ class LogisticsWaybillLookupPage extends StatefulWidget {
   final LogisticsRepository repository;
   final WaybillScannerPreviewBuilder? scannerPreviewBuilder;
   final String? initialIdentifier;
+
+  /// Compatibility-only display mode; this page performs no receipt mutation.
   final bool receiptEnabled;
   final bool handoffEnabled;
 
@@ -35,11 +37,9 @@ class _LogisticsWaybillLookupPageState
   String? _errorMessage;
   String? _receiptMessage;
   bool _isLoading = false;
-  bool _isReceiving = false;
   bool _isConfirmingHandoff = false;
   bool _isAcceptingHandoff = false;
   bool _needsReconciliation = false;
-  bool _receiptBlocked = false;
   bool _handoffBlocked = false;
   String _scanMethod = 'manual';
 
@@ -71,7 +71,6 @@ class _LogisticsWaybillLookupPageState
       _result = null;
       _errorMessage = null;
       _receiptMessage = null;
-      _receiptBlocked = false;
       _handoffBlocked = false;
       _scanMethod = 'camera';
     });
@@ -86,7 +85,7 @@ class _LogisticsWaybillLookupPageState
       });
       return;
     }
-    if (_isLoading || _isReceiving || _isAcceptingHandoff) return;
+    if (_isLoading || _isAcceptingHandoff) return;
 
     setState(() {
       _isLoading = true;
@@ -100,15 +99,10 @@ class _LogisticsWaybillLookupPageState
           _result = result;
           if (_needsReconciliation) {
             _needsReconciliation = false;
-            final eligible = widget.handoffEnabled
-                ? result.handoffAcceptanceEligibility.eligible
-                : result.receiptEligibility.eligible;
-            final message = widget.handoffEnabled
-                ? result.handoffAcceptanceEligibility.message
-                : result.receiptEligibility.message;
-            _receiptMessage = eligible
-                ? 'The server confirms this parcel is still eligible. Review its current details before confirming again.'
-                : 'Server state refreshed: $message';
+            final eligibility = result.handoffAcceptanceEligibility;
+            _receiptMessage = eligibility.eligible
+                ? 'The server confirms this handoff is still eligible. Review its current details before confirming again.'
+                : 'Server state refreshed: ${eligibility.message}';
           }
         });
       }
@@ -163,149 +157,6 @@ class _LogisticsWaybillLookupPageState
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);
-    }
-  }
-
-  Future<void> _confirmReceipt() async {
-    final result = _result;
-    if (!widget.receiptEnabled ||
-        result == null ||
-        !result.receiptEligibility.eligible ||
-        _isReceiving ||
-        _needsReconciliation) {
-      return;
-    }
-
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Confirm incoming parcel receipt'),
-        content: Text(
-          'Confirm that ${result.waybill} physically arrived at '
-          '${result.receivingSortingCenter?.name ?? 'your Sorting Center'}?',
-        ),
-        actions: [
-          TextButton(
-            key: const ValueKey('logistics-receipt-cancel'),
-            onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            key: const ValueKey('logistics-receipt-confirm-dialog'),
-            onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: const Text('Confirm receipt'),
-          ),
-        ],
-      ),
-    );
-
-    if (confirmed == true && mounted) await _receive(result);
-  }
-
-  Future<void> _receive(LogisticsWaybillLookup result) async {
-    if (_isReceiving || _needsReconciliation) return;
-    setState(() {
-      _isReceiving = true;
-      _errorMessage = null;
-      _receiptMessage = 'Sending receipt confirmation to Bearly…';
-    });
-
-    try {
-      await widget.repository.receiveWaybill(
-        result.waybill,
-        scanMethod: _scanMethod,
-      );
-
-      // A successful POST is followed by a read-only lookup so the screen
-      // displays the server-confirmed state, not a locally assumed transition.
-      try {
-        final refreshed = await widget.repository.lookupWaybill(result.waybill);
-        if (mounted) {
-          setState(() {
-            _result = refreshed;
-            _needsReconciliation = false;
-            _receiptMessage =
-                refreshed.receiptEligibility.code == 'already_received'
-                ? 'The server confirms this parcel was received at the Sorting Center.'
-                : 'Receipt was accepted. Current state: ${refreshed.receiptEligibility.message}';
-          });
-        }
-      } catch (_) {
-        if (mounted) {
-          setState(() {
-            _needsReconciliation = true;
-            _receiptMessage =
-                'Receipt was accepted, but the state refresh failed. Refresh server state before processing this waybill again.';
-          });
-        }
-      }
-    } on ApiHttpException catch (error) {
-      if (!mounted) return;
-      if (error.statusCode == 409 || error.statusCode >= 500) {
-        setState(() {
-          _needsReconciliation = true;
-          _receiptMessage = error.statusCode == 409
-              ? 'The server reports a parcel state conflict. Refresh server state before trying again.'
-              : 'The result is uncertain. Refresh server state before trying again.';
-        });
-      } else {
-        setState(() {
-          _receiptBlocked = const [401, 403, 404].contains(error.statusCode);
-          _errorMessage = switch (error.statusCode) {
-            401 => 'Your session expired. Sign in again to continue.',
-            403 => 'This Logistics account cannot receive parcels right now.',
-            404 =>
-              'No parcel with that waybill is available to your Logistics account.',
-            422 =>
-              'The receipt request was invalid. Review the waybill and try again.',
-            429 =>
-              'Too many receipt requests. Wait a moment before trying again.',
-            _ => 'The server rejected the receipt request.',
-          };
-        });
-      }
-    } on ApiTimeoutException {
-      if (mounted) {
-        setState(() {
-          _needsReconciliation = true;
-          _receiptMessage =
-              'The result is uncertain. Refresh server state before trying again.';
-        });
-      }
-    } on ApiTransportException {
-      if (mounted) {
-        setState(() {
-          _needsReconciliation = true;
-          _receiptMessage =
-              'The result is uncertain because the connection was lost. Refresh server state before trying again.';
-        });
-      }
-    } on ApiException {
-      if (mounted) {
-        setState(() {
-          _needsReconciliation = true;
-          _receiptMessage =
-              'The result is uncertain. Refresh server state before trying again.';
-        });
-      }
-    } on FormatException {
-      if (mounted) {
-        setState(() {
-          _needsReconciliation = true;
-          _receiptMessage =
-              'Bearly returned an unreadable receipt result. Refresh server state before trying again.';
-        });
-      }
-    } catch (_) {
-      if (mounted) {
-        setState(() {
-          _needsReconciliation = true;
-          _receiptMessage =
-              'The result is uncertain. Refresh server state before trying again.';
-        });
-      }
-    } finally {
-      if (mounted) setState(() => _isReceiving = false);
     }
   }
 
@@ -462,7 +313,6 @@ class _LogisticsWaybillLookupPageState
       _result = null;
       _errorMessage = null;
       _receiptMessage = null;
-      _receiptBlocked = false;
       _handoffBlocked = false;
       _needsReconciliation = false;
       _scanMethod = 'manual';
@@ -474,11 +324,7 @@ class _LogisticsWaybillLookupPageState
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(
       title: Text(
-        widget.handoffEnabled
-            ? 'Incoming city handoff'
-            : widget.receiptEnabled
-            ? 'Incoming parcel receipt'
-            : 'Waybill lookup',
+        widget.handoffEnabled ? 'Incoming city handoff' : 'Waybill lookup',
       ),
     ),
     body: SafeArea(
@@ -488,8 +334,6 @@ class _LogisticsWaybillLookupPageState
           Text(
             widget.handoffEnabled
                 ? 'Incoming City Handoff'
-                : widget.receiptEnabled
-                ? 'Incoming Parcel Receipt'
                 : 'Read-only parcel lookup',
             style: Theme.of(context).textTheme.headlineMedium,
           ),
@@ -498,7 +342,7 @@ class _LogisticsWaybillLookupPageState
             widget.handoffEnabled
                 ? 'Scan or enter a waybill, review the sending and receiving providers, and accept only a handoff addressed to your active Sorting Center.'
                 : widget.receiptEnabled
-                ? 'Scan or enter a waybill, review the server state, and confirm only after the parcel physically arrives at your Sorting Center.'
+                ? 'Waybill-wide receipt is retired. Open Incoming Parcels to select and receive one eligible parcel at a time.'
                 : 'Scan a Code 128 waybill or enter it manually. Looking up a parcel never changes its status or custody.',
             style: Theme.of(
               context,
@@ -511,7 +355,6 @@ class _LogisticsWaybillLookupPageState
             maxLength: 120,
             enabled:
                 !_isLoading &&
-                !_isReceiving &&
                 !_isConfirmingHandoff &&
                 !_isAcceptingHandoff &&
                 !_needsReconciliation,
@@ -529,7 +372,6 @@ class _LogisticsWaybillLookupPageState
                   _errorMessage = null;
                   _result = null;
                   _receiptMessage = null;
-                  _receiptBlocked = false;
                   _handoffBlocked = false;
                   _needsReconciliation = false;
                   _scanMethod = 'manual';
@@ -546,7 +388,6 @@ class _LogisticsWaybillLookupPageState
                   key: const ValueKey('logistics-scan-waybill'),
                   onPressed:
                       _isLoading ||
-                          _isReceiving ||
                           _isConfirmingHandoff ||
                           _isAcceptingHandoff ||
                           _needsReconciliation
@@ -561,10 +402,7 @@ class _LogisticsWaybillLookupPageState
                 child: FilledButton.icon(
                   key: const ValueKey('logistics-lookup-waybill'),
                   onPressed:
-                      _isLoading ||
-                          _isReceiving ||
-                          _isConfirmingHandoff ||
-                          _isAcceptingHandoff
+                      _isLoading || _isConfirmingHandoff || _isAcceptingHandoff
                       ? null
                       : _lookup,
                   icon: _isLoading
@@ -639,14 +477,6 @@ class _LogisticsWaybillLookupPageState
                 : 'Logistics provider',
             result.logisticsProvider,
           ),
-          if (widget.receiptEnabled) ...[
-            _detail('Receiving provider', result.receivingProvider),
-            if (result.receivingSortingCenter != null)
-              _detail(
-                'Receiving Sorting Center',
-                '${result.receivingSortingCenter!.name} (${result.receivingSortingCenter!.code})',
-              ),
-          ],
           if (widget.handoffEnabled) ...[
             _detail('Destination Logistics provider', result.receivingProvider),
             if (result.receivingSortingCenter != null)
@@ -684,8 +514,6 @@ class _LogisticsWaybillLookupPageState
                 : Icons.info_outline_rounded,
             message: widget.handoffEnabled
                 ? result.handoffAcceptanceEligibility.message
-                : widget.receiptEnabled
-                ? result.receiptEligibility.message
                 : result.guidance,
             isError: false,
           ),
@@ -698,29 +526,6 @@ class _LogisticsWaybillLookupPageState
                     : Icons.info_outline_rounded,
                 message: _receiptMessage!,
                 isError: _needsReconciliation,
-              ),
-            ),
-          if (widget.receiptEnabled &&
-              result.receiptEligibility.eligible &&
-              !_needsReconciliation &&
-              !_receiptBlocked)
-            Padding(
-              padding: const EdgeInsets.only(top: 12),
-              child: SizedBox(
-                width: double.infinity,
-                child: FilledButton.icon(
-                  key: const ValueKey('logistics-confirm-receipt'),
-                  onPressed: _isReceiving ? null : _confirmReceipt,
-                  icon: _isReceiving
-                      ? const SizedBox.square(
-                          dimension: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.inventory_2_outlined),
-                  label: Text(
-                    _isReceiving ? 'Confirming receipt' : 'Confirm Receipt',
-                  ),
-                ),
               ),
             ),
           if (widget.handoffEnabled &&
@@ -757,7 +562,6 @@ class _LogisticsWaybillLookupPageState
               key: const ValueKey('logistics-scan-another'),
               onPressed:
                   _isLoading ||
-                      _isReceiving ||
                       _isConfirmingHandoff ||
                       _isAcceptingHandoff ||
                       _needsReconciliation
@@ -767,8 +571,6 @@ class _LogisticsWaybillLookupPageState
               label: Text(
                 widget.handoffEnabled
                     ? 'Process another incoming handoff'
-                    : widget.receiptEnabled
-                    ? 'Process another incoming parcel'
                     : 'Scan another parcel',
               ),
             ),
