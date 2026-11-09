@@ -254,6 +254,45 @@ class RiderDeliveryCompletion {
   }
 }
 
+class RiderDeliveryVerificationProgress {
+  const RiderDeliveryVerificationProgress({
+    required this.assignedParcelNumbers,
+    required this.verifiedParcelNumbers,
+    required this.verifiedCount,
+    required this.totalCount,
+    required this.allVerified,
+    this.parcelNumber = '',
+    this.newlyVerified = false,
+    this.verifiedAt,
+  });
+
+  final List<String> assignedParcelNumbers;
+  final List<String> verifiedParcelNumbers;
+  final int verifiedCount;
+  final int totalCount;
+  final bool allVerified;
+  final String parcelNumber;
+  final bool newlyVerified;
+  final DateTime? verifiedAt;
+
+  bool isVerified(String parcelNumber) =>
+      verifiedParcelNumbers.contains(parcelNumber);
+
+  factory RiderDeliveryVerificationProgress.fromJson(Object? value) {
+    final map = _jsonMap(value, 'delivery verification progress');
+    return RiderDeliveryVerificationProgress(
+      assignedParcelNumbers: _stringList(map['assigned_parcel_nos']),
+      verifiedParcelNumbers: _stringList(map['verified_parcel_nos']),
+      verifiedCount: _integer(map['verified_count']),
+      totalCount: _integer(map['total_count']),
+      allVerified: map['all_verified'] == true,
+      parcelNumber: _string(map['parcel_no']),
+      newlyVerified: map['newly_verified'] == true,
+      verifiedAt: DateTime.tryParse(_string(map['verified_at'])),
+    );
+  }
+}
+
 class RiderCodCollection {
   const RiderCodCollection({
     required this.status,
@@ -311,6 +350,9 @@ Map<String, Object?> _jsonMap(Object? value, String label) {
 
 List<Object?> _jsonList(Object? value) =>
     value is List ? value.cast<Object?>() : const [];
+
+List<String> _stringList(Object? value) =>
+    _jsonList(value).whereType<String>().toList(growable: false);
 
 String _string(Object? value) => value is String ? value : '';
 

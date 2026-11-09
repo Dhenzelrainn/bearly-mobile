@@ -17,10 +17,15 @@ class WaybillScannerCallbacks {
 }
 
 class RiderWaybillScannerPage extends StatefulWidget {
-  const RiderWaybillScannerPage({super.key, this.previewBuilder});
+  const RiderWaybillScannerPage({
+    super.key,
+    this.previewBuilder,
+    this.title = 'Scan waybill barcode',
+  });
 
   /// Lets widget tests exercise scan results and camera failures without a device.
   final WaybillScannerPreviewBuilder? previewBuilder;
+  final String title;
 
   @override
   State<RiderWaybillScannerPage> createState() =>
@@ -146,7 +151,7 @@ class _RiderWaybillScannerPageState extends State<RiderWaybillScannerPage> {
   Widget build(BuildContext context) => Scaffold(
     backgroundColor: Colors.black,
     appBar: AppBar(
-      title: const Text('Scan waybill barcode'),
+      title: Text(widget.title),
       foregroundColor: Colors.white,
       backgroundColor: Colors.black,
       actions: [

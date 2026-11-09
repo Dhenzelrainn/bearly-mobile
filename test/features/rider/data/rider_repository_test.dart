@@ -608,6 +608,66 @@ void main() {
       },
     );
 
+    test(
+      'loads server progress and verifies an exact delivery Parcel barcode',
+      () async {
+        final requests = <http.Request>[];
+        final service = _authService((request) async {
+          requests.add(request);
+          final verified = request.method == 'POST';
+          return http.Response(
+            jsonEncode({
+              'data': {
+                'assigned_parcel_nos': ['P-1', 'P-2'],
+                'verified_parcel_nos': verified ? ['P-1'] : [],
+                'verified_count': verified ? 1 : 0,
+                'total_count': 2,
+                'all_verified': false,
+                if (verified) ...{
+                  'parcel_no': 'P-1',
+                  'newly_verified': true,
+                  'verified_at': '2026-11-09T02:00:00Z',
+                },
+              },
+            }),
+            200,
+          );
+        });
+        final repository = RiderRepository(authService: service);
+
+        final before = await repository.deliveryVerificationProgress('SH 200');
+        final after = await repository.verifyDeliveryParcel(
+          'SH 200',
+          barcode: ' P-1 ',
+          scanMethod: 'camera',
+        );
+
+        expect(before.assignedParcelNumbers, ['P-1', 'P-2']);
+        expect(before.verifiedCount, 0);
+        expect(before.allVerified, isFalse);
+        expect(after.verifiedParcelNumbers, ['P-1']);
+        expect(after.parcelNumber, 'P-1');
+        expect(after.newlyVerified, isTrue);
+        expect(after.verifiedAt, DateTime.parse('2026-11-09T02:00:00Z'));
+        expect(requests.map((request) => request.method), ['GET', 'POST']);
+        expect(requests.map((request) => request.url.path), [
+          '/api/mobile/rider/deliveries/SH%20200/verification-progress',
+          '/api/mobile/rider/deliveries/SH%20200/verify-parcel',
+        ]);
+        expect(jsonDecode(requests[1].body), {
+          'barcode': 'P-1',
+          'scan_method': 'camera',
+        });
+        expect(
+          requests.every(
+            (request) =>
+                request.headers['authorization'] == 'Bearer rider-token',
+          ),
+          isTrue,
+        );
+      },
+    );
+
     test('posts delivery start with the authenticated Rider session', () async {
       final requests = <http.Request>[];
       final service = _authService((request) async {

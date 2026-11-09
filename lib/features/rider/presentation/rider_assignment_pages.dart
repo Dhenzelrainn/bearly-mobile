@@ -122,7 +122,7 @@ class _RiderAssignmentListPageState extends State<RiderAssignmentListPage> {
                     ? Icons.storefront_outlined
                     : Icons.local_shipping_outlined,
               ),
-        ),
+            ),
       title: Text(job.title, maxLines: 1, overflow: TextOverflow.ellipsis),
       subtitle: Padding(
         padding: const EdgeInsets.only(top: 5),
@@ -175,13 +175,16 @@ class _RiderJobDetailPageState extends State<RiderJobDetailPage> {
   final _deliveryCompletionFormKey = GlobalKey<FormState>();
   final _deliveryFailureFormKey = GlobalKey<FormState>();
   final _waybillController = TextEditingController();
+  final _parcelBarcodeController = TextEditingController();
   final _recipientNameController = TextEditingController();
   final _codCollectedAmountController = TextEditingController();
   final _failureReasonController = TextEditingController();
   XFile? _proofPhoto;
   Uint8List? _proofPhotoBytes;
   String _waybillScanMethod = 'manual';
+  RiderDeliveryVerificationProgress? _verificationProgress;
   bool _actionPending = false;
+  bool _verificationLoading = false;
   bool _deliveryRefreshRequired = false;
   bool _retryRefreshRequired = false;
   bool _completionFormVisible = false;
@@ -191,6 +194,7 @@ class _RiderJobDetailPageState extends State<RiderJobDetailPage> {
   String? _proofPhotoError;
   String? _actionError;
   String? _actionNotice;
+  String? _verificationError;
 
   bool get _isPickup => widget.kind == RiderAssignmentKind.pickup;
 
@@ -200,9 +204,22 @@ class _RiderJobDetailPageState extends State<RiderJobDetailPage> {
     _job = _load();
   }
 
-  Future<RiderAssignment> _load() => _isPickup
-      ? widget.repository.pickupDetail(widget.jobId)
-      : widget.repository.deliveryDetail(widget.jobId);
+  Future<RiderAssignment> _load() async {
+    final job = _isPickup
+        ? await widget.repository.pickupDetail(widget.jobId)
+        : await widget.repository.deliveryDetail(widget.jobId);
+    _verificationProgress = null;
+    _verificationError = null;
+    if (!_isPickup && job.statusRaw == 'out_for_delivery') {
+      try {
+        _verificationProgress = await widget.repository
+            .deliveryVerificationProgress(widget.jobId);
+      } catch (error) {
+        _verificationError = _deliveryActionErrorMessage(error);
+      }
+    }
+    return job;
+  }
 
   void _retry() => setState(() {
     _job = _load();
@@ -215,6 +232,7 @@ class _RiderJobDetailPageState extends State<RiderJobDetailPage> {
   @override
   void dispose() {
     _waybillController.dispose();
+    _parcelBarcodeController.dispose();
     _recipientNameController.dispose();
     _codCollectedAmountController.dispose();
     _failureReasonController.dispose();
@@ -277,6 +295,7 @@ class _RiderJobDetailPageState extends State<RiderJobDetailPage> {
               'Refresh delivery status before trying this action again.';
         }
       });
+      if (confirmed) await _refreshParcelVerification(latest);
     } catch (error) {
       RiderAssignment? latest;
       try {
@@ -298,6 +317,9 @@ class _RiderJobDetailPageState extends State<RiderJobDetailPage> {
               : _deliveryActionErrorMessage(error);
         }
       });
+      if (confirmed && latest != null) {
+        await _refreshParcelVerification(latest);
+      }
     } finally {
       if (mounted) setState(() => _actionPending = false);
     }
@@ -438,9 +460,7 @@ class _RiderJobDetailPageState extends State<RiderJobDetailPage> {
   }
 
   Future<void> _retryDelivery(RiderAssignment job) async {
-    if (_actionPending ||
-        job.statusRaw != 'delivery_failed' ||
-        !job.canRetry) {
+    if (_actionPending || job.statusRaw != 'delivery_failed' || !job.canRetry) {
       return;
     }
 
@@ -476,6 +496,7 @@ class _RiderJobDetailPageState extends State<RiderJobDetailPage> {
                   : null
             : 'The retry response and refreshed delivery state do not match. Refresh before continuing.';
       });
+      if (retried) await _refreshParcelVerification(latest);
     } catch (error) {
       RiderAssignment? latest;
       try {
@@ -508,6 +529,9 @@ class _RiderJobDetailPageState extends State<RiderJobDetailPage> {
               'This delivery is no longer eligible for retry. Refresh before continuing.';
         }
       });
+      if (retried && latest != null) {
+        await _refreshParcelVerification(latest);
+      }
     } finally {
       if (mounted) setState(() => _actionPending = false);
     }
@@ -660,6 +684,9 @@ class _RiderJobDetailPageState extends State<RiderJobDetailPage> {
             ? 'The server confirms this delivery is still active. Review the form before retrying.'
             : 'The current delivery state prevents a safe retry.';
       });
+      if (stillOutForDelivery) {
+        await _refreshParcelVerification(latest.assignment);
+      }
     } catch (error) {
       if (!mounted) return;
       setState(() {
@@ -673,6 +700,13 @@ class _RiderJobDetailPageState extends State<RiderJobDetailPage> {
 
   Future<void> _completeDelivery(RiderAssignment job) async {
     if (_actionPending || !_completionFormVisible) return;
+    if (_verificationProgress?.allVerified != true) {
+      setState(() {
+        _actionError =
+            'Verify every assigned Parcel barcode before confirming delivery.';
+      });
+      return;
+    }
     final formValid =
         _deliveryCompletionFormKey.currentState?.validate() ?? false;
     if (!formValid) return;
@@ -803,6 +837,97 @@ class _RiderJobDetailPageState extends State<RiderJobDetailPage> {
       _actionError = null;
       _actionNotice = null;
     });
+  }
+
+  Future<void> _refreshParcelVerification(RiderAssignment job) async {
+    if (job.statusRaw != 'out_for_delivery') {
+      if (mounted) {
+        setState(() {
+          _verificationProgress = null;
+          _verificationError = null;
+        });
+      }
+      return;
+    }
+
+    if (mounted) {
+      setState(() {
+        _verificationLoading = true;
+        _verificationError = null;
+      });
+    }
+    try {
+      final progress = await widget.repository.deliveryVerificationProgress(
+        widget.jobId,
+      );
+      if (mounted) {
+        setState(() {
+          _verificationProgress = progress;
+          _verificationError = null;
+        });
+      }
+    } catch (error) {
+      if (mounted) {
+        setState(() {
+          _verificationProgress = null;
+          _verificationError = _deliveryActionErrorMessage(error);
+        });
+      }
+    } finally {
+      if (mounted) setState(() => _verificationLoading = false);
+    }
+  }
+
+  Future<void> _scanParcelBarcode(RiderAssignment job) async {
+    final value = await Navigator.of(context).push<String>(
+      MaterialPageRoute<String>(
+        builder: (_) => RiderWaybillScannerPage(
+          previewBuilder: widget.scannerPreviewBuilder,
+          title: 'Scan Parcel barcode',
+        ),
+      ),
+    );
+    if (!mounted || value == null) return;
+    _parcelBarcodeController.value = TextEditingValue(
+      text: value,
+      selection: TextSelection.collapsed(offset: value.length),
+    );
+    await _verifyParcelBarcode(job, scanMethod: 'camera');
+  }
+
+  Future<void> _verifyParcelBarcode(
+    RiderAssignment job, {
+    required String scanMethod,
+  }) async {
+    final barcode = _parcelBarcodeController.text.trim();
+    if (barcode.isEmpty || _actionPending) return;
+    setState(() {
+      _actionPending = true;
+      _actionError = null;
+      _actionNotice = null;
+      _verificationError = null;
+    });
+    try {
+      final progress = await widget.repository.verifyDeliveryParcel(
+        widget.jobId,
+        barcode: barcode,
+        scanMethod: scanMethod,
+      );
+      if (!mounted) return;
+      setState(() {
+        _verificationProgress = progress;
+        _parcelBarcodeController.clear();
+        _actionNotice = progress.newlyVerified
+            ? 'Parcel ${progress.parcelNumber} verified by the server.'
+            : 'Parcel ${progress.parcelNumber} was already verified.';
+        _actionError = null;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _actionError = _deliveryActionErrorMessage(error));
+    } finally {
+      if (mounted) setState(() => _actionPending = false);
+    }
   }
 
   Future<void> _performPickupAction({
@@ -1122,6 +1247,10 @@ class _RiderJobDetailPageState extends State<RiderJobDetailPage> {
           _ActionMessage(message: _actionError!, isError: true),
           const SizedBox(height: 10),
         ],
+        if (job.statusRaw == 'out_for_delivery') ...[
+          _deliveryParcelVerification(job),
+          const SizedBox(height: 10),
+        ],
         if (_completionRefreshRequired)
           OutlinedButton.icon(
             onPressed: _actionPending ? null : _refreshCompletionState,
@@ -1253,6 +1382,125 @@ class _RiderJobDetailPageState extends State<RiderJobDetailPage> {
     );
   }
 
+  Widget _deliveryParcelVerification(RiderAssignment job) {
+    final progress = _verificationProgress;
+    final assigned =
+        progress?.assignedParcelNumbers ??
+        job.parcels.map((parcel) => parcel.parcelNumber).toList();
+    final allVerified = progress?.allVerified == true;
+
+    return Card(
+      color: Colors.white,
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              'Parcel scan verification',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: 4),
+            Text(
+              progress == null
+                  ? 'Scan each assigned Parcel before confirming delivery.'
+                  : '${progress.verifiedCount} of ${progress.totalCount} Parcels verified',
+            ),
+            if (assigned.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              ...assigned.map((parcelNumber) {
+                final verified = progress?.isVerified(parcelNumber) == true;
+                return ListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(
+                    verified ? Icons.verified_rounded : Icons.qr_code_2_rounded,
+                    color: verified
+                        ? Theme.of(context).colorScheme.primary
+                        : Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                  title: Text(parcelNumber),
+                  subtitle: Text(
+                    verified ? 'Verified by Bearly' : 'Not scanned',
+                  ),
+                );
+              }),
+            ],
+            if (_verificationError != null) ...[
+              const SizedBox(height: 4),
+              _ActionMessage(message: _verificationError!, isError: true),
+            ],
+            if (progress == null) ...[
+              const SizedBox(height: 8),
+              OutlinedButton.icon(
+                onPressed: _verificationLoading || _actionPending
+                    ? null
+                    : () => _refreshParcelVerification(job),
+                icon: _verificationLoading
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.refresh_rounded),
+                label: const Text('Refresh Parcel scan progress'),
+              ),
+            ] else if (!allVerified) ...[
+              const SizedBox(height: 8),
+              TextField(
+                controller: _parcelBarcodeController,
+                enabled: !_actionPending,
+                maxLength: 120,
+                textInputAction: TextInputAction.done,
+                decoration: const InputDecoration(
+                  labelText: 'Parcel barcode',
+                  hintText: 'Enter the exact code printed on one Parcel',
+                  prefixIcon: Icon(Icons.qr_code_2_rounded),
+                  border: OutlineInputBorder(),
+                ),
+                onChanged: (_) {
+                  if (_actionError != null) {
+                    setState(() => _actionError = null);
+                  }
+                },
+                onSubmitted: (_) =>
+                    _verifyParcelBarcode(job, scanMethod: 'manual'),
+              ),
+              const SizedBox(height: 6),
+              OutlinedButton.icon(
+                onPressed: _actionPending
+                    ? null
+                    : () => _scanParcelBarcode(job),
+                icon: const Icon(Icons.qr_code_scanner_rounded),
+                label: const Text('Scan Parcel barcode'),
+              ),
+              FilledButton.icon(
+                onPressed: _actionPending
+                    ? null
+                    : () => _verifyParcelBarcode(job, scanMethod: 'manual'),
+                icon: _actionPending
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.verified_outlined),
+                label: Text(_actionPending ? 'Verifying…' : 'Verify Parcel'),
+              ),
+            ] else ...[
+              const SizedBox(height: 8),
+              const _ActionMessage(
+                message:
+                    'The server confirms every assigned Parcel is verified. Delivery completion is available.',
+                isError: false,
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _deliveryCompletionForm(RiderAssignment job) => Form(
     key: _deliveryCompletionFormKey,
     child: Card(
@@ -1364,7 +1612,10 @@ class _RiderJobDetailPageState extends State<RiderJobDetailPage> {
             ],
             const SizedBox(height: 12),
             FilledButton.icon(
-              onPressed: _actionPending ? null : () => _completeDelivery(job),
+              onPressed:
+                  _actionPending || _verificationProgress?.allVerified != true
+                  ? null
+                  : () => _completeDelivery(job),
               icon: _actionPending
                   ? const SizedBox(
                       width: 18,

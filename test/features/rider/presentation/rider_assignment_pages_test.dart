@@ -18,7 +18,9 @@ import 'package:http/testing.dart';
 import 'package:image_picker/image_picker.dart';
 
 void main() {
-  testWidgets('delivery history shows purchased item snapshots', (tester) async {
+  testWidgets('delivery history shows purchased item snapshots', (
+    tester,
+  ) async {
     await tester.pumpWidget(
       MaterialApp(
         home: RiderHistoryPage(
@@ -237,7 +239,12 @@ void main() {
     await tester.tap(find.text('Start Delivery'));
     await tester.pumpAndSettle();
 
-    expect(requests.map((request) => request.method), ['GET', 'POST', 'GET']);
+    expect(requests.map((request) => request.method), [
+      'GET',
+      'POST',
+      'GET',
+      'GET',
+    ]);
     expect(requests[1].url.path, '/api/mobile/rider/deliveries/SH-20/start');
     expect(find.text('This delivery is out for delivery.'), findsOneWidget);
     expect(find.text('Start Delivery'), findsNothing);
@@ -254,6 +261,17 @@ void main() {
           home: RiderJobDetailPage(
             repository: _repository((request) async {
               requests.add(request);
+              if (request.url.path.endsWith('/verification-progress')) {
+                return http.Response(
+                  jsonEncode({
+                    'data': _verificationProgressPayload(
+                      assigned: ['P-20'],
+                      verified: ['P-20'],
+                    ),
+                  }),
+                  200,
+                );
+              }
               if (request.method == 'POST') {
                 started = true;
                 return pendingResponse.future;
@@ -395,9 +413,14 @@ void main() {
       await tester.tap(find.text('Submit failure report'));
       await tester.pumpAndSettle();
 
-      expect(requests.map((request) => request.method), ['GET', 'POST', 'GET']);
-      expect(requests[1].url.path, '/api/mobile/rider/deliveries/SH-20/fail');
-      expect(jsonDecode(requests[1].body), {
+      expect(requests.map((request) => request.method), [
+        'GET',
+        'GET',
+        'POST',
+        'GET',
+      ]);
+      expect(requests[2].url.path, '/api/mobile/rider/deliveries/SH-20/fail');
+      expect(jsonDecode(requests[2].body), {
         'failure_reason': 'Recipient unavailable',
       });
       expect(
@@ -475,12 +498,14 @@ void main() {
       await tester.tap(find.text('Submit failure report'));
       await tester.pumpAndSettle();
 
-      expect(requests.map((request) => request.method), ['GET', 'POST', 'GET']);
-      expect(
-        requests[1].url.path,
-        '/api/mobile/rider/deliveries/SH-20/fail',
-      );
-      expect(jsonDecode(requests[1].body), {
+      expect(requests.map((request) => request.method), [
+        'GET',
+        'GET',
+        'POST',
+        'GET',
+      ]);
+      expect(requests[2].url.path, '/api/mobile/rider/deliveries/SH-20/fail');
+      expect(jsonDecode(requests[2].body), {
         'failure_reason': List.filled(100, 'x').join(),
       });
       expect(
@@ -536,13 +561,19 @@ void main() {
       await tester.tap(find.text('Submit failure report'));
       await tester.pumpAndSettle();
 
-      expect(requests.map((request) => request.method), ['GET', 'POST', 'GET']);
+      expect(requests.map((request) => request.method), [
+        'GET',
+        'GET',
+        'POST',
+        'GET',
+      ]);
       expect(find.text('Refresh delivery state'), findsOneWidget);
       expect(find.text('Submit failure report'), findsNothing);
 
       await tester.tap(find.text('Refresh delivery state'));
       await tester.pumpAndSettle();
       expect(requests.map((request) => request.method), [
+        'GET',
         'GET',
         'POST',
         'GET',
@@ -575,6 +606,17 @@ void main() {
           home: RiderJobDetailPage(
             repository: _repository((request) async {
               requests.add(request);
+              if (request.url.path.endsWith('/verification-progress')) {
+                return http.Response(
+                  jsonEncode({
+                    'data': _verificationProgressPayload(
+                      assigned: ['P-20'],
+                      verified: ['P-20'],
+                    ),
+                  }),
+                  200,
+                );
+              }
               if (request.method == 'POST') {
                 return http.Response(
                   jsonEncode({
@@ -635,7 +677,7 @@ void main() {
       await tester.tap(find.text('Complete Delivery'));
       await tester.pumpAndSettle();
       expect(find.text('COD amount due: ₱100.00'), findsOneWidget);
-      expect(requests, hasLength(1));
+      expect(requests, hasLength(2));
 
       await tester.ensureVisible(find.text('Confirm delivery').last);
       await tester.tap(find.text('Confirm delivery').last);
@@ -672,13 +714,18 @@ void main() {
       await tester.tap(find.text('Confirm delivery').last);
       await tester.pumpAndSettle();
 
-      expect(requests.map((request) => request.method), ['GET', 'POST', 'GET']);
+      expect(requests.map((request) => request.method), [
+        'GET',
+        'GET',
+        'POST',
+        'GET',
+      ]);
       expect(
-        requests[1].url.path,
+        requests[2].url.path,
         '/api/mobile/rider/deliveries/SH-20/complete',
       );
       final multipartBody = utf8.decode(
-        requests[1].bodyBytes,
+        requests[2].bodyBytes,
         allowMalformed: true,
       );
       expect(multipartBody, contains('Buyer Rae'));
@@ -712,6 +759,17 @@ void main() {
                 return http.Response(
                   jsonEncode({'message': 'Server error.'}),
                   500,
+                );
+              }
+              if (request.url.path.endsWith('/verification-progress')) {
+                return http.Response(
+                  jsonEncode({
+                    'data': _verificationProgressPayload(
+                      assigned: ['P-20'],
+                      verified: ['P-20'],
+                    ),
+                  }),
+                  200,
                 );
               }
               if (!request.url.path.endsWith('/completion-status')) {
@@ -755,7 +813,12 @@ void main() {
       await tester.tap(find.text('Confirm delivery').last);
       await tester.pumpAndSettle();
 
-      expect(requests.map((request) => request.method), ['GET', 'POST', 'GET']);
+      expect(requests.map((request) => request.method), [
+        'GET',
+        'GET',
+        'POST',
+        'GET',
+      ]);
       expect(requests.last.url.path, endsWith('/completion-status'));
       expect(
         find.text(
@@ -766,6 +829,119 @@ void main() {
       expect(find.text('Complete Delivery'), findsNothing);
     },
   );
+
+  testWidgets('multi-piece completion waits for server-verified Parcel scans', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(800, 1600);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final requests = <http.Request>[];
+    final assigned = ['P-20', 'P-21'];
+    final verified = <String>[];
+    await tester.pumpWidget(
+      MaterialApp(
+        home: RiderJobDetailPage(
+          repository: _repository((request) async {
+            requests.add(request);
+            if (request.url.path.endsWith('/verification-progress')) {
+              return http.Response(
+                jsonEncode({
+                  'data': _verificationProgressPayload(
+                    assigned: assigned,
+                    verified: verified,
+                  ),
+                }),
+                200,
+              );
+            }
+            if (request.url.path.endsWith('/verify-parcel')) {
+              final body = jsonDecode(request.body) as Map<String, Object?>;
+              final barcode = body['barcode'] as String;
+              final newlyVerified = !verified.contains(barcode);
+              if (newlyVerified) verified.add(barcode);
+              return http.Response(
+                jsonEncode({
+                  'data': {
+                    ..._verificationProgressPayload(
+                      assigned: assigned,
+                      verified: verified,
+                    ),
+                    'parcel_no': barcode,
+                    'newly_verified': newlyVerified,
+                    'verified_at': '2026-11-09T02:00:00Z',
+                  },
+                }),
+                200,
+              );
+            }
+            return http.Response(
+              jsonEncode({
+                'data': _deliveryPayload('Out for Delivery', canStart: false),
+              }),
+              200,
+            );
+          }),
+          kind: RiderAssignmentKind.delivery,
+          jobId: 'SH-20',
+          scannerPreviewBuilder: _fakeParcelScannerPreview,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('0 of 2 Parcels verified'), findsOneWidget);
+    await tester.ensureVisible(find.text('Complete Delivery'));
+    await tester.tap(find.text('Complete Delivery'));
+    await tester.pumpAndSettle();
+    var confirmButton = tester.widget<FilledButton>(
+      find
+          .ancestor(
+            of: find.text('Confirm delivery').last,
+            matching: find.byWidgetPredicate(
+              (widget) => widget is FilledButton,
+            ),
+          )
+          .last,
+    );
+    expect(confirmButton.onPressed, isNull);
+
+    await tester.ensureVisible(find.text('Scan Parcel barcode'));
+    await tester.tap(find.text('Scan Parcel barcode'));
+    await tester.pumpAndSettle();
+    expect(find.text('Scan Parcel barcode'), findsOneWidget);
+    await tester.tap(find.text('Send Parcel barcode'));
+    await tester.pumpAndSettle();
+    expect(find.text('1 of 2 Parcels verified'), findsOneWidget);
+    expect(find.text('Parcel P-20 verified by the server.'), findsOneWidget);
+
+    await tester.enterText(find.byType(TextField).first, 'P-21');
+    await tester.tap(find.text('Verify Parcel'));
+    await tester.pumpAndSettle();
+    expect(find.text('2 of 2 Parcels verified'), findsOneWidget);
+    expect(
+      find.text(
+        'The server confirms every assigned Parcel is verified. Delivery completion is available.',
+      ),
+      findsOneWidget,
+    );
+    confirmButton = tester.widget<FilledButton>(
+      find
+          .ancestor(
+            of: find.text('Confirm delivery').last,
+            matching: find.byWidgetPredicate(
+              (widget) => widget is FilledButton,
+            ),
+          )
+          .last,
+    );
+    expect(confirmButton.onPressed, isNotNull);
+    expect(
+      requests.where((request) => request.url.path.endsWith('/verify-parcel')),
+      hasLength(2),
+    );
+  });
 
   testWidgets(
     'delivery request error refreshes before offering another start',
@@ -845,7 +1021,12 @@ void main() {
       await tester.tap(find.text('Start Delivery'));
       await tester.pumpAndSettle();
 
-      expect(requests.map((request) => request.method), ['GET', 'POST', 'GET']);
+      expect(requests.map((request) => request.method), [
+        'GET',
+        'POST',
+        'GET',
+        'GET',
+      ]);
       expect(find.text('This delivery is out for delivery.'), findsOneWidget);
       expect(find.text('Start Delivery'), findsNothing);
     },
@@ -1296,7 +1477,12 @@ void main() {
     await tester.tap(find.text('Retry Delivery'));
     await tester.pumpAndSettle();
 
-    expect(requests.map((request) => request.method), ['GET', 'POST', 'GET']);
+    expect(requests.map((request) => request.method), [
+      'GET',
+      'POST',
+      'GET',
+      'GET',
+    ]);
     expect(requests[1].url.path, '/api/mobile/rider/deliveries/SH-20/retry');
     expect(find.text('This delivery is out for delivery.'), findsOneWidget);
     expect(
@@ -1406,7 +1592,12 @@ void main() {
     await tester.tap(retryAction);
     await tester.pumpAndSettle();
 
-    expect(requests.map((request) => request.method), ['GET', 'POST', 'GET']);
+    expect(requests.map((request) => request.method), [
+      'GET',
+      'POST',
+      'GET',
+      'GET',
+    ]);
     expect(
       find.text(
         'The server confirmed this delivery is out for delivery again.',
@@ -1568,6 +1759,17 @@ Map<String, Object?> _deliveryPayload(
   ],
 };
 
+Map<String, Object?> _verificationProgressPayload({
+  required List<String> assigned,
+  required List<String> verified,
+}) => {
+  'assigned_parcel_nos': assigned,
+  'verified_parcel_nos': verified,
+  'verified_count': verified.length,
+  'total_count': assigned.length,
+  'all_verified': assigned.isNotEmpty && verified.length == assigned.length,
+};
+
 final _proofPng = base64Decode(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADUlEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC',
 );
@@ -1607,6 +1809,16 @@ Widget _fakeScannerPreview(
         child: const Text('Deny camera permission'),
       ),
     ],
+  ),
+);
+
+Widget _fakeParcelScannerPreview(
+  BuildContext context,
+  WaybillScannerCallbacks callbacks,
+) => Center(
+  child: TextButton(
+    onPressed: () => callbacks.onBarcodeDetected('P-20'),
+    child: const Text('Send Parcel barcode'),
   ),
 );
 

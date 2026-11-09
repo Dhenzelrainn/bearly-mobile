@@ -279,6 +279,32 @@ class RiderRepository {
         ),
       );
 
+  Future<RiderDeliveryVerificationProgress> deliveryVerificationProgress(
+    String shipmentNo,
+  ) async => RiderDeliveryVerificationProgress.fromJson(
+    _data(
+      await _authService.getWithSession(
+        '/api/mobile/rider/deliveries/${Uri.encodeComponent(shipmentNo)}/verification-progress',
+      ),
+    ),
+  );
+
+  Future<RiderDeliveryVerificationProgress> verifyDeliveryParcel(
+    String shipmentNo, {
+    required String barcode,
+    required String scanMethod,
+  }) async => RiderDeliveryVerificationProgress.fromJson(
+    _data(
+      await _authService.requestWithSession<Object?>(
+        method: AuthenticatedRequestMethod.post,
+        path:
+            '/api/mobile/rider/deliveries/${Uri.encodeComponent(shipmentNo)}/verify-parcel',
+        body: {'barcode': barcode.trim(), 'scan_method': scanMethod},
+        parse: (response) => response,
+      ),
+    ),
+  );
+
   Future<RiderAssignment> startDelivery(
     String shipmentNo,
   ) async => RiderAssignment.fromJson(
