@@ -53,6 +53,36 @@ class LogisticsRepository {
     );
   }
 
+  Future<LogisticsCityRun> assignCityHandoffManifest({
+    required int courierProfileId,
+    required List<int> shipmentIds,
+  }) => _authService.requestWithSession<LogisticsCityRun>(
+    method: AuthenticatedRequestMethod.post,
+    path: '/api/mobile/logistics/city-handoffs/manifests',
+    body: {'courier_profile_id': courierProfileId, 'shipment_ids': shipmentIds},
+    parse: (response) {
+      if (response is! Map || response['data'] is! Map) {
+        throw const FormatException('Missing manifest assignment response.');
+      }
+      final data = response['data'] as Map;
+      if (data['manifest'] is! Map || data['shipments'] is! List) {
+        throw const FormatException('Missing confirmed manifest data.');
+      }
+      final run = LogisticsCityRun.fromJson(data['run']);
+      final manifest = data['manifest'] as Map;
+      final shipments = data['shipments'] as List;
+      if (run.status != 'assigned' ||
+          run.courier.name.isEmpty ||
+          manifest['shipment_count'] != shipmentIds.length ||
+          shipments.length != shipmentIds.length) {
+        throw const FormatException(
+          'Bearly returned an incomplete manifest assignment.',
+        );
+      }
+      return run;
+    },
+  );
+
   Future<LogisticsPickupRequestPage> pickupRequests({
     String? status,
     int page = 1,

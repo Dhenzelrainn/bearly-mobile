@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 
+import '../../../core/network/api_client.dart';
 import '../data/logistics_repository.dart';
 import '../models/logistics_city_handoffs.dart';
+import 'logistics_waybill_lookup_page.dart';
 
 class LogisticsCityHandoffsWorkspacePage extends StatefulWidget {
   const LogisticsCityHandoffsWorkspacePage({
@@ -23,6 +25,12 @@ class _LogisticsCityHandoffsPageState
   String _view = 'incoming';
   String _status = 'sent';
   int _page = 1;
+  final Set<int> _selectedShipmentIds = {};
+  int? _selectedCourierId;
+  bool _isAssigningManifest = false;
+  String? _manifestError;
+  LogisticsCityHandoffsPage? _prefetchedRuns;
+  String? _prefetchedRunsSearch;
 
   @override
   void initState() {
@@ -47,6 +55,10 @@ class _LogisticsCityHandoffsPageState
   void _reload({int page = 1}) {
     setState(() {
       _page = page;
+      _selectedShipmentIds.clear();
+      _selectedCourierId = null;
+      _manifestError = null;
+      _prefetchedRuns = null;
       _request = _fetch(page: page);
     });
   }
@@ -55,6 +67,10 @@ class _LogisticsCityHandoffsPageState
     final next = _fetch(page: 1);
     setState(() {
       _page = 1;
+      _selectedShipmentIds.clear();
+      _selectedCourierId = null;
+      _manifestError = null;
+      _prefetchedRuns = null;
       _request = next;
     });
     try {
@@ -70,8 +86,174 @@ class _LogisticsCityHandoffsPageState
       _view = view;
       _status = view == 'runs' ? 'active' : 'sent';
       _page = 1;
-      _request = _fetch(page: 1);
+      _selectedShipmentIds.clear();
+      _selectedCourierId = null;
+      _manifestError = null;
+      final cachedRuns =
+          view == 'runs' &&
+              _prefetchedRuns != null &&
+              _prefetchedRunsSearch == _search.text
+          ? _prefetchedRuns
+          : null;
+      _request = cachedRuns == null
+          ? _fetch(page: 1)
+          : Future.value(cachedRuns);
     });
+  }
+
+  List<LogisticsManifestCandidate> _selectedCandidates(
+    LogisticsCityHandoffsPage page,
+  ) => page.manifestShipments
+      .where((shipment) => _selectedShipmentIds.contains(shipment.id))
+      .toList(growable: false);
+
+  int _parcelCount(List<LogisticsManifestCandidate> shipments) =>
+      shipments.fold(0, (total, shipment) => total + shipment.parcelCount);
+
+  LogisticsAvailableCourier? _courierById(
+    List<LogisticsAvailableCourier> couriers,
+    int? id,
+  ) {
+    for (final courier in couriers) {
+      if (courier.id == id) return courier;
+    }
+    return null;
+  }
+
+  Future<void> _openHandoffAcceptance(LogisticsCityHandoff handoff) async {
+    if (handoff.waybill.isEmpty) return;
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => LogisticsWaybillLookupPage(
+          repository: widget.repository,
+          initialIdentifier: handoff.waybill,
+          handoffEnabled: true,
+        ),
+      ),
+    );
+    if (mounted) _reload(page: 1);
+  }
+
+  Future<void> _confirmManifestAssignment(
+    LogisticsCityHandoffsPage page,
+  ) async {
+    final selected = _selectedCandidates(page);
+    final courier = _courierById(page.availableCouriers, _selectedCourierId);
+    final parcelCount = _parcelCount(selected);
+    if (_isAssigningManifest ||
+        selected.isEmpty ||
+        courier == null ||
+        parcelCount > courier.parcelCapacity) {
+      return;
+    }
+
+    final destination = selected.first.destinationProviderName;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Assign Courier manifest'),
+        content: Text(
+          'Assign ${selected.length} shipment(s) with $parcelCount parcel(s) '
+          'for $destination to ${courier.name}? Cargo stays at the origin until the Courier records departure.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            key: const ValueKey('logistics-city-manifest-confirm'),
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Assign manifest'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted || confirmed != true) return;
+
+    setState(() {
+      _isAssigningManifest = true;
+      _manifestError = null;
+    });
+    try {
+      final run = await widget.repository.assignCityHandoffManifest(
+        courierProfileId: courier.id,
+        shipmentIds: selected.map((shipment) => shipment.id).toList(),
+      );
+      if (!mounted) return;
+      setState(() {
+        _selectedShipmentIds.clear();
+        _selectedCourierId = null;
+        _isAssigningManifest = false;
+        _page = 1;
+        _request = widget.repository.cityHandoffs(
+          view: 'outgoing',
+          status: _status,
+          search: _search.text,
+          page: 1,
+        );
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Manifest ${run.runNo} assigned.')),
+      );
+      try {
+        final refreshedRuns = await widget.repository.cityHandoffs(
+          view: 'runs',
+          status: 'active',
+          search: _search.text,
+          page: 1,
+        );
+        if (mounted && _search.text == (refreshedRuns.search ?? '')) {
+          setState(() {
+            _prefetchedRuns = refreshedRuns;
+            _prefetchedRunsSearch = _search.text;
+          });
+        }
+      } catch (_) {
+        // Switching to Courier Runs performs a fresh request if prefetch fails.
+      }
+    } on ApiHttpException catch (error) {
+      if (!mounted) return;
+      setState(() => _manifestError = _assignmentError(error));
+    } on ApiException catch (error) {
+      if (!mounted) return;
+      setState(() => _manifestError = error.message);
+    } catch (_) {
+      if (mounted) {
+        setState(
+          () => _manifestError =
+              'The manifest could not be assigned. Refresh and try again.',
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isAssigningManifest = false);
+    }
+  }
+
+  String _assignmentError(ApiHttpException error) {
+    final body = error.responseData;
+    if (body is Map && body['message'] is String) {
+      final message = (body['message'] as String).trim();
+      if (message.isNotEmpty) return message;
+    }
+    String? details;
+    for (final messages in error.validationErrors.values) {
+      if (messages.isNotEmpty) {
+        details = messages.first;
+        break;
+      }
+    }
+    if (details != null && details.isNotEmpty) return details;
+    return switch (error.statusCode) {
+      401 => 'Your session expired. Sign in again to assign a manifest.',
+      403 => 'This Logistics account is not eligible to assign manifests.',
+      404 => 'A selected shipment or Courier is no longer available.',
+      409 =>
+        'Shipment or Courier eligibility changed. Refresh and review the manifest.',
+      422 => 'Review the selected shipments and Courier, then try again.',
+      429 => 'Too many assignment requests. Wait and try again.',
+      _ => 'The server could not assign this manifest. Try again shortly.',
+    };
   }
 
   @override
@@ -123,12 +305,18 @@ class _LogisticsCityHandoffsPageState
 
           return Column(
             children: [
-              _viewSelector(scrollable: scrollTabs),
+              AbsorbPointer(
+                absorbing: _isAssigningManifest,
+                child: _viewSelector(scrollable: scrollTabs),
+              ),
               const SizedBox(height: 8),
               if (stackFilters)
                 Column(
                   children: [
-                    _statusFilter(),
+                    AbsorbPointer(
+                      absorbing: _isAssigningManifest,
+                      child: _statusFilter(),
+                    ),
                     const SizedBox(height: 8),
                     _searchFilter(),
                   ],
@@ -136,7 +324,13 @@ class _LogisticsCityHandoffsPageState
               else
                 Row(
                   children: [
-                    Expanded(flex: 2, child: _statusFilter()),
+                    Expanded(
+                      flex: 2,
+                      child: AbsorbPointer(
+                        absorbing: _isAssigningManifest,
+                        child: _statusFilter(),
+                      ),
+                    ),
                     const SizedBox(width: 8),
                     Expanded(flex: 3, child: _searchFilter()),
                   ],
@@ -215,6 +409,7 @@ class _LogisticsCityHandoffsPageState
   Widget _searchFilter() => TextField(
     key: const ValueKey('logistics-city-handoffs-search'),
     controller: _search,
+    enabled: !_isAssigningManifest,
     textInputAction: TextInputAction.search,
     onSubmitted: (_) => _reload(),
     decoration: InputDecoration(
@@ -249,6 +444,10 @@ class _LogisticsCityHandoffsPageState
       const SizedBox(height: 12),
     ];
 
+    if (page.view == 'outgoing') {
+      widgets.add(_manifestAssignmentCard(page));
+    }
+
     if (page.view == 'runs') {
       if (page.runs.isEmpty) {
         widgets.add(_emptyState('No Courier runs match these filters.'));
@@ -267,9 +466,6 @@ class _LogisticsCityHandoffsPageState
       widgets.addAll(page.items.map(_handoffCard));
     }
 
-    if (page.view == 'outgoing' && page.availableCouriers.isNotEmpty) {
-      widgets.add(_availableCouriers(page.availableCouriers));
-    }
     if (page.pagination.total > 0) {
       widgets.add(_pagination(page.pagination));
     }
@@ -305,6 +501,21 @@ class _LogisticsCityHandoffsPageState
           ),
         if (handoff.acceptanceEligibility != null)
           _eligibility(handoff.acceptanceEligibility!),
+        if (handoff.direction == 'incoming' &&
+            handoff.status == 'sent' &&
+            handoff.acceptanceEligibility?.eligible == true)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+            child: SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                key: ValueKey('logistics-city-handoff-accept-${handoff.id}'),
+                onPressed: () => _openHandoffAcceptance(handoff),
+                icon: const Icon(Icons.qr_code_scanner_rounded),
+                label: const Text('Review and accept handoff'),
+              ),
+            ),
+          ),
         ExpansionTile(
           key: ValueKey('logistics-city-handoff-details-${handoff.id}'),
           title: const Text('Waybill, parcels and history'),
@@ -386,37 +597,217 @@ class _LogisticsCityHandoffsPageState
     ),
   );
 
-  Widget _availableCouriers(List<LogisticsAvailableCourier> couriers) => Card(
-    key: const ValueKey('logistics-city-handoffs-available-couriers'),
-    child: Padding(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Currently available verified Couriers',
-            style: Theme.of(context).textTheme.titleSmall,
-          ),
-          const SizedBox(height: 4),
-          const Text(
-            'The Web manifest workflow rechecks each Courier and the selected parcel capacity before assignment.',
-          ),
-          const SizedBox(height: 8),
-          ...couriers.map(
-            (courier) => ListTile(
-              dense: true,
-              contentPadding: EdgeInsets.zero,
-              leading: const Icon(Icons.person_outline),
-              title: Text(courier.name),
-              subtitle: Text(
-                '${courier.vehicleType} · ${courier.parcelCapacity} parcel capacity',
+  Widget _manifestAssignmentCard(LogisticsCityHandoffsPage page) {
+    final selected = _selectedCandidates(page);
+    final destinationId = selected.isEmpty
+        ? null
+        : selected.first.destinationProviderId;
+    final destinationName = selected.isEmpty
+        ? null
+        : selected.first.destinationProviderName;
+    final parcelCount = _parcelCount(selected);
+    final courier = _courierById(page.availableCouriers, _selectedCourierId);
+    final canAssign =
+        selected.isNotEmpty &&
+        courier != null &&
+        courier.parcelCapacity >= parcelCount &&
+        !_isAssigningManifest;
+
+    return Card(
+      key: const ValueKey('logistics-city-manifest-assignment'),
+      margin: const EdgeInsets.only(bottom: 16),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Ready for Courier manifest',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: 4),
+            const Text(
+              'Select fully received shipments for one destination. The server rechecks eligibility and Courier capacity before assignment.',
+            ),
+            const SizedBox(height: 10),
+            Text(
+              'Currently available verified Couriers',
+              style: Theme.of(context).textTheme.titleSmall,
+            ),
+            const SizedBox(height: 4),
+            const Text(
+              'Courier availability is advisory; the server rechecks each Courier’s eligibility and capacity when assigning.',
+            ),
+            if (page.availableCouriers.isNotEmpty) ...[
+              const SizedBox(height: 6),
+              Wrap(
+                spacing: 8,
+                runSpacing: 4,
+                children: page.availableCouriers
+                    .map(
+                      (option) => Chip(
+                        avatar: const Icon(Icons.local_shipping_outlined),
+                        label: Text(option.name),
+                      ),
+                    )
+                    .toList(growable: false),
+              ),
+            ],
+            if (destinationName != null) ...[
+              const SizedBox(height: 8),
+              Text('Selected destination: $destinationName'),
+            ],
+            if (page.manifestShipments.isEmpty)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 12),
+                child: Text(
+                  'No fully received cross-city shipments are currently ready for a manifest.',
+                ),
+              )
+            else ...[
+              const SizedBox(height: 8),
+              ...page.manifestShipments.map((shipment) {
+                final isSelected = _selectedShipmentIds.contains(shipment.id);
+                final otherDestinationSelected =
+                    destinationId != null &&
+                    shipment.destinationProviderId != destinationId &&
+                    !isSelected;
+                return CheckboxListTile(
+                  key: ValueKey(
+                    'logistics-city-manifest-shipment-${shipment.id}',
+                  ),
+                  value: isSelected,
+                  controlAffinity: ListTileControlAffinity.leading,
+                  contentPadding: EdgeInsets.zero,
+                  onChanged: _isAssigningManifest || otherDestinationSelected
+                      ? null
+                      : (checked) => setState(() {
+                          if (checked == true) {
+                            _selectedShipmentIds.add(shipment.id);
+                          } else {
+                            _selectedShipmentIds.remove(shipment.id);
+                          }
+                          final currentCourier = _courierById(
+                            page.availableCouriers,
+                            _selectedCourierId,
+                          );
+                          if (currentCourier != null &&
+                              currentCourier.parcelCapacity <
+                                  _parcelCount(_selectedCandidates(page))) {
+                            _selectedCourierId = null;
+                          }
+                          _manifestError = null;
+                        }),
+                  title: Text(shipment.waybill),
+                  subtitle: Text(
+                    '${shipment.reference} · ${shipment.destinationProviderName}'
+                    '${shipment.destinationLabel.isEmpty ? '' : ' · ${shipment.destinationLabel}'}\n'
+                    '${shipment.parcelCount} parcel(s): ${shipment.parcels.map((parcel) => parcel.reference).join(', ')}',
+                  ),
+                );
+              }),
+              if (page.manifestPagination.total >
+                  page.manifestPagination.perPage)
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Flexible(
+                      child: Text(
+                        '${page.manifestPagination.total} ready · page ${page.manifestPagination.currentPage} of ${page.manifestPagination.lastPage}',
+                      ),
+                    ),
+                    IconButton(
+                      key: const ValueKey('logistics-city-manifest-next'),
+                      tooltip: 'More ready shipments',
+                      onPressed: page.manifestPagination.hasNext
+                          ? () => _reload(
+                              page: page.manifestPagination.currentPage + 1,
+                            )
+                          : null,
+                      icon: const Icon(Icons.chevron_right),
+                    ),
+                  ],
+                ),
+              const SizedBox(height: 8),
+              Text(
+                'Selected: ${selected.length} shipment(s), $parcelCount parcel(s)',
+              ),
+              const SizedBox(height: 10),
+              const SizedBox(height: 8),
+              DropdownButtonFormField<int>(
+                key: const ValueKey('logistics-city-manifest-courier'),
+                initialValue: _selectedCourierId,
+                isExpanded: true,
+                decoration: const InputDecoration(
+                  labelText: 'Select Courier',
+                  border: OutlineInputBorder(),
+                ),
+                items: page.availableCouriers
+                    .map(
+                      (option) => DropdownMenuItem<int>(
+                        value: option.id,
+                        enabled:
+                            option.id > 0 &&
+                            option.parcelCapacity >= parcelCount,
+                        child: Text(
+                          '${option.name} · ${option.vehicleType} · ${option.parcelCapacity} parcel capacity',
+                        ),
+                      ),
+                    )
+                    .toList(growable: false),
+                onChanged:
+                    _isAssigningManifest || page.availableCouriers.isEmpty
+                    ? null
+                    : (value) => setState(() {
+                        _selectedCourierId = value;
+                        _manifestError = null;
+                      }),
+              ),
+              if (page.availableCouriers.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.only(top: 8),
+                  child: Text(
+                    'No currently eligible Courier is available. Eligibility is checked again when assigning.',
+                  ),
+                ),
+            ],
+            if (_manifestError != null) ...[
+              const SizedBox(height: 10),
+              Container(
+                key: const ValueKey('logistics-city-manifest-error'),
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.errorContainer,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(_manifestError!),
+              ),
+            ],
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                key: const ValueKey('logistics-city-manifest-submit'),
+                onPressed: canAssign
+                    ? () => _confirmManifestAssignment(page)
+                    : null,
+                icon: _isAssigningManifest
+                    ? const SizedBox.square(
+                        dimension: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.assignment_ind_outlined),
+                label: Text(
+                  _isAssigningManifest ? 'Assigning…' : 'Assign manifest',
+                ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
-    ),
-  );
+    );
+  }
 
   Widget _eligibility(LogisticsCityAcceptanceEligibility eligibility) =>
       Container(

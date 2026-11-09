@@ -97,6 +97,32 @@ void main() {
       );
     },
   );
+
+  test('assigns a manifest and parses the confirmed Courier Run', () async {
+    late http.Request request;
+    final repository = LogisticsRepository(
+      authService: _auth((value) async {
+        request = value;
+        return http.Response(jsonEncode(_assignmentResponse), 201);
+      }),
+    );
+
+    final run = await repository.assignCityHandoffManifest(
+      courierProfileId: 73,
+      shipmentIds: const [81, 82],
+    );
+
+    expect(request.method, 'POST');
+    expect(request.url.path, '/api/mobile/logistics/city-handoffs/manifests');
+    expect(jsonDecode(request.body), {
+      'courier_profile_id': 73,
+      'shipment_ids': [81, 82],
+    });
+    expect(run.status, 'assigned');
+    expect(run.runNo, 'LHR-NEW-001');
+    expect(run.shipments, hasLength(2));
+    expect(run.shipments.first.parcels.single.reference, 'PCL-NEW-001');
+  });
 }
 
 AuthService _auth(Future<http.Response> Function(http.Request) handler) =>
@@ -267,5 +293,76 @@ Map<String, Object?> get _runResponse => {
       'per_page': 20,
       'total': 1,
     },
+  },
+};
+
+Map<String, Object?> get _assignmentResponse => {
+  'data': {
+    'run': {
+      'id': 9,
+      'run_no': 'LHR-NEW-001',
+      'status': 'assigned',
+      'status_label': 'Assigned',
+      'origin': {
+        'provider': {'id': 1, 'name': 'Origin Logistics'},
+        'sorting_center': {'id': 1, 'name': 'Origin SC', 'code': 'SC-O'},
+      },
+      'destination': {
+        'provider': {'id': 2, 'name': 'Destination Logistics'},
+      },
+      'courier': {
+        'id': 73,
+        'name': 'Assigned Courier',
+        'work_type': 'courier',
+        'vehicle_type': 'Van',
+        'parcel_capacity': 10,
+      },
+      'manifest': {
+        'shipment_count': 2,
+        'parcel_count': 2,
+        'shipments': [
+          {
+            'reference': 'SHP-NEW-001',
+            'waybill': 'BRLY-NEW-001',
+            'status': 'at_sorting_center',
+            'purpose': 'outbound',
+            'handoff_status': null,
+            'parcel_count': 1,
+            'parcels': [
+              {'reference': 'PCL-NEW-001', 'status': 'received'},
+            ],
+          },
+          {
+            'reference': 'SHP-NEW-002',
+            'waybill': 'BRLY-NEW-002',
+            'status': 'at_sorting_center',
+            'purpose': 'outbound',
+            'handoff_status': null,
+            'parcel_count': 1,
+            'parcels': [
+              {'reference': 'PCL-NEW-002', 'status': 'received'},
+            ],
+          },
+        ],
+      },
+      'assigned_at': '2026-11-09T00:00:00Z',
+      'loaded_at': null,
+      'departed_at': null,
+      'arrived_at': null,
+      'completed_at': null,
+      'history': [],
+    },
+    'manifest': {
+      'shipment_count': 2,
+      'parcel_count': 2,
+      'shipments': [
+        {'reference': 'SHP-NEW-001'},
+        {'reference': 'SHP-NEW-002'},
+      ],
+    },
+    'shipments': [
+      {'reference': 'SHP-NEW-001'},
+      {'reference': 'SHP-NEW-002'},
+    ],
   },
 };

@@ -53,6 +53,162 @@ void main() {
   });
 
   testWidgets(
+    'eligible incoming handoff opens the confirmed acceptance screen',
+    (tester) async {
+      final requests = <http.Request>[];
+      final auth = _auth((request) async {
+        requests.add(request);
+        return http.Response(jsonEncode(_handoffPage(canAccept: true)), 200);
+      });
+      await tester.pumpWidget(_app(auth));
+      await tester.pumpAndSettle();
+
+      final acceptEntry = find.byKey(
+        const ValueKey('logistics-city-handoff-accept-1'),
+      );
+      await tester.ensureVisible(acceptEntry);
+      await tester.tap(acceptEntry);
+      await tester.pumpAndSettle();
+
+      expect(find.text('Incoming City Handoff'), findsOneWidget);
+      expect(
+        tester
+            .widget<TextField>(
+              find.byKey(const ValueKey('logistics-waybill-input')),
+            )
+            .controller
+            ?.text,
+        'BRLY-CITY-001',
+      );
+      expect(requests, hasLength(1));
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'outgoing selection assigns only same-destination shipments and refreshes runs',
+    (tester) async {
+      tester.view.physicalSize = const Size(393, 852);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final requests = <http.Request>[];
+      var assigned = false;
+      final auth = _auth((request) async {
+        requests.add(request);
+        if (request.method == 'POST') {
+          assigned = true;
+          return http.Response(jsonEncode(_assignmentResponse), 201);
+        }
+        final view = request.url.queryParameters['view'] ?? 'incoming';
+        if (view == 'runs') return http.Response(jsonEncode(_runPage()), 200);
+        if (view == 'outgoing') {
+          return http.Response(
+            jsonEncode(
+              _handoffPage(
+                view: 'outgoing',
+                items: const [],
+                couriers: const [
+                  {
+                    'id': 73,
+                    'name': 'Courier One',
+                    'vehicle_type': 'Van',
+                    'parcel_capacity': 10,
+                  },
+                ],
+                manifestShipments: assigned
+                    ? const []
+                    : [
+                        _candidate(
+                          21,
+                          2,
+                          'Destination Logistics',
+                          'BRLY-OUT-21',
+                        ),
+                        _candidate(
+                          22,
+                          2,
+                          'Destination Logistics',
+                          'BRLY-OUT-22',
+                        ),
+                        _candidate(23, 3, 'Other Logistics', 'BRLY-OUT-23'),
+                      ],
+              ),
+            ),
+            200,
+          );
+        }
+        return http.Response(jsonEncode(_handoffPage(items: const [])), 200);
+      });
+      await tester.pumpWidget(_app(auth));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Outgoing'));
+      await tester.pumpAndSettle();
+
+      for (final id in [21, 22]) {
+        final checkbox = find.byKey(
+          ValueKey('logistics-city-manifest-shipment-$id'),
+        );
+        await tester.ensureVisible(checkbox);
+        await tester.tap(checkbox);
+        await tester.pumpAndSettle();
+      }
+      final incompatible = tester.widget<CheckboxListTile>(
+        find.byKey(const ValueKey('logistics-city-manifest-shipment-23')),
+      );
+      expect(incompatible.onChanged, isNull);
+
+      final courierField = find.byKey(
+        const ValueKey('logistics-city-manifest-courier'),
+      );
+      await tester.ensureVisible(courierField);
+      await tester.tap(courierField);
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.text('Courier One · Van · 10 parcel capacity').last,
+      );
+      await tester.pumpAndSettle();
+
+      final submit = find.byKey(
+        const ValueKey('logistics-city-manifest-submit'),
+      );
+      await tester.ensureVisible(submit);
+      await tester.tap(submit);
+      await tester.pumpAndSettle();
+      expect(find.text('Assign Courier manifest'), findsOneWidget);
+      await tester.tap(
+        find.byKey(const ValueKey('logistics-city-manifest-confirm')),
+      );
+      await tester.pumpAndSettle();
+
+      final assignment = requests.singleWhere(
+        (request) => request.method == 'POST',
+      );
+      expect(
+        assignment.url.path,
+        '/api/mobile/logistics/city-handoffs/manifests',
+      );
+      expect(jsonDecode(assignment.body), {
+        'courier_profile_id': 73,
+        'shipment_ids': [21, 22],
+      });
+      expect(find.text('Manifest LHR-NEW-001 assigned.'), findsOneWidget);
+      expect(
+        requests.any(
+          (request) =>
+              request.method == 'GET' &&
+              request.url.queryParameters['view'] == 'runs',
+        ),
+        isTrue,
+      );
+      await tester.tap(find.text('Courier Runs'));
+      await tester.pumpAndSettle();
+      expect(find.text('LHR-001'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
     'narrow screen and large text keep filters usable without overflow',
     (tester) async {
       tester.view.physicalSize = const Size(320, 740);
@@ -339,6 +495,8 @@ Map<String, Object?> _handoffPage({
   String view = 'incoming',
   List<Map<String, Object?>>? items,
   List<Map<String, Object?>> couriers = const [],
+  List<Map<String, Object?>> manifestShipments = const [],
+  bool canAccept = false,
   int page = 1,
 }) => {
   'data': {
@@ -356,7 +514,7 @@ Map<String, Object?> _handoffPage({
             'id': 1,
             'direction': view,
             'status': 'sent',
-            'stage': 'departed',
+            'stage': canAccept ? 'awaiting_destination_acceptance' : 'departed',
             'waybill': 'BRLY-CITY-001',
             'shipment': {
               'reference': 'SHP-CITY-001',
@@ -382,11 +540,11 @@ Map<String, Object?> _handoffPage({
             'run': {
               'id': 1,
               'run_no': 'LHR-001',
-              'status': 'departed',
+              'status': canAccept ? 'arrived' : 'departed',
               'assigned_at': '2026-11-09T00:00:00Z',
               'loaded_at': null,
               'departed_at': '2026-11-09T00:10:00Z',
-              'arrived_at': null,
+              'arrived_at': canAccept ? '2026-11-09T00:20:00Z' : null,
               'courier': {
                 'id': 5,
                 'name': 'Courier One',
@@ -396,10 +554,11 @@ Map<String, Object?> _handoffPage({
               },
             },
             'acceptance_eligibility': {
-              'eligible': false,
-              'code': 'courier_not_arrived',
-              'message':
-                  'Wait until the assigned Courier run is marked Arrived.',
+              'eligible': canAccept,
+              'code': canAccept ? 'eligible' : 'courier_not_arrived',
+              'message': canAccept
+                  ? 'This handoff is ready for destination acceptance.'
+                  : 'Wait until the assigned Courier run is marked Arrived.',
             },
             'sent_at': '2026-11-09T00:10:00Z',
             'accepted_at': null,
@@ -415,6 +574,13 @@ Map<String, Object?> _handoffPage({
           },
         ],
     'available_couriers': couriers,
+    'manifest_shipments': manifestShipments,
+    'manifest_pagination': {
+      'current_page': page,
+      'last_page': 1,
+      'per_page': 20,
+      'total': manifestShipments.length,
+    },
     'filters': {'status': view == 'runs' ? 'active' : 'sent', 'search': null},
     'pagination': {
       'current_page': page,
@@ -491,5 +657,102 @@ Map<String, Object?> _runPage() => {
       'per_page': 20,
       'total': 1,
     },
+  },
+};
+
+Map<String, Object?> _candidate(
+  int id,
+  int destinationId,
+  String destinationName,
+  String waybill,
+) => {
+  'id': id,
+  'reference': 'SHP-$id',
+  'waybill': waybill,
+  'purpose': 'outbound',
+  'destination': {
+    'provider_id': destinationId,
+    'provider_name': destinationName,
+    'city_municipality': 'Pila',
+    'province': 'Laguna',
+  },
+  'parcel_count': 1,
+  'parcels': [
+    {
+      'reference': 'PCL-$id',
+      'status': 'received',
+      'current_sorting_center': null,
+    },
+  ],
+};
+
+Map<String, Object?> get _assignmentResponse => {
+  'data': {
+    'run': {
+      'id': 9,
+      'run_no': 'LHR-NEW-001',
+      'status': 'assigned',
+      'status_label': 'Assigned',
+      'origin': {
+        'provider': {'id': 1, 'name': 'Origin Logistics'},
+        'sorting_center': {'id': 1, 'name': 'Origin SC', 'code': 'SC-O'},
+      },
+      'destination': {
+        'provider': {'id': 2, 'name': 'Destination Logistics'},
+      },
+      'courier': {
+        'id': 73,
+        'name': 'Courier One',
+        'work_type': 'courier',
+        'vehicle_type': 'Van',
+        'parcel_capacity': 10,
+      },
+      'manifest': {
+        'shipment_count': 2,
+        'parcel_count': 2,
+        'shipments': [
+          {
+            'reference': 'SHP-21',
+            'waybill': 'BRLY-OUT-21',
+            'status': 'at_sorting_center',
+            'purpose': 'outbound',
+            'handoff_status': null,
+            'parcel_count': 1,
+            'parcels': [
+              {'reference': 'PCL-21', 'status': 'received'},
+            ],
+          },
+          {
+            'reference': 'SHP-22',
+            'waybill': 'BRLY-OUT-22',
+            'status': 'at_sorting_center',
+            'purpose': 'outbound',
+            'handoff_status': null,
+            'parcel_count': 1,
+            'parcels': [
+              {'reference': 'PCL-22', 'status': 'received'},
+            ],
+          },
+        ],
+      },
+      'assigned_at': '2026-11-09T00:00:00Z',
+      'loaded_at': null,
+      'departed_at': null,
+      'arrived_at': null,
+      'completed_at': null,
+      'history': [],
+    },
+    'manifest': {
+      'shipment_count': 2,
+      'parcel_count': 2,
+      'shipments': [
+        {'reference': 'SHP-21'},
+        {'reference': 'SHP-22'},
+      ],
+    },
+    'shipments': [
+      {'reference': 'SHP-21'},
+      {'reference': 'SHP-22'},
+    ],
   },
 };

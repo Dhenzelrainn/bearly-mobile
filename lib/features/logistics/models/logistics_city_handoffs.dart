@@ -6,6 +6,8 @@ class LogisticsCityHandoffsPage {
     required this.items,
     required this.runs,
     required this.availableCouriers,
+    required this.manifestShipments,
+    required this.manifestPagination,
     required this.status,
     required this.search,
     required this.pagination,
@@ -17,6 +19,8 @@ class LogisticsCityHandoffsPage {
   final List<LogisticsCityHandoff> items;
   final List<LogisticsCityRun> runs;
   final List<LogisticsAvailableCourier> availableCouriers;
+  final List<LogisticsManifestCandidate> manifestShipments;
+  final LogisticsCityHandoffsPagination manifestPagination;
   final String status;
   final String? search;
   final LogisticsCityHandoffsPagination pagination;
@@ -35,6 +39,9 @@ class LogisticsCityHandoffsPage {
       data['available_couriers'],
       'available_couriers',
     );
+    final manifestValues = data['manifest_shipments'] == null
+        ? const []
+        : _cityList(data['manifest_shipments'], 'manifest_shipments');
     final filters = _cityMap(data['filters'], 'filters');
     final pagination = _cityMap(data['pagination'], 'pagination');
 
@@ -51,6 +58,14 @@ class LogisticsCityHandoffsPage {
       availableCouriers: courierValues
           .map(LogisticsAvailableCourier.fromJson)
           .toList(growable: false),
+      manifestShipments: manifestValues
+          .map(LogisticsManifestCandidate.fromJson)
+          .toList(growable: false),
+      manifestPagination: LogisticsCityHandoffsPagination.fromJson(
+        data['manifest_pagination'] is Map
+            ? data['manifest_pagination'] as Map
+            : pagination,
+      ),
       status: _cityString(filters['status']),
       search: _cityNullableString(filters['search']),
       pagination: LogisticsCityHandoffsPagination.fromJson(pagination),
@@ -424,11 +439,13 @@ class LogisticsCityManifestShipment {
 
 class LogisticsAvailableCourier {
   const LogisticsAvailableCourier({
+    required this.id,
     required this.name,
     required this.vehicleType,
     required this.parcelCapacity,
   });
 
+  final int id;
   final String name;
   final String vehicleType;
   final int parcelCapacity;
@@ -436,9 +453,61 @@ class LogisticsAvailableCourier {
   factory LogisticsAvailableCourier.fromJson(Object? value) {
     final map = _cityMap(value, 'available Courier');
     return LogisticsAvailableCourier(
+      id: _cityInt(map['id']),
       name: _cityString(map['name']),
       vehicleType: _cityString(map['vehicle_type']),
       parcelCapacity: _cityInt(map['parcel_capacity']),
+    );
+  }
+}
+
+class LogisticsManifestCandidate {
+  const LogisticsManifestCandidate({
+    required this.id,
+    required this.reference,
+    required this.waybill,
+    required this.purpose,
+    required this.destinationProviderId,
+    required this.destinationProviderName,
+    required this.destinationCity,
+    required this.destinationProvince,
+    required this.parcelCount,
+    required this.parcels,
+  });
+
+  final int id;
+  final String reference;
+  final String waybill;
+  final String purpose;
+  final int destinationProviderId;
+  final String destinationProviderName;
+  final String destinationCity;
+  final String destinationProvince;
+  final int parcelCount;
+  final List<LogisticsCityParcel> parcels;
+
+  String get destinationLabel => [
+    destinationCity,
+    destinationProvince,
+  ].where((part) => part.isNotEmpty).join(', ');
+
+  factory LogisticsManifestCandidate.fromJson(Object? value) {
+    final map = _cityMap(value, 'manifest shipment');
+    final destination = _cityMap(map['destination'], 'manifest destination');
+    return LogisticsManifestCandidate(
+      id: _cityInt(map['id']),
+      reference: _cityString(map['reference']),
+      waybill: _cityString(map['waybill']),
+      purpose: _cityString(map['purpose']),
+      destinationProviderId: _cityInt(destination['provider_id']),
+      destinationProviderName: _cityString(destination['provider_name']),
+      destinationCity: _cityString(destination['city_municipality']),
+      destinationProvince: _cityString(destination['province']),
+      parcelCount: _cityInt(map['parcel_count']),
+      parcels: _cityList(
+        map['parcels'],
+        'manifest parcels',
+      ).map(LogisticsCityParcel.fromJson).toList(growable: false),
     );
   }
 }

@@ -204,6 +204,7 @@ class _LogisticsWaybillLookupPageState
 
   Future<void> _acceptHandoff(LogisticsWaybillLookup result) async {
     if (_isAcceptingHandoff || _needsReconciliation || _handoffBlocked) return;
+    final acceptanceIdentifier = _identifierController.text.trim();
     setState(() {
       _isAcceptingHandoff = true;
       _errorMessage = null;
@@ -212,7 +213,7 @@ class _LogisticsWaybillLookupPageState
 
     try {
       await widget.repository.acceptHandoff(
-        result.waybill,
+        acceptanceIdentifier,
         scanMethod: _scanMethod,
       );
 
