@@ -157,7 +157,11 @@ class _LogisticsHomePageState extends State<LogisticsHomePage> {
   );
 
   Future<void> _openSortingCenter() => _openOperationalPage(
-    LogisticsSortingCenterPage(repository: widget.repository),
+    LogisticsSortingCenterPage(
+      repository: widget.repository,
+      onOpenSortingQueue: _openSortingQueue,
+      onOpenDispatchBoard: _openDispatchBoard,
+    ),
   );
 
   Future<void> _openDispatchBoard() => _openOperationalPage(

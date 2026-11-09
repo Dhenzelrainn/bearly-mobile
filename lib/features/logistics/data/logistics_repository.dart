@@ -271,10 +271,15 @@ class LogisticsRepository {
   Future<LogisticsDispatchResult> dispatchZone({
     required int zoneId,
     required int riderProfileId,
+    String? assignmentReason,
   }) async => _authService.requestWithSession<LogisticsDispatchResult>(
     method: AuthenticatedRequestMethod.post,
     path: '/api/mobile/logistics/dispatch/zones/$zoneId/dispatch',
-    body: {'rider_profile_id': riderProfileId},
+    body: {
+      'rider_profile_id': riderProfileId,
+      if (assignmentReason?.trim().isNotEmpty == true)
+        'assignment_reason': assignmentReason!.trim(),
+    },
     parse: LogisticsDispatchResult.fromResponse,
   );
 

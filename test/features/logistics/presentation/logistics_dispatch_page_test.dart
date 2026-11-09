@@ -147,6 +147,96 @@ void main() {
   );
 
   testWidgets(
+    'nearby-zone candidate requires a reason and submits through dispatch API',
+    (tester) async {
+      const reason = 'No same-zone Local Rider has capacity for this batch.';
+      final requests = <http.Request>[];
+      var boardReads = 0;
+      final auth = _auth((request) async {
+        requests.add(request);
+        if (request.method == 'POST') {
+          expect(jsonDecode(request.body), {
+            'rider_profile_id': 10,
+            'assignment_reason': reason,
+          });
+          return http.Response(
+            jsonEncode(
+              _dispatchResult(riderId: 10, riderName: 'Rider Elsewhere'),
+            ),
+            200,
+          );
+        }
+        boardReads++;
+        return http.Response(
+          jsonEncode(
+            boardReads == 1
+                ? _board(
+                    zones: [
+                      _zone(riders: const [], nearbyRiders: [_nearbyRider()]),
+                    ],
+                  )
+                : _board(zones: const []),
+          ),
+          200,
+        );
+      });
+
+      await tester.pumpWidget(_dispatch(auth));
+      await tester.pumpAndSettle();
+      expect(
+        find.textContaining('Other-zone Riders are recommendations only'),
+        findsOneWidget,
+      );
+      await tester.tap(
+        find.byKey(const ValueKey('logistics-dispatch-rider-2')),
+      );
+      await tester.pumpAndSettle();
+      expect(find.textContaining('GPS missing'), findsWidgets);
+      await tester.tap(find.textContaining('Other-zone: Rider Elsewhere').last);
+      await tester.pumpAndSettle();
+
+      final action = find.byKey(const ValueKey('logistics-dispatch-zone-2'));
+      expect(tester.widget<FilledButton>(action).onPressed, isNull);
+      final reasonField = find.byKey(
+        const ValueKey('logistics-dispatch-reason-2'),
+      );
+      await tester.enterText(reasonField, 'Nope');
+      await tester.pumpAndSettle();
+      expect(tester.widget<FilledButton>(action).onPressed, isNull);
+
+      await tester.enterText(reasonField, reason);
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(action);
+      await tester.tap(action);
+      await tester.pumpAndSettle();
+      final dialog = find.byKey(
+        const ValueKey('logistics-dispatch-confirm-dialog'),
+      );
+      expect(dialog, findsOneWidget);
+      expect(
+        find.descendant(of: dialog, matching: find.textContaining(reason)),
+        findsOneWidget,
+      );
+      expect(
+        find.textContaining('Laravel will recheck Rider eligibility'),
+        findsOneWidget,
+      );
+
+      await tester.tap(
+        find.byKey(const ValueKey('logistics-confirm-dispatch')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(requests.map((request) => request.method), ['GET', 'POST', 'GET']);
+      expect(
+        find.textContaining('Server confirmed DSP-L5-001'),
+        findsOneWidget,
+      );
+      expect(find.textContaining('result is uncertain'), findsNothing);
+    },
+  );
+
+  testWidgets(
     'confirmed dispatch stays successful when the follow-up board read fails',
     (tester) async {
       final requests = <http.Request>[];
@@ -587,6 +677,7 @@ Map<String, Object?> _dashboard() => {
 
 Map<String, Object?> _zone({
   List<Map<String, Object?>>? riders,
+  List<Map<String, Object?>>? nearbyRiders,
   String waybill = 'BRLY-L5-001',
   String parcelReference = 'PCL-L5-001',
   String shipmentReference = 'SHP-L5-001',
@@ -598,6 +689,13 @@ Map<String, Object?> _zone({
   'ready': 1,
   'routing_issues': 0,
   'riders': riders ?? [_rider()],
+  'nearby_riders': nearbyRiders ?? [],
+  'proximity_status': nearbyRiders?.isNotEmpty == true
+      ? 'destination_pin_missing'
+      : 'not_needed',
+  'proximity_message': nearbyRiders?.isNotEmpty == true
+      ? 'At least one delivery address has no saved map pin.'
+      : null,
   'parcels': [
     {
       'id': 12,
@@ -621,6 +719,16 @@ Map<String, Object?> _rider({
   'remaining': capacity - load,
 };
 
+Map<String, Object?> _nearbyRider() => {
+  'id': 10,
+  'name': 'Rider Elsewhere',
+  'zone_code': 'PILA-03',
+  'remaining': 4,
+  'gps_status_label': 'GPS missing',
+  'distance_label': null,
+  'is_recommended': false,
+};
+
 Map<String, Object?> _board({List<Map<String, Object?>>? zones}) => {
   'data': {
     'provider': {'id': 1, 'name': 'Pila Logistics', 'status': 'active'},
@@ -635,14 +743,17 @@ Map<String, Object?> _board({List<Map<String, Object?>>? zones}) => {
   },
 };
 
-Map<String, Object?> _dispatchResult() => {
+Map<String, Object?> _dispatchResult({
+  int riderId = 9,
+  String riderName = 'Rider Mark',
+}) => {
   'message': 'Delivery dispatch confirmed.',
   'data': {
     'dispatch_batch': {
       'id': 35,
       'reference': 'DSP-L5-001',
       'status': 'dispatched',
-      'rider': {'id': 9, 'name': 'Rider Mark'},
+      'rider': {'id': riderId, 'name': riderName},
       'sorting_center': {'id': 2, 'name': 'Pila Sorting Center'},
       'zone': {'id': 2, 'code': 'PILA-02', 'name': 'Pila / Pinagbayanan'},
       'parcels': [

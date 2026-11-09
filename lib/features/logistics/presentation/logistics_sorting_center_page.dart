@@ -8,9 +8,16 @@ import '../models/logistics_dispatch.dart';
 import '../models/logistics_sorting_workspace.dart';
 
 class LogisticsSortingCenterPage extends StatefulWidget {
-  const LogisticsSortingCenterPage({super.key, required this.repository});
+  const LogisticsSortingCenterPage({
+    super.key,
+    required this.repository,
+    this.onOpenSortingQueue,
+    this.onOpenDispatchBoard,
+  });
 
   final LogisticsRepository repository;
+  final Future<void> Function()? onOpenSortingQueue;
+  final Future<void> Function()? onOpenDispatchBoard;
 
   @override
   State<LogisticsSortingCenterPage> createState() =>
@@ -76,6 +83,14 @@ class _LogisticsSortingCenterPageState
   Future<void> _movePage(int page) async {
     setState(() => _page = page);
     await _refresh();
+  }
+
+  Future<void> _openOperationalScreen(
+    Future<void> Function()? openScreen,
+  ) async {
+    if (openScreen == null) return;
+    await openScreen();
+    if (mounted) await _refresh();
   }
 
   @override
@@ -177,6 +192,7 @@ class _LogisticsSortingCenterPageState
               trailing: _statusChip(center.status),
             ),
           ),
+          _operationalLinks(),
           _metrics(workspace.metrics),
           _zones(workspace.zones),
           if (dispatchReadiness != null) _dispatchReadiness(dispatchReadiness),
@@ -237,6 +253,50 @@ class _LogisticsSortingCenterPageState
       ),
     );
   }
+
+  Widget _operationalLinks() => Card(
+    child: Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Continue operations',
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Sorting and dispatch actions stay in their existing workflows.',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+          const SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              key: const ValueKey('sorting-center-open-queue'),
+              onPressed: widget.onOpenSortingQueue == null
+                  ? null
+                  : () => _openOperationalScreen(widget.onOpenSortingQueue),
+              icon: const Icon(Icons.sort_rounded),
+              label: const Text('Open Sorting Queue'),
+            ),
+          ),
+          const SizedBox(height: 8),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              key: const ValueKey('sorting-center-open-dispatch'),
+              onPressed: widget.onOpenDispatchBoard == null
+                  ? null
+                  : () => _openOperationalScreen(widget.onOpenDispatchBoard),
+              icon: const Icon(Icons.outbox_outlined),
+              label: const Text('Open Dispatch Board'),
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
 
   Widget _metrics(LogisticsSortingWorkspaceMetrics metrics) => Padding(
     padding: const EdgeInsets.symmetric(vertical: 10),

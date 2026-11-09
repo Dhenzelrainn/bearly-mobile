@@ -18,6 +18,7 @@ class LogisticsDispatchPage extends StatefulWidget {
 class _LogisticsDispatchPageState extends State<LogisticsDispatchPage> {
   late Future<LogisticsDispatchBoard> _board;
   final Map<int, int?> _selectedRiders = {};
+  final Map<int, String> _assignmentReasons = {};
   int? _submittingZoneId;
   bool _needsReconciliation = false;
   String? _message;
@@ -53,11 +54,12 @@ class _LogisticsDispatchPageState extends State<LogisticsDispatchPage> {
   }
 
   Future<void> _confirmDispatch(LogisticsDispatchZone zone) async {
-    final riderId = _selectedRiders[zone.id];
-    final rider = zone.riders
-        .where((candidate) => candidate.id == riderId)
-        .firstOrNull;
-    if (rider == null ||
+    final candidate = _candidateOptions(
+      zone,
+    ).where((rider) => rider.id == _selectedRiders[zone.id]).firstOrNull;
+    final assignmentReason = (_assignmentReasons[zone.id] ?? '').trim();
+    if (candidate == null ||
+        (candidate.nearby && !_validAssignmentReason(assignmentReason)) ||
         zone.readyCount != zone.parcels.length ||
         _submittingZoneId != null ||
         _needsReconciliation) {
@@ -78,7 +80,16 @@ class _LogisticsDispatchPageState extends State<LogisticsDispatchPage> {
               'Dispatch all ${zone.readyCount} ready parcel(s) in ${zone.code} to:',
             ),
             const SizedBox(height: 8),
-            Text(rider.name, style: Theme.of(context).textTheme.titleSmall),
+            Text(candidate.name, style: Theme.of(context).textTheme.titleSmall),
+            if (candidate.nearby) ...[
+              const SizedBox(height: 8),
+              Text('Current zone: ${candidate.assignedZone}'),
+              Text('Assignment reason: $assignmentReason'),
+              const SizedBox(height: 4),
+              const Text(
+                'This recommendation is advisory. Laravel will recheck Rider eligibility, conflicts, capacity, provider, center, zone and parcel state before dispatch.',
+              ),
+            ],
             const SizedBox(height: 12),
             Text('Waybills', style: Theme.of(context).textTheme.labelLarge),
             const SizedBox(height: 4),
@@ -116,7 +127,8 @@ class _LogisticsDispatchPageState extends State<LogisticsDispatchPage> {
     try {
       result = await widget.repository.dispatchZone(
         zoneId: zone.id,
-        riderProfileId: rider.id,
+        riderProfileId: candidate.id,
+        assignmentReason: candidate.nearby ? assignmentReason : null,
       );
     } catch (error) {
       if (!mounted) return;
@@ -305,10 +317,25 @@ class _LogisticsDispatchPageState extends State<LogisticsDispatchPage> {
     ),
   );
 
+  List<_DispatchCandidate> _candidateOptions(LogisticsDispatchZone zone) => [
+    ...zone.riders.map(
+      (rider) => _DispatchCandidate.sameZone(rider, zone.code),
+    ),
+    ...zone.nearbyRiders.map(_DispatchCandidate.otherZone),
+  ];
+
+  bool _validAssignmentReason(String reason) =>
+      reason.length >= 5 && reason.length <= 1000;
+
   Widget _zoneCard(LogisticsDispatchZone zone) {
-    final selectedRider = zone.riders
+    final candidates = _candidateOptions(zone);
+    final selectedCandidate = candidates
         .where((rider) => rider.id == _selectedRiders[zone.id])
         .firstOrNull;
+    final assignmentReason = (_assignmentReasons[zone.id] ?? '').trim();
+    final canSubmitReason =
+        selectedCandidate?.nearby != true ||
+        _validAssignmentReason(assignmentReason);
 
     return Card(
       key: ValueKey('logistics-dispatch-zone-card-${zone.id}'),
@@ -358,7 +385,7 @@ class _LogisticsDispatchPageState extends State<LogisticsDispatchPage> {
                 ),
               ),
             ),
-            if (zone.riders.isEmpty)
+            if (candidates.isEmpty)
               const Padding(
                 padding: EdgeInsets.only(top: 8),
                 child: Text(
@@ -367,26 +394,39 @@ class _LogisticsDispatchPageState extends State<LogisticsDispatchPage> {
               )
             else ...[
               const SizedBox(height: 8),
+              if (zone.nearbyRiders.isNotEmpty) ...[
+                if (zone.proximityMessage != null)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 6),
+                    child: Text(zone.proximityMessage!),
+                  ),
+                const Text(
+                  'Other-zone Riders are recommendations only. Assignment eligibility is rechecked by Laravel when you dispatch.',
+                ),
+                const SizedBox(height: 8),
+              ],
               DropdownButtonFormField<int>(
                 key: ValueKey('logistics-dispatch-rider-${zone.id}'),
                 initialValue: _selectedRiders[zone.id],
                 isExpanded: true,
                 itemHeight: null,
-                selectedItemBuilder: (context) => zone.riders
+                selectedItemBuilder: (context) => candidates
                     .map(
-                      (rider) => Align(
+                      (candidate) => Align(
                         alignment: Alignment.centerLeft,
                         child: Tooltip(
-                          message: rider.name,
+                          message: candidate.name,
                           child: Text(
-                            rider.name,
+                            candidate.name,
                             key: ValueKey(
-                              'logistics-dispatch-rider-name-${zone.id}-${rider.id}',
+                              candidate.nearby
+                                  ? 'logistics-dispatch-nearby-name-${zone.id}-${candidate.id}'
+                                  : 'logistics-dispatch-rider-name-${zone.id}-${candidate.id}',
                             ),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             softWrap: false,
-                            semanticsLabel: rider.name,
+                            semanticsLabel: candidate.name,
                           ),
                         ),
                       ),
@@ -396,34 +436,73 @@ class _LogisticsDispatchPageState extends State<LogisticsDispatchPage> {
                   labelText: 'Eligible Rider',
                   border: OutlineInputBorder(),
                 ),
-                items: zone.riders
+                items: candidates
                     .map(
-                      (rider) => DropdownMenuItem<int>(
-                        value: rider.id,
+                      (candidate) => DropdownMenuItem<int>(
+                        value: candidate.id,
                         child: ConstrainedBox(
                           constraints: BoxConstraints(
                             maxWidth: MediaQuery.sizeOf(context).width - 176,
                           ),
-                          child: Text(
-                            '${rider.name} · ${rider.remaining} of ${rider.capacity} capacity available',
-                            softWrap: true,
-                          ),
+                          child: Text(candidate.optionLabel, softWrap: true),
                         ),
                       ),
                     )
                     .toList(growable: false),
                 onChanged: _submittingZoneId == null && !_needsReconciliation
-                    ? (value) =>
-                          setState(() => _selectedRiders[zone.id] = value)
+                    ? (value) => setState(() {
+                        _selectedRiders[zone.id] = value;
+                        if (!zone.nearbyRiders.any(
+                          (rider) => rider.id == value,
+                        )) {
+                          _assignmentReasons.remove(zone.id);
+                        }
+                      })
                     : null,
               ),
-              if (selectedRider != null) ...[
+              if (selectedCandidate?.nearby == true) ...[
+                const SizedBox(height: 8),
+                TextFormField(
+                  key: ValueKey('logistics-dispatch-reason-${zone.id}'),
+                  initialValue: _assignmentReasons[zone.id] ?? '',
+                  maxLength: 1000,
+                  minLines: 2,
+                  maxLines: 4,
+                  decoration: InputDecoration(
+                    labelText: 'Reason for nearby-zone assignment',
+                    helperText: 'Required: 5 to 1,000 characters.',
+                    errorText:
+                        assignmentReason.isNotEmpty &&
+                            !_validAssignmentReason(assignmentReason)
+                        ? 'Enter at least 5 characters.'
+                        : null,
+                    border: const OutlineInputBorder(),
+                  ),
+                  onChanged: (value) =>
+                      setState(() => _assignmentReasons[zone.id] = value),
+                ),
+              ],
+              if (selectedCandidate != null && !selectedCandidate.nearby) ...[
                 const SizedBox(height: 4),
                 Padding(
                   key: ValueKey('logistics-dispatch-rider-capacity-${zone.id}'),
                   padding: const EdgeInsets.symmetric(horizontal: 12),
                   child: Text(
-                    '${selectedRider.remaining} of ${selectedRider.capacity} capacity available',
+                    '${selectedCandidate.remaining} of ${selectedCandidate.capacity} capacity available',
+                    softWrap: true,
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ),
+              ],
+              if (selectedCandidate?.nearby == true) ...[
+                const SizedBox(height: 4),
+                Padding(
+                  key: ValueKey(
+                    'logistics-dispatch-nearby-capacity-${zone.id}',
+                  ),
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  child: Text(
+                    '${selectedCandidate!.remaining} open slots in ${selectedCandidate.assignedZone}',
                     softWrap: true,
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
@@ -435,7 +514,8 @@ class _LogisticsDispatchPageState extends State<LogisticsDispatchPage> {
                 child: FilledButton.icon(
                   key: ValueKey('logistics-dispatch-zone-${zone.id}'),
                   onPressed:
-                      _selectedRiders[zone.id] != null &&
+                      selectedCandidate != null &&
+                          canSubmitReason &&
                           _submittingZoneId == null &&
                           !_needsReconciliation &&
                           zone.readyCount == zone.parcels.length
@@ -474,6 +554,42 @@ class _LogisticsDispatchPageState extends State<LogisticsDispatchPage> {
       ),
     ),
   );
+}
+
+class _DispatchCandidate {
+  const _DispatchCandidate.sameZone(this.localRider, this.zoneCode)
+    : nearbyRider = null;
+
+  const _DispatchCandidate.otherZone(this.nearbyRider)
+    : localRider = null,
+      zoneCode = null;
+
+  final LogisticsDispatchRider? localRider;
+  final LogisticsNearbyDispatchRider? nearbyRider;
+  final String? zoneCode;
+
+  bool get nearby => nearbyRider != null;
+  int get id => localRider?.id ?? nearbyRider!.id;
+  String get name => localRider?.name ?? nearbyRider!.name;
+  int get remaining => localRider?.remaining ?? nearbyRider!.remaining;
+  int? get capacity => localRider?.capacity;
+  String get assignedZone => zoneCode ?? nearbyRider!.zoneCode;
+
+  String get optionLabel {
+    final local = localRider;
+    if (local != null) {
+      return '${local.name} · ${local.remaining} of ${local.capacity} capacity available';
+    }
+
+    final other = nearbyRider!;
+    final details = <String>[
+      other.gpsStatusLabel,
+      if (other.distanceLabel != null) other.distanceLabel!,
+      if (other.recommended) 'closest GPS estimate',
+    ].where((value) => value.isNotEmpty).join(' · ');
+    return 'Other-zone: ${other.name} · ${other.zoneCode} · ${other.remaining} open slots'
+        '${details.isEmpty ? '' : ' · $details'}';
+  }
 }
 
 extension _DispatchFirstOrNull<T> on Iterable<T> {

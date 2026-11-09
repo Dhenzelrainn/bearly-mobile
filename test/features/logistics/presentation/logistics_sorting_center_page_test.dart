@@ -65,6 +65,14 @@ void main() {
       expect(find.textContaining('P-100-B'), findsOneWidget);
       expect(find.text('Sorting Snapshot Bear'), findsOneWidget);
       expect(find.text('Mark parcel sorted'), findsNothing);
+      expect(
+        find.byKey(const ValueKey('sorting-center-open-queue')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('sorting-center-open-dispatch')),
+        findsOneWidget,
+      );
 
       await tester.tap(find.byKey(const ValueKey('sorting-center-zones')));
       await tester.pumpAndSettle();
@@ -83,8 +91,71 @@ void main() {
   );
 
   testWidgets(
+    'operational links open existing screens and refresh workspace on return',
+    (tester) async {
+      var workspaceReads = 0;
+      final auth = _authService((request) async {
+        if (request.url.path ==
+            '/api/mobile/logistics/sorting-center/workspace') {
+          workspaceReads++;
+          return http.Response(jsonEncode(_workspace()), 200);
+        }
+        return http.Response('{}', 404);
+      });
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Builder(
+            builder: (context) => LogisticsSortingCenterPage(
+              repository: LogisticsRepository(authService: auth),
+              onOpenSortingQueue: () => Navigator.of(context).push<void>(
+                MaterialPageRoute<void>(
+                  builder: (_) => Scaffold(
+                    appBar: AppBar(title: const Text('Existing Sorting Queue')),
+                  ),
+                ),
+              ),
+              onOpenDispatchBoard: () => Navigator.of(context).push<void>(
+                MaterialPageRoute<void>(
+                  builder: (_) => Scaffold(
+                    appBar: AppBar(
+                      title: const Text('Existing Dispatch Board'),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(workspaceReads, 1);
+
+      await tester.tap(find.byKey(const ValueKey('sorting-center-open-queue')));
+      await tester.pumpAndSettle();
+      expect(find.text('Existing Sorting Queue'), findsOneWidget);
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+      expect(workspaceReads, 2);
+
+      await tester.tap(
+        find.byKey(const ValueKey('sorting-center-open-dispatch')),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Existing Dispatch Board'), findsOneWidget);
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+      expect(workspaceReads, 3);
+    },
+  );
+
+  testWidgets(
     'status, search, pagination and refresh use the read API filters',
     (tester) async {
+      tester.view.physicalSize = const Size(800, 1600);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
       final requests = <http.Request>[];
       final auth = _authService((request) async {
         requests.add(request);
@@ -178,6 +249,10 @@ void main() {
   });
 
   testWidgets('workspace API error exposes retry state', (tester) async {
+    tester.view.physicalSize = const Size(800, 1600);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
     var reads = 0;
     final auth = _authService((request) async {
       reads++;
