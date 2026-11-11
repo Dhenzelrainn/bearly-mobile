@@ -67,6 +67,7 @@ import '../../features/logistics/presentation/logistics_pickup_request_detail_pa
 import '../../features/logistics/presentation/logistics_riders_page.dart';
 import '../../features/logistics/presentation/logistics_rider_application_page.dart';
 import '../../features/logistics/presentation/logistics_messages_page.dart';
+import '../../features/logistics/presentation/logistics_reports_page.dart';
 
 class AppRoutes {
   const AppRoutes._();
@@ -499,6 +500,11 @@ class AppRoutes {
           ),
           settings: settings,
         );
+      case AppRouteNames.logisticsReports:
+        return MaterialPageRoute(
+          builder: (_) => LogisticsReportsPage(repository: logisticsRepository),
+          settings: settings,
+        );
       case AppRouteNames.logisticsCashCustody:
         return MaterialPageRoute(
           builder: (_) =>
@@ -776,6 +782,7 @@ class AppRoutes {
       AppRouteNames.logisticsPickupRequestDetails,
       AppRouteNames.logisticsMessages,
       AppRouteNames.logisticsNotifications,
+      AppRouteNames.logisticsReports,
     }.contains(name)) {
       return AccountRole.logistics;
     }

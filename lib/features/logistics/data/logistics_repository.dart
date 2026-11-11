@@ -9,6 +9,7 @@ import '../models/logistics_monitoring.dart';
 import '../models/logistics_pickup_request.dart';
 import '../models/logistics_rider.dart';
 import '../models/logistics_rider_application.dart';
+import '../models/logistics_reports.dart';
 import '../models/logistics_sorting.dart';
 import '../models/logistics_sorting_workspace.dart';
 
@@ -22,6 +23,37 @@ class LogisticsRepository {
       LogisticsDashboard.fromResponse(
         await _authService.getWithSession('/api/mobile/logistics/dashboard'),
       );
+
+  Future<LogisticsReports> reports({String? from, String? to}) async {
+    _validateReportDate(from, 'from');
+    _validateReportDate(to, 'to');
+    if (from != null && to != null && from.compareTo(to) > 0) {
+      throw ArgumentError('The end date must be on or after the start date.');
+    }
+
+    final query = Uri(queryParameters: {'from': ?from, 'to': ?to}).query;
+    final path = query.isEmpty
+        ? '/api/mobile/logistics/reports'
+        : '/api/mobile/logistics/reports?$query';
+
+    return LogisticsReports.fromResponse(
+      await _authService.getWithSession(path),
+    );
+  }
+
+  void _validateReportDate(String? value, String field) {
+    if (value == null) return;
+    final matches = RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(value);
+    final parsed = matches ? DateTime.tryParse(value) : null;
+    if (parsed == null || _reportDate(parsed) != value) {
+      throw ArgumentError('Invalid report $field date.');
+    }
+  }
+
+  String _reportDate(DateTime value) =>
+      '${value.year.toString().padLeft(4, '0')}-'
+      '${value.month.toString().padLeft(2, '0')}-'
+      '${value.day.toString().padLeft(2, '0')}';
 
   Future<LogisticsCashCustody> cashCustody({
     int codPage = 1,
