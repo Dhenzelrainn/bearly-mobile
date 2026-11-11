@@ -108,6 +108,8 @@ class LogisticsCodCashCollection {
     this.paymentNo,
     this.paymentStatus,
     this.paymentPaidAt,
+    this.canReceive = false,
+    this.canRemit = false,
     required this.allocations,
     required this.references,
     required this.timestamps,
@@ -127,6 +129,8 @@ class LogisticsCodCashCollection {
   final String? paymentNo;
   final String? paymentStatus;
   final String? paymentPaidAt;
+  final bool canReceive;
+  final bool canRemit;
   final List<LogisticsCodCashAllocation> allocations;
   final Map<String, String?> references;
   final Map<String, String?> timestamps;
@@ -137,6 +141,9 @@ class LogisticsCodCashCollection {
     final payment = json['payment'] == null
         ? <String, Object?>{}
         : _map(json['payment'], 'COD payment');
+    final actions = json['actions'] == null
+        ? <String, Object?>{}
+        : _map(json['actions'], 'COD actions');
     return LogisticsCodCashCollection(
       id: _integer(json['id'], 'id'),
       collectionNo: _string(json['collection_no'], 'collection_no'),
@@ -166,6 +173,8 @@ class LogisticsCodCashCollection {
       paymentNo: _optionalString(payment['payment_no']),
       paymentStatus: _optionalString(payment['status']),
       paymentPaidAt: _optionalString(payment['paid_at']),
+      canReceive: actions['can_receive'] == true,
+      canRemit: actions['can_remit'] == true,
       allocations: _list(
         json['allocations'],
         'allocations',
@@ -178,6 +187,59 @@ class LogisticsCodCashCollection {
                 LogisticsCashCustodyHistoryEvent.fromJson(item, refund: false),
           )
           .toList(growable: false),
+    );
+  }
+}
+
+class LogisticsCodCashActionResult {
+  const LogisticsCodCashActionResult({
+    required this.id,
+    required this.collectionNo,
+    required this.status,
+    required this.amountReceivedByLogisticsMinor,
+    required this.amountRemittedToFinanceMinor,
+    required this.discrepancyMinor,
+    this.paymentStatus,
+    this.logisticsReference,
+    this.financeRemittanceReference,
+  });
+
+  final int id;
+  final String collectionNo;
+  final String status;
+  final int? amountReceivedByLogisticsMinor;
+  final int? amountRemittedToFinanceMinor;
+  final int discrepancyMinor;
+  final String? paymentStatus;
+  final String? logisticsReference;
+  final String? financeRemittanceReference;
+
+  factory LogisticsCodCashActionResult.fromResponse(Object? value) {
+    final response = _map(value, 'COD action response');
+    final data = _map(response['data'], 'COD action data');
+    final collection = _map(data['collection'], 'COD collection result');
+    final references = _map(collection['references'], 'COD references');
+    return LogisticsCodCashActionResult(
+      id: _integer(collection['id'], 'id'),
+      collectionNo: _string(collection['collection_no'], 'collection_no'),
+      status: _string(collection['status'], 'status'),
+      amountReceivedByLogisticsMinor: _optionalInteger(
+        collection['amount_received_by_logistics_minor'],
+        'amount_received_by_logistics_minor',
+      ),
+      amountRemittedToFinanceMinor: _optionalInteger(
+        collection['amount_remitted_to_finance_minor'],
+        'amount_remitted_to_finance_minor',
+      ),
+      discrepancyMinor: _integer(
+        collection['discrepancy_minor'],
+        'discrepancy_minor',
+      ),
+      paymentStatus: _optionalString(collection['payment_status']),
+      logisticsReference: _optionalString(references['logistics']),
+      financeRemittanceReference: _optionalString(
+        references['finance_remittance'],
+      ),
     );
   }
 }

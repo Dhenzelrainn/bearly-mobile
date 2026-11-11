@@ -47,6 +47,12 @@ void main() {
 
     expect(find.text('Cash Custody'), findsOneWidget);
     expect(find.text('Victoria Logistics'), findsOneWidget);
+    expect(
+      find.text(
+        'Amounts and statuses reflect recorded transactions. Authorized cash receipt and remittance actions update custody records. Payment reconciliation is handled separately by Finance.',
+      ),
+      findsOneWidget,
+    );
     expect(find.text('COD records: 1'), findsOneWidget);
     expect(find.text('Active refund cash: 1'), findsOneWidget);
     expect(find.text('COD-123'), findsOneWidget);
@@ -62,12 +68,39 @@ void main() {
       160,
       scrollable: find.byType(Scrollable).first,
     );
+    await tester.ensureVisible(find.text('RCP-44'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('RCP-44'));
     await tester.pumpAndSettle();
     expect(find.textContaining('ACK-44'), findsWidgets);
     expect(find.textContaining('Assigned To Rider'), findsWidgets);
     expect(find.text('Receive cash'), findsNothing);
     expect(find.text('Assign Rider'), findsNothing);
+  });
+
+  testWidgets('formats large COD amounts with grouped peso values', (
+    tester,
+  ) async {
+    final auth = _auth(
+      (_) async => http.Response(
+        jsonEncode(
+          _response(amountDueMinor: 5005000, amountCollectedMinor: 6999000),
+        ),
+        200,
+      ),
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: LogisticsCashCustodyPage(
+          repository: LogisticsRepository(authService: auth),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Collected ₱69,990.00 / due ₱50,050.00'), findsOneWidget);
+    expect(find.text('Recorded discrepancy ₱19,940.00'), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('supports empty history, refresh, and narrow large-text layout', (
@@ -184,6 +217,79 @@ void main() {
     expect(find.text('COD-123'), findsOneWidget);
   });
 
+  testWidgets(
+    'receipt and remittance dialogs avoid narrow large-text overflow',
+    (tester) async {
+      tester.view.physicalSize = const Size(320, 760);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+
+      Future<void> checkDialog({
+        required String status,
+        required String actionLabel,
+        required String dialogTitle,
+      }) async {
+        final auth = _auth(
+          (_) async => http.Response(
+            jsonEncode(
+              _response(
+                status: status,
+                canReceive: status == 'collected',
+                canRemit: status == 'received_by_logistics',
+              ),
+            ),
+            200,
+          ),
+        );
+        await tester.pumpWidget(
+          MaterialApp(
+            builder: (context, child) => MediaQuery(
+              data: MediaQuery.of(
+                context,
+              ).copyWith(textScaler: const TextScaler.linear(1.8)),
+              child: child!,
+            ),
+            home: LogisticsCashCustodyPage(
+              repository: LogisticsRepository(authService: auth),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        await tester.scrollUntilVisible(
+          find.text('COD-123'),
+          140,
+          scrollable: find.byType(Scrollable).first,
+        );
+        await tester.ensureVisible(find.text('COD-123'));
+        await tester.tap(find.text('COD-123'));
+        await tester.pumpAndSettle();
+        await tester.ensureVisible(find.text(actionLabel));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text(actionLabel));
+        await tester.pumpAndSettle();
+
+        expect(find.text(dialogTitle), findsOneWidget);
+        expect(tester.takeException(), isNull);
+        await tester.tap(find.text('Cancel'));
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+      }
+
+      await checkDialog(
+        status: 'collected',
+        actionLabel: 'Receive Rider cash',
+        dialogTitle: 'Confirm COD cash received',
+      );
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump();
+      await checkDialog(
+        status: 'received_by_logistics',
+        actionLabel: 'Remit cash to Finance',
+        dialogTitle: 'Confirm Finance handoff',
+      );
+    },
+  );
+
   testWidgets('loads the next COD page on request', (tester) async {
     final auth = _auth((request) async {
       final page = int.parse(request.url.queryParameters['cod_page']!);
@@ -204,6 +310,312 @@ void main() {
     await tester.tap(find.text('Load more COD records'));
     await tester.pumpAndSettle();
     expect(find.text('COD-SECOND'), findsOneWidget);
+  });
+
+  testWidgets(
+    'confirms COD receipt and Finance remittance then refreshes state',
+    (tester) async {
+      var status = 'collected';
+      var postCount = 0;
+      final auth = _auth((request) async {
+        if (request.method == 'POST') {
+          postCount++;
+          status = request.url.path.endsWith('/receive')
+              ? 'received_by_logistics'
+              : 'remitted_to_finance';
+          return http.Response(jsonEncode(_actionResponse(status)), 200);
+        }
+        return http.Response(
+          jsonEncode(
+            _response(
+              status: status,
+              canReceive: status == 'collected',
+              canRemit: status == 'received_by_logistics',
+            ),
+          ),
+          200,
+        );
+      });
+      await tester.pumpWidget(
+        MaterialApp(
+          home: LogisticsCashCustodyPage(
+            repository: LogisticsRepository(authService: auth),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('COD-123'));
+      await tester.pumpAndSettle();
+      expect(find.text('Receive Rider cash'), findsOneWidget);
+      expect(find.text('Remit cash to Finance'), findsNothing);
+      expect(find.text('Reconcile with Finance'), findsNothing);
+      await tester.tap(find.text('Receive Rider cash'));
+      await tester.pumpAndSettle();
+      expect(find.text('Confirm COD cash received'), findsOneWidget);
+      expect(find.text('COD due: ₱200.00'), findsOneWidget);
+      expect(find.text('Rider recorded: ₱205.00'), findsOneWidget);
+      expect(
+        find.text(
+          'Count the cash physically received from the Rider. The acknowledged amount must match the Rider-recorded collection. Any difference between the COD due and Rider-collected amount remains subject to Finance review.',
+        ),
+        findsOneWidget,
+      );
+      final receiveConfirm = find.byKey(
+        const ValueKey('cod-action-submit-receive-6'),
+      );
+      expect(tester.widget<FilledButton>(receiveConfirm).onPressed, isNull);
+      await tester.tap(
+        find.byKey(const ValueKey('cod-action-confirm-receive-6')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(receiveConfirm);
+      await tester.pumpAndSettle();
+      expect(find.text('Remit cash to Finance'), findsOneWidget);
+      expect(find.text('COD receipt recorded: CODH-123.'), findsOneWidget);
+      expect(postCount, 1);
+
+      await tester.tap(find.text('Remit cash to Finance'));
+      await tester.pumpAndSettle();
+      expect(find.text('Confirm Finance handoff'), findsOneWidget);
+      expect(
+        find.textContaining('Finance must reconcile it separately.'),
+        findsOneWidget,
+      );
+      final remitConfirm = find.byKey(
+        const ValueKey('cod-action-submit-remit-6'),
+      );
+      expect(tester.widget<FilledButton>(remitConfirm).onPressed, isNull);
+      await tester.tap(
+        find.byKey(const ValueKey('cod-action-confirm-remit-6')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(remitConfirm);
+      await tester.pumpAndSettle();
+      expect(find.text('Remitted To Finance'), findsOneWidget);
+      expect(
+        find.text('Finance Remittance reference: L2F-123'),
+        findsOneWidget,
+      );
+      expect(find.text('Reconcile with Finance'), findsNothing);
+      expect(postCount, 2);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets('refreshes after an ambiguous mutation without retrying it', (
+    tester,
+  ) async {
+    var gets = 0;
+    var posts = 0;
+    final auth = _auth((request) async {
+      if (request.method == 'POST') {
+        posts++;
+        throw http.ClientException('connection interrupted');
+      }
+      gets++;
+      final received = gets > 1;
+      return http.Response(
+        jsonEncode(
+          _response(
+            status: received ? 'received_by_logistics' : 'collected',
+            canReceive: !received,
+            canRemit: received,
+          ),
+        ),
+        200,
+      );
+    });
+    await tester.pumpWidget(
+      MaterialApp(
+        home: LogisticsCashCustodyPage(
+          repository: LogisticsRepository(authService: auth),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('COD-123'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Receive Rider cash'));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('cod-action-confirm-receive-6')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('cod-action-submit-receive-6')));
+    await tester.pumpAndSettle();
+
+    expect(posts, 1);
+    expect(gets, 2);
+    expect(find.text('Remit cash to Finance'), findsOneWidget);
+    expect(
+      find.textContaining('check the current state before trying again'),
+      findsOneWidget,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('refreshes stale state and displays a conflict without retrying', (
+    tester,
+  ) async {
+    var gets = 0;
+    var posts = 0;
+    final auth = _auth((request) async {
+      if (request.method == 'POST') {
+        posts++;
+        return http.Response(
+          jsonEncode({'message': 'The action is no longer available.'}),
+          409,
+        );
+      }
+      gets++;
+      final received = gets > 1;
+      return http.Response(
+        jsonEncode(
+          _response(
+            status: received ? 'received_by_logistics' : 'collected',
+            canReceive: !received,
+            canRemit: received,
+          ),
+        ),
+        200,
+      );
+    });
+    await tester.pumpWidget(
+      MaterialApp(
+        home: LogisticsCashCustodyPage(
+          repository: LogisticsRepository(authService: auth),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('COD-123'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Receive Rider cash'));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('cod-action-confirm-receive-6')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('cod-action-submit-receive-6')));
+    await tester.pumpAndSettle();
+
+    expect(posts, 1);
+    expect(gets, 2);
+    expect(find.text('Remit cash to Finance'), findsOneWidget);
+    expect(
+      find.text(
+        'The COD collection changed or this action is no longer available. Cash Custody was refreshed.',
+      ),
+      findsOneWidget,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('disables stale cash actions if refresh fails after a timeout', (
+    tester,
+  ) async {
+    var gets = 0;
+    var posts = 0;
+    final auth = _auth((request) async {
+      if (request.method == 'POST') {
+        posts++;
+        throw http.ClientException('connection interrupted');
+      }
+      gets++;
+      if (gets > 1) return http.Response('unavailable', 503);
+      return http.Response(
+        jsonEncode(_response(status: 'collected', canReceive: true)),
+        200,
+      );
+    });
+    await tester.pumpWidget(
+      MaterialApp(
+        home: LogisticsCashCustodyPage(
+          repository: LogisticsRepository(authService: auth),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('COD-123'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Receive Rider cash'));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('cod-action-confirm-receive-6')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('cod-action-submit-receive-6')));
+    await tester.pumpAndSettle();
+
+    expect(posts, 1);
+    expect(gets, 2);
+    expect(
+      find.textContaining('latest state could not be loaded'),
+      findsOneWidget,
+    );
+    expect(
+      tester
+          .widget<FilledButton>(
+            find.byKey(const ValueKey('cod-action-receive-6')),
+          )
+          .onPressed,
+      isNull,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('shows server validation errors and refreshes cash custody', (
+    tester,
+  ) async {
+    var gets = 0;
+    var posts = 0;
+    final auth = _auth((request) async {
+      if (request.method == 'POST') {
+        posts++;
+        return http.Response(
+          jsonEncode({
+            'message': 'The given data was invalid.',
+            'errors': {
+              'received_amount': ['The count must match collected cash.'],
+            },
+          }),
+          422,
+        );
+      }
+      gets++;
+      return http.Response(
+        jsonEncode(_response(status: 'disputed', canReceive: true)),
+        200,
+      );
+    });
+    await tester.pumpWidget(
+      MaterialApp(
+        home: LogisticsCashCustodyPage(
+          repository: LogisticsRepository(authService: auth),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('COD-123'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Receive Rider cash'));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('cod-action-confirm-receive-6')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('cod-action-submit-receive-6')));
+    await tester.pumpAndSettle();
+
+    expect(posts, 1);
+    expect(gets, 2);
+    expect(
+      find.textContaining('The count must match collected cash.'),
+      findsOneWidget,
+    );
+    expect(find.text('Receive Rider cash'), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 }
 
@@ -236,6 +648,11 @@ Map<String, Object?> _response({
   bool empty = false,
   int codPage = 1,
   bool paginate = false,
+  String status = 'disputed',
+  bool canReceive = true,
+  bool canRemit = false,
+  int amountDueMinor = 20000,
+  int amountCollectedMinor = 20500,
 }) => {
   'data': {
     'currency': 'PHP',
@@ -251,13 +668,19 @@ Map<String, Object?> _response({
               {
                 'id': codPage + 5,
                 'collection_no': codPage == 1 ? 'COD-123' : 'COD-SECOND',
-                'status': 'disputed',
-                'amount_due_minor': 20000,
-                'amount_collected_minor': 20500,
-                'discrepancy_minor': 500,
-                'amount_received_by_logistics_minor': null,
-                'amount_remitted_to_finance_minor': null,
+                'status': status,
+                'amount_due_minor': amountDueMinor,
+                'amount_collected_minor': amountCollectedMinor,
+                'discrepancy_minor': amountCollectedMinor - amountDueMinor,
+                'amount_received_by_logistics_minor': status == 'collected'
+                    ? null
+                    : amountCollectedMinor,
+                'amount_remitted_to_finance_minor':
+                    status == 'remitted_to_finance'
+                    ? amountCollectedMinor
+                    : null,
                 'amount_reconciled_minor': null,
+                'actions': {'can_receive': canReceive, 'can_remit': canRemit},
                 'rider_name': 'Rider One',
                 'payment': {
                   'payment_no': 'PAY-12',
@@ -275,8 +698,10 @@ Map<String, Object?> _response({
                   },
                 ],
                 'references': {
-                  'logistics': null,
-                  'finance_remittance': null,
+                  'logistics': status == 'collected' ? null : 'CODH-123',
+                  'finance_remittance': status == 'remitted_to_finance'
+                      ? 'L2F-123'
+                      : null,
                   'finance': null,
                 },
                 'timestamps': {'collected_at': '2026-11-09T10:00:00+00:00'},
@@ -285,7 +710,7 @@ Map<String, Object?> _response({
                     'event_type': 'cash_collected_from_buyer',
                     'from_role': null,
                     'to_role': 'rider',
-                    'amount_minor': 20500,
+                    'amount_minor': amountCollectedMinor,
                     'reference': 'CODH-123',
                     'occurred_at': '2026-11-09T10:00:00+00:00',
                   },
@@ -337,4 +762,35 @@ Map<String, Object?> _response({
       },
     },
   },
+};
+
+Map<String, Object?> _actionResponse(String status) => {
+  'data': {
+    'collection': {
+      'id': 6,
+      'collection_no': 'COD-123',
+      'status': status,
+      'amount_due_minor': 20000,
+      'amount_collected_minor': 20500,
+      'amount_received_by_logistics_minor': 20500,
+      'amount_remitted_to_finance_minor': status == 'remitted_to_finance'
+          ? 20500
+          : null,
+      'discrepancy_minor': 500,
+      'payment_status': 'pending',
+      'references': {
+        'logistics': 'CODH-123',
+        'finance_remittance': status == 'remitted_to_finance'
+            ? 'L2F-123'
+            : null,
+      },
+      'timestamps': {
+        'logistics_received_at': '2026-11-09T10:00:00+00:00',
+        'remitted_to_finance_at': status == 'remitted_to_finance'
+            ? '2026-11-09T11:00:00+00:00'
+            : null,
+      },
+    },
+  },
+  'message': 'COD action recorded.',
 };

@@ -44,6 +44,44 @@ class LogisticsRepository {
     );
   }
 
+  Future<LogisticsCodCashActionResult> receiveCodCash({
+    required int collectionId,
+    required String actualAmount,
+  }) => _codCashAction(
+    collectionId: collectionId,
+    action: 'receive',
+    actualAmount: actualAmount,
+  );
+
+  Future<LogisticsCodCashActionResult> remitCodCash({
+    required int collectionId,
+    required String actualAmount,
+  }) => _codCashAction(
+    collectionId: collectionId,
+    action: 'remit',
+    actualAmount: actualAmount,
+  );
+
+  Future<LogisticsCodCashActionResult> _codCashAction({
+    required int collectionId,
+    required String action,
+    required String actualAmount,
+  }) async {
+    if (collectionId < 1 ||
+        !RegExp(r'^\d{1,8}(?:\.\d{1,2})?$').hasMatch(actualAmount)) {
+      throw ArgumentError('Enter a valid COD amount and collection.');
+    }
+    if (action != 'receive' && action != 'remit') {
+      throw ArgumentError.value(action, 'action');
+    }
+    return _authService.requestWithSession<LogisticsCodCashActionResult>(
+      method: AuthenticatedRequestMethod.post,
+      path: '/api/mobile/logistics/cash-custody/cod/$collectionId/$action',
+      body: {'actual_amount': actualAmount, 'confirmed': true},
+      parse: LogisticsCodCashActionResult.fromResponse,
+    );
+  }
+
   Future<LogisticsCityHandoffsPage> cityHandoffs({
     String view = 'incoming',
     String status = 'sent',

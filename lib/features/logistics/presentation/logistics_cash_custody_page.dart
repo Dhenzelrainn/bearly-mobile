@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 
+import '../../../core/network/api_client.dart';
+import '../../buyer/models/buyer_catalog_models.dart'
+    show formatPriceMinorUnits;
 import '../data/logistics_repository.dart';
 import '../models/logistics_cash_custody.dart';
 
@@ -25,6 +28,7 @@ class _LogisticsCashCustodyPageState extends State<LogisticsCashCustodyPage> {
   bool _loading = true;
   bool _loadingCodMore = false;
   bool _loadingRefundMore = false;
+  String? _actingCodAction;
 
   @override
   void initState() {
@@ -188,7 +192,7 @@ class _LogisticsCashCustodyPageState extends State<LogisticsCashCustodyPage> {
           ),
           const SizedBox(height: 8),
           Text(
-            'Amounts and stages below reflect recorded transactions. This screen does not change custody or payment status.',
+            'Amounts and statuses reflect recorded transactions. Authorized cash receipt and remittance actions update custody records. Payment reconciliation is handled separately by Finance.',
             style: Theme.of(context).textTheme.bodySmall,
           ),
         ],
@@ -259,10 +263,226 @@ class _LogisticsCashCustodyPageState extends State<LogisticsCashCustodyPage> {
           (entry) => entry.value != null,
         ))
           _detailLine(_humanize(entry.key), _date(entry.value)),
+        if (item.canReceive || item.canRemit) ...[
+          const Divider(height: 20),
+          Text(
+            'COD cash action',
+            style: Theme.of(context).textTheme.titleSmall,
+          ),
+          const SizedBox(height: 6),
+          if (item.canReceive)
+            _codActionButton(
+              item,
+              action: 'receive',
+              label: 'Receive Rider cash',
+            ),
+          if (item.canRemit)
+            _codActionButton(
+              item,
+              action: 'remit',
+              label: 'Remit cash to Finance',
+            ),
+        ],
         _history(item.history),
       ],
     ),
   );
+
+  Widget _codActionButton(
+    LogisticsCodCashCollection item, {
+    required String action,
+    required String label,
+  }) {
+    final actionKey = '$action-${item.id}';
+    final busy = _actingCodAction == actionKey;
+    return Padding(
+      padding: const EdgeInsets.only(top: 6),
+      child: SizedBox(
+        width: double.infinity,
+        child: FilledButton.icon(
+          key: ValueKey('cod-action-$action-${item.id}'),
+          onPressed: _actingCodAction == null && !_loading && _error == null
+              ? () => _confirmCodAction(item, action)
+              : null,
+          icon: busy
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : Icon(
+                  action == 'receive' ? Icons.call_received : Icons.payments,
+                ),
+          label: Text(label),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _confirmCodAction(
+    LogisticsCodCashCollection item,
+    String action,
+  ) async {
+    final receive = action == 'receive';
+    final countMinor = receive
+        ? item.amountCollectedMinor
+        : (item.amountReceivedByLogisticsMinor ?? item.amountCollectedMinor);
+    final amountController = TextEditingController(
+      text: _amountText(countMinor),
+    );
+    var confirmed = false;
+    final amount = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: Text(
+            receive ? 'Confirm COD cash received' : 'Confirm Finance handoff',
+          ),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Collection ${item.collectionNo}'),
+                if (item.riderName != null) Text('Rider: ${item.riderName}'),
+                const SizedBox(height: 8),
+                Text('COD due: ${_money(item.amountDueMinor)}'),
+                Text('Rider recorded: ${_money(item.amountCollectedMinor)}'),
+                if (item.discrepancyMinor != 0)
+                  Text('Recorded difference: ${_money(item.discrepancyMinor)}'),
+                const SizedBox(height: 12),
+                TextField(
+                  key: ValueKey('cod-action-amount-${item.id}'),
+                  controller: amountController,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  decoration: InputDecoration(
+                    labelText: receive
+                        ? 'Cash physically received'
+                        : 'Cash accepted by Finance',
+                    prefixText: '₱ ',
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  receive
+                      ? 'Count the cash physically received from the Rider. The acknowledged amount must match the Rider-recorded collection. Any difference between the COD due and Rider-collected amount remains subject to Finance review.'
+                      : 'Record this only after physically handing the cash to Finance. This records remittance; Finance must reconcile it separately.',
+                ),
+                CheckboxListTile(
+                  key: ValueKey('cod-action-confirm-$action-${item.id}'),
+                  contentPadding: EdgeInsets.zero,
+                  controlAffinity: ListTileControlAffinity.leading,
+                  value: confirmed,
+                  onChanged: (value) =>
+                      setDialogState(() => confirmed = value ?? false),
+                  title: Text(
+                    receive
+                        ? 'I physically received and counted this cash.'
+                        : 'I physically handed this cash to Finance.',
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              key: ValueKey('cod-action-submit-$action-${item.id}'),
+              onPressed:
+                  confirmed &&
+                      RegExp(
+                        r'^\d{1,8}(?:\.\d{1,2})?$',
+                      ).hasMatch(amountController.text.trim())
+                  ? () => Navigator.of(
+                      dialogContext,
+                    ).pop(amountController.text.trim())
+                  : null,
+              child: Text(receive ? 'Confirm receipt' : 'Record remittance'),
+            ),
+          ],
+        ),
+      ),
+    );
+    amountController.dispose();
+    if (amount == null || !mounted) return;
+
+    final actionKey = '$action-${item.id}';
+    setState(() => _actingCodAction = actionKey);
+    try {
+      final result = receive
+          ? await widget.repository.receiveCodCash(
+              collectionId: item.id,
+              actualAmount: amount,
+            )
+          : await widget.repository.remitCodCash(
+              collectionId: item.id,
+              actualAmount: amount,
+            );
+      await _load();
+      if (!mounted) return;
+      final reference = receive
+          ? result.logisticsReference
+          : result.financeRemittanceReference;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            receive
+                ? 'COD receipt recorded${reference == null ? '.' : ': $reference.'}'
+                : 'Finance remittance recorded. Finance reconciliation is still required${reference == null ? '.' : ': $reference.'}',
+          ),
+        ),
+      );
+    } catch (error) {
+      await _load();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(_codActionError(error, refreshed: _error == null)),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _actingCodAction = null);
+    }
+  }
+
+  String _codActionError(Object error, {required bool refreshed}) {
+    if (error is ApiHttpException) {
+      return switch (error.statusCode) {
+        401 || 403 => 'Your Logistics account cannot perform this cash action.',
+        404 => 'This COD collection is no longer available to this provider.',
+        409 =>
+          refreshed
+              ? 'The COD collection changed or this action is no longer available. Cash Custody was refreshed.'
+              : 'The COD collection changed. Its current state could not be loaded; refresh Cash Custody before trying again.',
+        422 =>
+          '${_validationMessage(error)} ${refreshed ? 'Cash Custody was refreshed.' : 'Refresh Cash Custody before trying again.'}',
+        _ =>
+          refreshed
+              ? 'The cash action failed. Cash Custody was refreshed.'
+              : 'The cash action failed and its current state could not be loaded. Refresh Cash Custody before trying again.',
+      };
+    }
+    if (error is ApiTimeoutException || error is ApiTransportException) {
+      return refreshed
+          ? 'The request may have reached Bearly. Cash Custody was refreshed; check the current state before trying again.'
+          : 'The request may have reached Bearly, but the latest state could not be loaded. Refresh Cash Custody before trying again.';
+    }
+    return refreshed
+        ? 'The cash action could not be confirmed. Cash Custody was refreshed; check its current state before trying again.'
+        : 'The cash action could not be confirmed and its latest state could not be loaded. Refresh Cash Custody before trying again.';
+  }
+
+  String _validationMessage(ApiHttpException error) {
+    for (final messages in error.validationErrors.values) {
+      if (messages.isNotEmpty) return messages.first;
+    }
+    return 'The amount or confirmation was rejected.';
+  }
 
   Widget _refundCard(LogisticsRefundCashPayout item) => Card(
     key: ValueKey('refund-${item.id}'),
@@ -412,10 +632,11 @@ class _EmptySection extends StatelessWidget {
 }
 
 String _money(int minor) {
-  final absolute = minor.abs();
-  final sign = minor < 0 ? '-' : '';
-  return '$sign₱${absolute ~/ 100}.${(absolute % 100).toString().padLeft(2, '0')}';
+  return formatPriceMinorUnits(minor, currency: 'PHP');
 }
+
+String _amountText(int minor) =>
+    '${minor ~/ 100}.${(minor.abs() % 100).toString().padLeft(2, '0')}';
 
 String _humanize(String value) => value
     .replaceAll('_', ' ')

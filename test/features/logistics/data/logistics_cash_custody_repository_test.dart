@@ -37,6 +37,8 @@ void main() {
     expect(data.codCollections.items.single.amountCollectedMinor, 20500);
     expect(data.codCollections.items.single.discrepancyMinor, 500);
     expect(data.codCollections.items.single.paymentStatus, 'pending');
+    expect(data.codCollections.items.single.canReceive, isTrue);
+    expect(data.codCollections.items.single.canRemit, isFalse);
     expect(
       data.codCollections.items.single.allocations.single.amountDueMinor,
       20000,
@@ -64,6 +66,75 @@ void main() {
       throwsArgumentError,
     );
     await expectLater(repository.cashCustody(perPage: 51), throwsArgumentError);
+    expect(requests, 0);
+  });
+
+  test(
+    'posts authenticated receive and remittance actions in minor-safe form',
+    () async {
+      final requests = <http.Request>[];
+      final repository = LogisticsRepository(
+        authService: _auth((request) async {
+          requests.add(request);
+          final isRemittance = request.url.path.endsWith('/remit');
+          return http.Response(
+            jsonEncode(_actionResponse(remitted: isRemittance)),
+            200,
+          );
+        }),
+      );
+
+      final received = await repository.receiveCodCash(
+        collectionId: 6,
+        actualAmount: '205.00',
+      );
+      final remitted = await repository.remitCodCash(
+        collectionId: 6,
+        actualAmount: '205.00',
+      );
+
+      expect(requests.map((request) => request.method), ['POST', 'POST']);
+      expect(
+        requests[0].url.path,
+        '/api/mobile/logistics/cash-custody/cod/6/receive',
+      );
+      expect(
+        requests[1].url.path,
+        '/api/mobile/logistics/cash-custody/cod/6/remit',
+      );
+      for (final request in requests) {
+        expect(request.headers['authorization'], 'Bearer logistics-test-token');
+        expect(jsonDecode(request.body), {
+          'actual_amount': '205.00',
+          'confirmed': true,
+        });
+      }
+      expect(received.status, 'received_by_logistics');
+      expect(received.logisticsReference, 'CODH-123');
+      expect(received.paymentStatus, 'pending');
+      expect(remitted.status, 'remitted_to_finance');
+      expect(remitted.financeRemittanceReference, 'L2F-123');
+      expect(remitted.paymentStatus, 'pending');
+    },
+  );
+
+  test('rejects malformed cash amounts before sending a mutation', () async {
+    var requests = 0;
+    final repository = LogisticsRepository(
+      authService: _auth((_) async {
+        requests++;
+        return http.Response(jsonEncode(_response), 200);
+      }),
+    );
+
+    await expectLater(
+      repository.receiveCodCash(collectionId: 6, actualAmount: '205.001'),
+      throwsArgumentError,
+    );
+    await expectLater(
+      repository.remitCodCash(collectionId: 0, actualAmount: '205.00'),
+      throwsArgumentError,
+    );
     expect(requests, 0);
   });
 }
@@ -110,6 +181,7 @@ final _response = {
           'amount_due_minor': 20000,
           'amount_collected_minor': 20500,
           'discrepancy_minor': 500,
+          'actions': {'can_receive': true, 'can_remit': false},
           'amount_received_by_logistics_minor': null,
           'amount_remitted_to_finance_minor': null,
           'amount_reconciled_minor': null,
@@ -181,4 +253,29 @@ final _response = {
       'meta': {'current_page': 3, 'last_page': 4, 'per_page': 10, 'total': 4},
     },
   },
+};
+
+Map<String, Object?> _actionResponse({bool remitted = false}) => {
+  'data': {
+    'collection': {
+      'id': 6,
+      'collection_no': 'COD-123',
+      'status': remitted ? 'remitted_to_finance' : 'received_by_logistics',
+      'amount_due_minor': 20000,
+      'amount_collected_minor': 20500,
+      'amount_received_by_logistics_minor': 20500,
+      'amount_remitted_to_finance_minor': remitted ? 20500 : null,
+      'discrepancy_minor': 500,
+      'payment_status': 'pending',
+      'references': {
+        'logistics': 'CODH-123',
+        'finance_remittance': remitted ? 'L2F-123' : null,
+      },
+      'timestamps': {
+        'logistics_received_at': '2026-11-09T10:00:00+00:00',
+        'remitted_to_finance_at': remitted ? '2026-11-09T11:00:00+00:00' : null,
+      },
+    },
+  },
+  'message': 'COD action recorded.',
 };
