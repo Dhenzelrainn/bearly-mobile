@@ -617,6 +617,424 @@ void main() {
     expect(find.text('Receive Rider cash'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets(
+    'refund cash receipt and Local Rider assignment require confirmation',
+    (tester) async {
+      var refundStatus = 'awaiting_logistics_receipt';
+      var gets = 0;
+      var posts = 0;
+      final auth = _auth((request) async {
+        if (request.url.path.endsWith('/eligible-riders')) {
+          return http.Response(
+            jsonEncode({
+              'data': {
+                'riders': [
+                  {'user_id': 31, 'name': 'Eligible Local Rider'},
+                ],
+              },
+            }),
+            200,
+          );
+        }
+        if (request.url.path.endsWith('/acknowledgment-slip')) {
+          return http.Response(
+            jsonEncode({
+              'data': {
+                'acknowledgment_reference': 'ACK-44-A01',
+                'delivery_attempt_number': 1,
+                'amount_minor': 12500,
+                'buyer_or_recipient_name': 'Buyer One',
+                'refund_no': 'RFD-44',
+                'payout_no': 'RCP-44',
+                'order_no': 'ORD-44',
+                'rider_name': 'Rider One',
+                'provider_name': 'Victoria Logistics',
+                'buyer_confirmation':
+                    'I confirm that I received the cash refund.',
+                'signature_labels': ['Received by Buyer', 'Delivered by Rider'],
+              },
+            }),
+            200,
+          );
+        }
+        if (request.method == 'POST') {
+          posts++;
+          if (request.url.path.endsWith('/receive')) {
+            expect(jsonDecode(request.body), {
+              'actual_amount': '125.00',
+              'reference': 'LOG-RECEIPT-44',
+            });
+            refundStatus = 'awaiting_rider_assignment';
+          } else {
+            expect(jsonDecode(request.body), {'rider_user_id': 31});
+            refundStatus = 'assigned_to_rider';
+          }
+          return http.Response(
+            jsonEncode(_refundActionResponse(refundStatus)),
+            200,
+          );
+        }
+        gets++;
+        return http.Response(
+          jsonEncode(
+            _response(
+              refundStatus: refundStatus,
+              refundActions: {
+                'can_receive': refundStatus == 'awaiting_logistics_receipt',
+                'can_assign': refundStatus == 'awaiting_rider_assignment',
+                'can_view_slip': refundStatus == 'assigned_to_rider',
+              },
+            ),
+          ),
+          200,
+        );
+      });
+      await tester.pumpWidget(
+        MaterialApp(
+          home: LogisticsCashCustodyPage(
+            repository: LogisticsRepository(authService: auth),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.scrollUntilVisible(
+        find.text('RCP-44'),
+        140,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.tap(find.text('RCP-44'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Acknowledge cash received'));
+      await tester.pumpAndSettle();
+
+      final receive = find.byKey(const ValueKey('refund-submit-4'));
+      expect(tester.widget<FilledButton>(receive).onPressed, isNull);
+      await tester.enterText(
+        find.byKey(const ValueKey('refund-amount-4')),
+        '124.99',
+      );
+      await tester.enterText(
+        find.byKey(const ValueKey('refund-reference-4')),
+        'LOG-RECEIPT-44',
+      );
+      await tester.tap(find.byKey(const ValueKey('refund-confirm-4')));
+      await tester.pumpAndSettle();
+      expect(tester.widget<FilledButton>(receive).onPressed, isNull);
+      await tester.enterText(
+        find.byKey(const ValueKey('refund-amount-4')),
+        '125.00',
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(receive);
+      await tester.pumpAndSettle();
+      expect(posts, 1);
+      expect(gets, 2);
+      expect(find.text('Assign Local Rider'), findsOneWidget);
+
+      await tester.tap(find.text('Assign Local Rider'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('refund-rider-choice-4')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Eligible Local Rider').last);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('refund-assign-confirm-4')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('refund-assign-submit-4')));
+      await tester.pumpAndSettle();
+      expect(posts, 2);
+      expect(gets, 3);
+      expect(find.text('View paper acknowledgment'), findsOneWidget);
+      await tester.tap(find.text('View paper acknowledgment'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(find.text('Buyer cash refund acknowledgment'), findsOneWidget);
+      expect(
+        find.textContaining('Acknowledgment reference: ACK-44-A01'),
+        findsOneWidget,
+      );
+      await tester.tap(find.text('Close'));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'private refund proof is viewable and verification requires note and confirmation',
+    (tester) async {
+      var refundStatus = 'delivered_pending_verification';
+      final requestedPaths = <String>[];
+      final proofBytes = base64Decode(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/7ZcAAAAASUVORK5CYII=',
+      );
+      final auth = _auth((request) async {
+        requestedPaths.add(request.url.path);
+        if (request.method == 'GET' &&
+            request.url.path.endsWith('/acknowledgment')) {
+          return http.Response.bytes(
+            proofBytes,
+            200,
+            headers: {'content-type': 'image/png'},
+          );
+        }
+        if (request.method == 'POST') {
+          expect(jsonDecode(request.body), {
+            'verification_note': 'Signed proof and amount checked.',
+          });
+          refundStatus = 'awaiting_finance_completion';
+          return http.Response(
+            jsonEncode(_refundActionResponse(refundStatus)),
+            200,
+          );
+        }
+        return http.Response(
+          jsonEncode(
+            _response(
+              refundStatus: refundStatus,
+              refundActions: {
+                'can_view_proof':
+                    refundStatus == 'delivered_pending_verification',
+                'can_verify_proof':
+                    refundStatus == 'delivered_pending_verification',
+              },
+            ),
+          ),
+          200,
+        );
+      });
+      await tester.pumpWidget(
+        MaterialApp(
+          home: LogisticsCashCustodyPage(
+            repository: LogisticsRepository(authService: auth),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.scrollUntilVisible(
+        find.text('RCP-44'),
+        140,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.tap(find.text('RCP-44'));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text('View signed Buyer proof'));
+      await tester.tap(find.text('View signed Buyer proof'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(find.text('Signed Buyer proof'), findsOneWidget);
+      expect(
+        requestedPaths,
+        contains('/api/mobile/logistics/cash-custody/refunds/4/acknowledgment'),
+      );
+      await tester.tap(find.text('Close'));
+      await tester.pumpAndSettle();
+
+      await tester.ensureVisible(find.text('Verify Buyer proof'));
+      await tester.tap(find.text('Verify Buyer proof'));
+      await tester.pumpAndSettle();
+      final verify = find.byKey(const ValueKey('refund-verify-submit-4'));
+      expect(tester.widget<FilledButton>(verify).onPressed, isNull);
+      await tester.enterText(
+        find.byKey(const ValueKey('refund-verification-note-4')),
+        'ok',
+      );
+      await tester.pumpAndSettle();
+      expect(tester.widget<FilledButton>(verify).onPressed, isNull);
+      await tester.enterText(
+        find.byKey(const ValueKey('refund-verification-note-4')),
+        'Signed proof and amount checked.',
+      );
+      await tester.tap(find.byKey(const ValueKey('refund-verify-confirm-4')));
+      await tester.pumpAndSettle();
+      await tester.tap(verify);
+      await tester.pumpAndSettle();
+      expect(refundStatus, 'awaiting_finance_completion');
+      expect(
+        find.textContaining('Awaiting Finance Completion'),
+        findsOneWidget,
+      );
+      expect(find.text('Verify Buyer proof'), findsNothing);
+      expect(
+        requestedPaths,
+        contains('/api/mobile/logistics/cash-custody/refunds/4/verify-receipt'),
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets('refund conflict refreshes status without retrying mutation', (
+    tester,
+  ) async {
+    var refundStatus = 'awaiting_logistics_receipt';
+    var gets = 0;
+    var posts = 0;
+    final auth = _auth((request) async {
+      if (request.method == 'POST') {
+        posts++;
+        refundStatus = 'awaiting_rider_assignment';
+        return http.Response(jsonEncode({'message': 'State changed.'}), 409);
+      }
+      gets++;
+      return http.Response(
+        jsonEncode(
+          _response(
+            refundStatus: refundStatus,
+            refundActions: {
+              'can_receive': refundStatus == 'awaiting_logistics_receipt',
+              'can_assign': refundStatus == 'awaiting_rider_assignment',
+            },
+          ),
+        ),
+        200,
+      );
+    });
+    await tester.pumpWidget(
+      MaterialApp(
+        home: LogisticsCashCustodyPage(
+          repository: LogisticsRepository(authService: auth),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(
+      find.text('RCP-44'),
+      140,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.tap(find.text('RCP-44'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Acknowledge cash received'));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('refund-reference-4')),
+      'LOG-RECEIPT-44',
+    );
+    await tester.tap(find.byKey(const ValueKey('refund-confirm-4')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('refund-submit-4')));
+    await tester.pumpAndSettle();
+    expect(posts, 1);
+    expect(gets, 2);
+    expect(find.text('Assign Local Rider'), findsOneWidget);
+    expect(
+      find.text(
+        'The payout changed or is no longer eligible. Cash Custody was refreshed.',
+      ),
+      findsOneWidget,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
+    'refund network failure refreshes once and does not resend cash action',
+    (tester) async {
+      var gets = 0;
+      var posts = 0;
+      final auth = _auth((request) async {
+        if (request.method == 'POST') {
+          posts++;
+          throw http.ClientException('connection interrupted');
+        }
+        gets++;
+        return http.Response(
+          jsonEncode(
+            _response(
+              refundStatus: 'awaiting_logistics_receipt',
+              refundActions: {'can_receive': true},
+            ),
+          ),
+          200,
+        );
+      });
+      await tester.pumpWidget(
+        MaterialApp(
+          home: LogisticsCashCustodyPage(
+            repository: LogisticsRepository(authService: auth),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.scrollUntilVisible(
+        find.text('RCP-44'),
+        140,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.tap(find.text('RCP-44'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Acknowledge cash received'));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const ValueKey('refund-reference-4')),
+        'LOG-RECEIPT-44',
+      );
+      await tester.tap(find.byKey(const ValueKey('refund-confirm-4')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('refund-submit-4')));
+      await tester.pumpAndSettle();
+      expect(posts, 1);
+      expect(gets, 2);
+      expect(
+        find.textContaining('inspect the current state before any retry'),
+        findsOneWidget,
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets('refund cash controls fit a narrow screen with larger text', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(320, 760);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    final auth = _auth(
+      (request) async => http.Response(
+        jsonEncode(
+          _response(
+            refundStatus: 'awaiting_logistics_receipt',
+            refundActions: {'can_receive': true},
+          ),
+        ),
+        200,
+      ),
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        builder: (context, child) => MediaQuery(
+          data: MediaQuery.of(
+            context,
+          ).copyWith(textScaler: const TextScaler.linear(1.8)),
+          child: child!,
+        ),
+        home: LogisticsCashCustodyPage(
+          repository: LogisticsRepository(authService: auth),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(
+      find.text('RCP-44'),
+      120,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.tap(find.text('RCP-44'));
+    await tester.pumpAndSettle();
+    final receiveAction = find.text('Acknowledge cash received');
+    for (
+      var attempt = 0;
+      attempt < 8 && tester.getCenter(receiveAction).dy > 740;
+      attempt++
+    ) {
+      await tester.drag(find.byType(ListView), const Offset(0, -350));
+      await tester.pumpAndSettle();
+    }
+    expect(tester.getCenter(receiveAction).dy, lessThan(760));
+    await tester.tap(receiveAction);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.text('Confirm refund cash received'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
 }
 
 AuthService _auth(Future<http.Response> Function(http.Request) handler) =>
@@ -653,6 +1071,8 @@ Map<String, Object?> _response({
   bool canRemit = false,
   int amountDueMinor = 20000,
   int amountCollectedMinor = 20500,
+  String refundStatus = 'assigned_to_rider',
+  Map<String, Object?> refundActions = const {},
 }) => {
   'data': {
     'currency': 'PHP',
@@ -737,10 +1157,11 @@ Map<String, Object?> _response({
                 'payout_no': 'RCP-44',
                 'refund_no': 'RFD-44',
                 'return_no': 'RET-44',
-                'status': 'assigned_to_rider',
+                'status': refundStatus,
                 'amount_minor': 12500,
                 'rider_name': 'Rider Two',
                 'acknowledgment_reference': 'ACK-44',
+                'actions': refundActions,
                 'timestamps': {'assigned_at': '2026-11-09T11:00:00+00:00'},
                 'history': [
                   {
@@ -762,6 +1183,19 @@ Map<String, Object?> _response({
       },
     },
   },
+};
+
+Map<String, Object?> _refundActionResponse(String status) => {
+  'data': {
+    'payout': {
+      'id': 4,
+      'payout_no': 'RCP-44',
+      'status': status,
+      'amount_minor': 12500,
+      'acknowledgment_reference': 'ACK-44-A01',
+    },
+  },
+  'message': 'Refund cash action recorded.',
 };
 
 Map<String, Object?> _actionResponse(String status) => {

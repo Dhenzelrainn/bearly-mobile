@@ -1,3 +1,4 @@
+import '../../../core/network/api_client.dart';
 import '../../auth/data/auth_service.dart';
 import '../models/logistics_dashboard.dart';
 import '../models/logistics_city_handoffs.dart';
@@ -61,6 +62,189 @@ class LogisticsRepository {
     action: 'remit',
     actualAmount: actualAmount,
   );
+
+  Future<List<LogisticsRefundCashRiderChoice>> eligibleRefundCashRiders({
+    required int payoutId,
+  }) async {
+    if (payoutId < 1) throw ArgumentError.value(payoutId, 'payoutId');
+    final response = await _authService.getWithSession(
+      '/api/mobile/logistics/cash-custody/refunds/$payoutId/eligible-riders',
+    );
+    if (response is! Map || response['data'] is! Map) {
+      throw const FormatException('Missing eligible Local Rider data.');
+    }
+    final riders = (response['data'] as Map)['riders'];
+    if (riders is! List) {
+      throw const FormatException('Missing eligible Local Rider list.');
+    }
+    return riders
+        .map(LogisticsRefundCashRiderChoice.fromJson)
+        .toList(growable: false);
+  }
+
+  Future<LogisticsRefundCashActionResult> receiveRefundCash({
+    required int payoutId,
+    required int expectedAmountMinor,
+    required String actualAmount,
+    required String reference,
+  }) {
+    _validateRefundAmount(
+      payoutId: payoutId,
+      expectedAmountMinor: expectedAmountMinor,
+      actualAmount: actualAmount,
+    );
+    _validateReference(reference);
+    return _refundCashAction(
+      payoutId: payoutId,
+      action: 'receive',
+      body: {
+        'actual_amount': actualAmount.trim(),
+        'reference': reference.trim(),
+      },
+      expectedStatus: 'awaiting_rider_assignment',
+    );
+  }
+
+  Future<LogisticsRefundCashActionResult> assignRefundCash({
+    required int payoutId,
+    required int riderUserId,
+  }) {
+    if (payoutId < 1 || riderUserId < 1) {
+      throw ArgumentError('Choose a valid refund payout and Local Rider.');
+    }
+    return _refundCashAction(
+      payoutId: payoutId,
+      action: 'assign',
+      body: {'rider_user_id': riderUserId},
+      expectedStatus: 'assigned_to_rider',
+    );
+  }
+
+  Future<LogisticsRefundCashActionResult> confirmRefundCashReturn({
+    required int payoutId,
+    required int expectedAmountMinor,
+    required String actualAmount,
+    required String reference,
+  }) {
+    _validateRefundAmount(
+      payoutId: payoutId,
+      expectedAmountMinor: expectedAmountMinor,
+      actualAmount: actualAmount,
+    );
+    _validateReference(reference);
+    return _refundCashAction(
+      payoutId: payoutId,
+      action: 'confirm-return',
+      body: {
+        'actual_amount': actualAmount.trim(),
+        'reference': reference.trim(),
+      },
+      expectedStatus: 'awaiting_rider_assignment',
+    );
+  }
+
+  Future<LogisticsRefundCashAcknowledgmentSlip> refundCashAcknowledgmentSlip({
+    required int payoutId,
+  }) async {
+    if (payoutId < 1) throw ArgumentError.value(payoutId, 'payoutId');
+    return LogisticsRefundCashAcknowledgmentSlip.fromResponse(
+      await _authService.getWithSession(
+        '/api/mobile/logistics/cash-custody/refunds/$payoutId/acknowledgment-slip',
+      ),
+    );
+  }
+
+  Future<ApiBinaryResponse> refundCashSignedProof({
+    required int payoutId,
+  }) async {
+    if (payoutId < 1) throw ArgumentError.value(payoutId, 'payoutId');
+    final response = await _authService.downloadWithSession(
+      path:
+          '/api/mobile/logistics/cash-custody/refunds/$payoutId/acknowledgment',
+    );
+    final mimeType = response.contentType?.split(';').first.trim();
+    if (response.bytes.isEmpty ||
+        !const {
+          'image/jpeg',
+          'image/png',
+          'image/webp',
+          'application/pdf',
+        }.contains(mimeType)) {
+      throw const FormatException(
+        'Bearly returned an unsupported signed proof.',
+      );
+    }
+    return response;
+  }
+
+  Future<LogisticsRefundCashActionResult> verifyRefundCashReceipt({
+    required int payoutId,
+    required String verificationNote,
+  }) {
+    if (payoutId < 1 ||
+        verificationNote.trim().length < 5 ||
+        verificationNote.trim().length > 1000) {
+      throw ArgumentError(
+        'Enter a verification note between 5 and 1000 characters.',
+      );
+    }
+    return _refundCashAction(
+      payoutId: payoutId,
+      action: 'verify-receipt',
+      body: {'verification_note': verificationNote.trim()},
+      expectedStatus: 'awaiting_finance_completion',
+    );
+  }
+
+  Future<LogisticsRefundCashActionResult> _refundCashAction({
+    required int payoutId,
+    required String action,
+    required Map<String, Object?> body,
+    required String expectedStatus,
+  }) => _authService.requestWithSession<LogisticsRefundCashActionResult>(
+    method: AuthenticatedRequestMethod.post,
+    path: '/api/mobile/logistics/cash-custody/refunds/$payoutId/$action',
+    body: body,
+    parse: (response) {
+      final result = LogisticsRefundCashActionResult.fromResponse(response);
+      if (result.id != payoutId || result.status != expectedStatus) {
+        throw const FormatException(
+          'Bearly returned an unexpected refund cash state.',
+        );
+      }
+      return result;
+    },
+  );
+
+  void _validateRefundAmount({
+    required int payoutId,
+    required int expectedAmountMinor,
+    required String actualAmount,
+  }) {
+    if (payoutId < 1 || expectedAmountMinor < 1) {
+      throw ArgumentError('Invalid refund cash amount or payout.');
+    }
+    final match = RegExp(
+      r'^(\d{1,8})(?:\.(\d{1,2}))?$',
+    ).firstMatch(actualAmount.trim());
+    if (match == null) {
+      throw ArgumentError('Enter an amount with up to two decimal places.');
+    }
+    final amountMinor =
+        (int.parse(match.group(1)!) * 100) +
+        int.parse((match.group(2) ?? '').padRight(2, '0'));
+    if (amountMinor != expectedAmountMinor) {
+      throw ArgumentError(
+        'The cash amount must exactly match the recorded payout.',
+      );
+    }
+  }
+
+  void _validateReference(String reference) {
+    if (reference.trim().isEmpty || reference.trim().length > 150) {
+      throw ArgumentError('Enter a receipt reference of 1 to 150 characters.');
+    }
+  }
 
   Future<LogisticsCodCashActionResult> _codCashAction({
     required int collectionId,

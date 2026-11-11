@@ -254,6 +254,10 @@ class LogisticsRefundCashPayout {
     required this.amountMinor,
     this.riderName,
     this.acknowledgmentReference,
+    this.failureReason,
+    this.amountReturnedToLogisticsMinor,
+    required this.references,
+    required this.actions,
     required this.timestamps,
     required this.history,
   });
@@ -266,6 +270,10 @@ class LogisticsRefundCashPayout {
   final int amountMinor;
   final String? riderName;
   final String? acknowledgmentReference;
+  final String? failureReason;
+  final int? amountReturnedToLogisticsMinor;
+  final Map<String, String?> references;
+  final LogisticsRefundCashActions actions;
   final Map<String, String?> timestamps;
   final List<LogisticsCashCustodyHistoryEvent> history;
 
@@ -282,6 +290,13 @@ class LogisticsRefundCashPayout {
       acknowledgmentReference: _optionalString(
         json['acknowledgment_reference'],
       ),
+      failureReason: _optionalString(json['failure_reason']),
+      amountReturnedToLogisticsMinor: _optionalInteger(
+        json['amount_returned_to_logistics_minor'],
+        'amount_returned_to_logistics_minor',
+      ),
+      references: _stringMap(json['references'] ?? const {}, 'references'),
+      actions: LogisticsRefundCashActions.fromJson(json['actions']),
       timestamps: _stringMap(json['timestamps'], 'timestamps'),
       history: _list(json['history'], 'history')
           .map(
@@ -289,6 +304,147 @@ class LogisticsRefundCashPayout {
                 LogisticsCashCustodyHistoryEvent.fromJson(item, refund: true),
           )
           .toList(growable: false),
+    );
+  }
+}
+
+class LogisticsRefundCashActions {
+  const LogisticsRefundCashActions({
+    this.canReceive = false,
+    this.canAssign = false,
+    this.canConfirmReturn = false,
+    this.canViewSlip = false,
+    this.canViewProof = false,
+    this.canVerifyProof = false,
+  });
+
+  final bool canReceive;
+  final bool canAssign;
+  final bool canConfirmReturn;
+  final bool canViewSlip;
+  final bool canViewProof;
+  final bool canVerifyProof;
+
+  factory LogisticsRefundCashActions.fromJson(Object? value) {
+    if (value == null) return const LogisticsRefundCashActions();
+    final json = _map(value, 'refund cash actions');
+    return LogisticsRefundCashActions(
+      canReceive: json['can_receive'] == true,
+      canAssign: json['can_assign'] == true,
+      canConfirmReturn: json['can_confirm_return'] == true,
+      canViewSlip: json['can_view_slip'] == true,
+      canViewProof: json['can_view_proof'] == true,
+      canVerifyProof: json['can_verify_proof'] == true,
+    );
+  }
+}
+
+class LogisticsRefundCashRiderChoice {
+  const LogisticsRefundCashRiderChoice({
+    required this.userId,
+    required this.name,
+  });
+
+  final int userId;
+  final String name;
+
+  factory LogisticsRefundCashRiderChoice.fromJson(Object? value) {
+    final json = _map(value, 'eligible Local Rider');
+    return LogisticsRefundCashRiderChoice(
+      userId: _integer(json['user_id'], 'user_id'),
+      name: _string(json['name'], 'name'),
+    );
+  }
+}
+
+class LogisticsRefundCashActionResult {
+  const LogisticsRefundCashActionResult({
+    required this.id,
+    required this.payoutNo,
+    required this.status,
+    required this.amountMinor,
+    this.acknowledgmentReference,
+  });
+
+  final int id;
+  final String payoutNo;
+  final String status;
+  final int amountMinor;
+  final String? acknowledgmentReference;
+
+  factory LogisticsRefundCashActionResult.fromResponse(Object? value) {
+    final response = _map(value, 'refund cash action response');
+    final data = _map(response['data'], 'refund cash action data');
+    final payout = _map(data['payout'], 'refund cash payout');
+    return LogisticsRefundCashActionResult(
+      id: _integer(payout['id'], 'id'),
+      payoutNo: _string(payout['payout_no'], 'payout_no'),
+      status: _string(payout['status'], 'status'),
+      amountMinor: _integer(payout['amount_minor'], 'amount_minor'),
+      acknowledgmentReference: _optionalString(
+        payout['acknowledgment_reference'],
+      ),
+    );
+  }
+}
+
+class LogisticsRefundCashAcknowledgmentSlip {
+  const LogisticsRefundCashAcknowledgmentSlip({
+    required this.reference,
+    required this.deliveryAttemptNumber,
+    required this.amountMinor,
+    required this.buyerOrRecipientName,
+    this.refundNo,
+    required this.payoutNo,
+    this.orderNo,
+    this.riderName,
+    required this.providerName,
+    required this.buyerConfirmation,
+    required this.signatureLabels,
+  });
+
+  final String reference;
+  final int deliveryAttemptNumber;
+  final int amountMinor;
+  final String buyerOrRecipientName;
+  final String? refundNo;
+  final String payoutNo;
+  final String? orderNo;
+  final String? riderName;
+  final String providerName;
+  final String buyerConfirmation;
+  final List<String> signatureLabels;
+
+  factory LogisticsRefundCashAcknowledgmentSlip.fromResponse(Object? value) {
+    final response = _map(value, 'acknowledgment slip response');
+    final data = _map(response['data'], 'acknowledgment slip data');
+    return LogisticsRefundCashAcknowledgmentSlip(
+      reference: _string(
+        data['acknowledgment_reference'],
+        'acknowledgment_reference',
+      ),
+      deliveryAttemptNumber: _integer(
+        data['delivery_attempt_number'],
+        'delivery_attempt_number',
+      ),
+      amountMinor: _integer(data['amount_minor'], 'amount_minor'),
+      buyerOrRecipientName: _string(
+        data['buyer_or_recipient_name'],
+        'buyer_or_recipient_name',
+      ),
+      refundNo: _optionalString(data['refund_no']),
+      payoutNo: _string(data['payout_no'], 'payout_no'),
+      orderNo: _optionalString(data['order_no']),
+      riderName: _optionalString(data['rider_name']),
+      providerName: _string(data['provider_name'], 'provider_name'),
+      buyerConfirmation: _string(
+        data['buyer_confirmation'],
+        'buyer_confirmation',
+      ),
+      signatureLabels: _list(
+        data['signature_labels'],
+        'signature_labels',
+      ).whereType<String>().toList(growable: false),
     );
   }
 }

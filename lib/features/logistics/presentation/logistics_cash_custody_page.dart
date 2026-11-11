@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:pdfrx/pdfrx.dart';
+import 'dart:typed_data';
 
 import '../../../core/network/api_client.dart';
 import '../../buyer/models/buyer_catalog_models.dart'
@@ -29,6 +31,7 @@ class _LogisticsCashCustodyPageState extends State<LogisticsCashCustodyPage> {
   bool _loadingCodMore = false;
   bool _loadingRefundMore = false;
   String? _actingCodAction;
+  String? _actingRefundAction;
 
   @override
   void initState() {
@@ -507,14 +510,643 @@ class _LogisticsCashCustodyPageState extends State<LogisticsCashCustodyPage> {
       children: [
         if (item.acknowledgmentReference != null)
           _detailLine('Acknowledgment', item.acknowledgmentReference!),
+        for (final entry in item.references.entries.where(
+          (entry) => entry.value != null,
+        ))
+          _detailLine('${_humanize(entry.key)} reference', entry.value!),
+        if (item.amountReturnedToLogisticsMinor != null)
+          _detailLine(
+            'Rider recorded cash returned',
+            _money(item.amountReturnedToLogisticsMinor!),
+          ),
+        if (item.failureReason != null)
+          _detailLine('Last delivery attempt', item.failureReason!),
         for (final entry in item.timestamps.entries.where(
           (entry) => entry.value != null,
         ))
           _detailLine(_humanize(entry.key), _date(entry.value)),
+        if (item.actions.canReceive ||
+            item.actions.canAssign ||
+            item.actions.canConfirmReturn ||
+            item.actions.canViewSlip ||
+            item.actions.canViewProof ||
+            item.actions.canVerifyProof) ...[
+          const Divider(height: 20),
+          Text(
+            'Refund cash actions',
+            style: Theme.of(context).textTheme.titleSmall,
+          ),
+          const SizedBox(height: 8),
+          if (item.actions.canReceive)
+            _refundActionButton(
+              item,
+              action: 'receive',
+              label: 'Acknowledge cash received',
+              icon: Icons.call_received,
+              onPressed: () => _receiveRefundCash(item),
+            ),
+          if (item.actions.canAssign)
+            _refundActionButton(
+              item,
+              action: 'assign',
+              label: 'Assign Local Rider',
+              icon: Icons.delivery_dining,
+              onPressed: () => _assignRefundCash(item),
+            ),
+          if (item.actions.canConfirmReturn)
+            _refundActionButton(
+              item,
+              action: 'confirm-return',
+              label: 'Confirm returned cash',
+              icon: Icons.assignment_return,
+              onPressed: () => _confirmRefundCashReturn(item),
+            ),
+          if (item.actions.canViewSlip)
+            _refundActionButton(
+              item,
+              action: 'slip',
+              label: 'View paper acknowledgment',
+              icon: Icons.receipt_long,
+              onPressed: () => _viewRefundAcknowledgmentSlip(item),
+            ),
+          if (item.actions.canViewProof)
+            _refundActionButton(
+              item,
+              action: 'proof',
+              label: 'View signed Buyer proof',
+              icon: Icons.verified_outlined,
+              onPressed: () => _viewRefundSignedProof(item),
+            ),
+          if (item.actions.canVerifyProof)
+            _refundActionButton(
+              item,
+              action: 'verify',
+              label: 'Verify Buyer proof',
+              icon: Icons.fact_check_outlined,
+              onPressed: () => _verifyRefundReceipt(item),
+            ),
+          if (item.status == 'awaiting_finance_completion')
+            const Text(
+              'Logistics verification is complete. Finance must record the final payout.',
+            ),
+        ],
         _history(item.history),
       ],
     ),
   );
+
+  Widget _refundActionButton(
+    LogisticsRefundCashPayout item, {
+    required String action,
+    required String label,
+    required IconData icon,
+    required Future<void> Function() onPressed,
+  }) {
+    final actionKey = '$action-${item.id}';
+    final busy = _actingRefundAction == actionKey;
+    return Padding(
+      padding: const EdgeInsets.only(top: 6),
+      child: SizedBox(
+        width: double.infinity,
+        child: OutlinedButton.icon(
+          key: ValueKey('refund-action-$action-${item.id}'),
+          onPressed:
+              _actingRefundAction == null &&
+                  _actingCodAction == null &&
+                  !_loading &&
+                  _error == null
+              ? onPressed
+              : null,
+          icon: busy
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : Icon(icon),
+          label: Text(label),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _receiveRefundCash(LogisticsRefundCashPayout item) async {
+    final values = await _cashConfirmationDialog(
+      item,
+      title: 'Confirm refund cash received',
+      amountLabel: 'Cash physically received from Finance',
+      referenceLabel: 'Logistics receipt reference',
+      confirmationLabel:
+          'I physically received and counted this exact cash amount.',
+    );
+    if (values == null || !mounted) return;
+    await _submitRefundMutation(
+      item,
+      action: 'receive',
+      successMessage: 'Refund cash receipt recorded.',
+      request: () => widget.repository.receiveRefundCash(
+        payoutId: item.id,
+        expectedAmountMinor: item.amountMinor,
+        actualAmount: values.$1,
+        reference: values.$2,
+      ),
+    );
+  }
+
+  Future<void> _confirmRefundCashReturn(LogisticsRefundCashPayout item) async {
+    final values = await _cashConfirmationDialog(
+      item,
+      title: 'Confirm cash returned by Rider',
+      amountLabel: 'Cash physically received from Rider',
+      referenceLabel: 'Logistics return receipt reference',
+      confirmationLabel:
+          'I counted and physically received the full cash amount.',
+    );
+    if (values == null || !mounted) return;
+    await _submitRefundMutation(
+      item,
+      action: 'confirm-return',
+      successMessage:
+          'Returned refund cash confirmed. A Rider can now be assigned.',
+      request: () => widget.repository.confirmRefundCashReturn(
+        payoutId: item.id,
+        expectedAmountMinor: item.amountMinor,
+        actualAmount: values.$1,
+        reference: values.$2,
+      ),
+    );
+  }
+
+  Future<(String, String)?> _cashConfirmationDialog(
+    LogisticsRefundCashPayout item, {
+    required String title,
+    required String amountLabel,
+    required String referenceLabel,
+    required String confirmationLabel,
+  }) async {
+    var amountValue = _amountText(item.amountMinor);
+    var referenceValue = '';
+    var confirmed = false;
+    final values = await showDialog<(String, String)>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: Text(title),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Payout ${item.payoutNo}'),
+                const SizedBox(height: 6),
+                Text('Recorded amount: ${_money(item.amountMinor)}'),
+                const SizedBox(height: 10),
+                TextFormField(
+                  key: ValueKey('refund-amount-${item.id}'),
+                  initialValue: amountValue,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  decoration: InputDecoration(
+                    labelText: amountLabel,
+                    prefixText: '₱ ',
+                  ),
+                  onChanged: (value) =>
+                      setDialogState(() => amountValue = value),
+                ),
+                TextFormField(
+                  key: ValueKey('refund-reference-${item.id}'),
+                  initialValue: referenceValue,
+                  maxLength: 150,
+                  decoration: InputDecoration(labelText: referenceLabel),
+                  onChanged: (value) =>
+                      setDialogState(() => referenceValue = value),
+                ),
+                CheckboxListTile(
+                  key: ValueKey('refund-confirm-${item.id}'),
+                  contentPadding: EdgeInsets.zero,
+                  controlAffinity: ListTileControlAffinity.leading,
+                  value: confirmed,
+                  onChanged: (value) =>
+                      setDialogState(() => confirmed = value ?? false),
+                  title: Text(confirmationLabel),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              key: ValueKey('refund-submit-${item.id}'),
+              onPressed:
+                  confirmed &&
+                      _cashAmountMatches(amountValue, item.amountMinor) &&
+                      referenceValue.trim().isNotEmpty &&
+                      referenceValue.trim().length <= 150
+                  ? () => Navigator.of(
+                      dialogContext,
+                    ).pop((amountValue.trim(), referenceValue.trim()))
+                  : null,
+              child: const Text('Confirm cash action'),
+            ),
+          ],
+        ),
+      ),
+    );
+    return values;
+  }
+
+  bool _cashAmountMatches(String value, int expectedMinor) {
+    final match = RegExp(
+      r'^(\d{1,8})(?:\.(\d{1,2}))?$',
+    ).firstMatch(value.trim());
+    if (match == null) return false;
+    final minor =
+        int.parse(match.group(1)!) * 100 +
+        int.parse((match.group(2) ?? '').padRight(2, '0'));
+    return minor == expectedMinor;
+  }
+
+  Future<void> _assignRefundCash(LogisticsRefundCashPayout item) async {
+    final actionKey = 'assign-${item.id}';
+    setState(() => _actingRefundAction = actionKey);
+    late final List<LogisticsRefundCashRiderChoice> riders;
+    try {
+      riders = await widget.repository.eligibleRefundCashRiders(
+        payoutId: item.id,
+      );
+    } catch (error) {
+      await _load();
+      if (!mounted) return;
+      setState(() => _actingRefundAction = null);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(_refundActionError(error, refreshed: _error == null)),
+        ),
+      );
+      return;
+    }
+    if (!mounted) return;
+    setState(() => _actingRefundAction = null);
+    if (riders.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'No eligible available Local Riders. Refresh before trying again.',
+          ),
+        ),
+      );
+      return;
+    }
+
+    int? selectedRiderId;
+    var confirmed = false;
+    final riderId = await showDialog<int>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Assign refund cash to Local Rider'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Payout ${item.payoutNo} · ${_money(item.amountMinor)}'),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<int>(
+                  key: ValueKey('refund-rider-choice-${item.id}'),
+                  initialValue: selectedRiderId,
+                  isExpanded: true,
+                  decoration: const InputDecoration(
+                    labelText: 'Eligible Local Rider',
+                  ),
+                  items: riders
+                      .map(
+                        (rider) => DropdownMenuItem<int>(
+                          value: rider.userId,
+                          child: Text(
+                            rider.name,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      )
+                      .toList(growable: false),
+                  onChanged: (value) =>
+                      setDialogState(() => selectedRiderId = value),
+                ),
+                const SizedBox(height: 8),
+                CheckboxListTile(
+                  key: ValueKey('refund-assign-confirm-${item.id}'),
+                  contentPadding: EdgeInsets.zero,
+                  controlAffinity: ListTileControlAffinity.leading,
+                  value: confirmed,
+                  onChanged: (value) =>
+                      setDialogState(() => confirmed = value ?? false),
+                  title: const Text(
+                    'I will hand the physical cash and printed acknowledgment to this Rider.',
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              key: ValueKey('refund-assign-submit-${item.id}'),
+              onPressed: confirmed && selectedRiderId != null
+                  ? () => Navigator.of(dialogContext).pop(selectedRiderId)
+                  : null,
+              child: const Text('Assign Rider'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (riderId == null || !mounted) return;
+    await _submitRefundMutation(
+      item,
+      action: 'assign',
+      successMessage:
+          'Local Rider assigned. Use the acknowledgment reference and give the Rider the printed slip with the cash.',
+      request: () => widget.repository.assignRefundCash(
+        payoutId: item.id,
+        riderUserId: riderId,
+      ),
+    );
+  }
+
+  Future<void> _verifyRefundReceipt(LogisticsRefundCashPayout item) async {
+    var noteValue = '';
+    var confirmed = false;
+    final note = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Verify Buyer signed proof'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text('Payout ${item.payoutNo} · ${_money(item.amountMinor)}'),
+                const SizedBox(height: 8),
+                TextFormField(
+                  key: ValueKey('refund-verification-note-${item.id}'),
+                  initialValue: noteValue,
+                  minLines: 2,
+                  maxLines: 4,
+                  maxLength: 1000,
+                  decoration: const InputDecoration(
+                    labelText: 'Verification note',
+                  ),
+                  onChanged: (value) => setDialogState(() => noteValue = value),
+                ),
+                CheckboxListTile(
+                  key: ValueKey('refund-verify-confirm-${item.id}'),
+                  contentPadding: EdgeInsets.zero,
+                  controlAffinity: ListTileControlAffinity.leading,
+                  value: confirmed,
+                  onChanged: (value) =>
+                      setDialogState(() => confirmed = value ?? false),
+                  title: const Text(
+                    'I reviewed the signed Buyer proof and matched it to this payout.',
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              key: ValueKey('refund-verify-submit-${item.id}'),
+              onPressed:
+                  confirmed &&
+                      noteValue.trim().length >= 5 &&
+                      noteValue.trim().length <= 1000
+                  ? () => Navigator.of(dialogContext).pop(noteValue.trim())
+                  : null,
+              child: const Text('Verify for Finance'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (note == null || !mounted) return;
+    await _submitRefundMutation(
+      item,
+      action: 'verify',
+      successMessage: 'Buyer proof verified. Finance must complete the refund.',
+      request: () => widget.repository.verifyRefundCashReceipt(
+        payoutId: item.id,
+        verificationNote: note,
+      ),
+    );
+  }
+
+  Future<void> _viewRefundAcknowledgmentSlip(
+    LogisticsRefundCashPayout item,
+  ) async {
+    final actionKey = 'slip-${item.id}';
+    setState(() => _actingRefundAction = actionKey);
+    try {
+      final slip = await widget.repository.refundCashAcknowledgmentSlip(
+        payoutId: item.id,
+      );
+      if (!mounted) return;
+      await showDialog<void>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Buyer cash refund acknowledgment'),
+          content: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _detailLine('Acknowledgment reference', slip.reference),
+                _detailLine(
+                  'Delivery attempt',
+                  '${slip.deliveryAttemptNumber}',
+                ),
+                _detailLine('Cash refund amount', _money(slip.amountMinor)),
+                _detailLine('Buyer / recipient', slip.buyerOrRecipientName),
+                if (slip.refundNo != null)
+                  _detailLine('Refund ID', slip.refundNo!),
+                _detailLine('Cash payout ID', slip.payoutNo),
+                if (slip.orderNo != null)
+                  _detailLine('Order ID', slip.orderNo!),
+                if (slip.riderName != null)
+                  _detailLine('Assigned Rider', slip.riderName!),
+                _detailLine('Logistics provider', slip.providerName),
+                const SizedBox(height: 8),
+                Text(slip.buyerConfirmation),
+                for (final label in slip.signatureLabels) ...[
+                  const SizedBox(height: 8),
+                  Text(label, style: Theme.of(context).textTheme.titleSmall),
+                  const Divider(),
+                  const Text('Printed name · Signature · Date and time'),
+                ],
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Close'),
+            ),
+          ],
+        ),
+      );
+    } catch (error) {
+      if (mounted) {
+        await _load();
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                _refundActionError(error, refreshed: _error == null),
+              ),
+            ),
+          );
+        }
+      }
+    } finally {
+      if (mounted) setState(() => _actingRefundAction = null);
+    }
+  }
+
+  Future<void> _viewRefundSignedProof(LogisticsRefundCashPayout item) async {
+    final actionKey = 'proof-${item.id}';
+    setState(() => _actingRefundAction = actionKey);
+    try {
+      final proof = await widget.repository.refundCashSignedProof(
+        payoutId: item.id,
+      );
+      if (!mounted) return;
+      final mimeType = proof.contentType!.split(';').first.trim();
+      await showDialog<void>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Signed Buyer proof'),
+          content: SizedBox(
+            width: double.maxFinite,
+            height: MediaQuery.sizeOf(context).height * 0.62,
+            child: mimeType == 'application/pdf'
+                ? PdfViewer.data(
+                    Uint8List.fromList(proof.bytes),
+                    sourceName: 'Signed Buyer acknowledgment.pdf',
+                  )
+                : InteractiveViewer(
+                    child: Image.memory(
+                      Uint8List.fromList(proof.bytes),
+                      fit: BoxFit.contain,
+                      errorBuilder: (context, error, stackTrace) =>
+                          const Center(
+                            child: Text(
+                              'The signed proof image could not be displayed.',
+                            ),
+                          ),
+                    ),
+                  ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Close'),
+            ),
+          ],
+        ),
+      );
+    } catch (error) {
+      if (mounted) {
+        await _load();
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                _refundActionError(error, refreshed: _error == null),
+              ),
+            ),
+          );
+        }
+      }
+    } finally {
+      if (mounted) setState(() => _actingRefundAction = null);
+    }
+  }
+
+  Future<void> _submitRefundMutation(
+    LogisticsRefundCashPayout item, {
+    required String action,
+    required String successMessage,
+    required Future<LogisticsRefundCashActionResult> Function() request,
+  }) async {
+    if (_actingRefundAction != null) return;
+    setState(() => _actingRefundAction = '$action-${item.id}');
+    try {
+      await request();
+      await _load();
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(successMessage)));
+      }
+    } catch (error) {
+      await _load();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(_refundActionError(error, refreshed: _error == null)),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _actingRefundAction = null);
+    }
+  }
+
+  String _refundActionError(Object error, {required bool refreshed}) {
+    if (error is ApiHttpException) {
+      return switch (error.statusCode) {
+        401 ||
+        403 => 'Your Logistics account cannot perform this refund cash action.',
+        404 =>
+          'This payout, slip, or proof is no longer available to this provider.',
+        409 =>
+          refreshed
+              ? 'The payout changed or is no longer eligible. Cash Custody was refreshed.'
+              : 'The payout changed; refresh Cash Custody before trying again.',
+        422 =>
+          '${_refundValidationMessage(error)} ${refreshed ? 'Cash Custody was refreshed.' : 'Refresh before trying again.'}',
+        _ =>
+          refreshed
+              ? 'The refund cash request failed. Cash Custody was refreshed.'
+              : 'The request failed and the latest state could not be loaded.',
+      };
+    }
+    if (error is ApiTimeoutException || error is ApiTransportException) {
+      return refreshed
+          ? 'The request may have reached Bearly. Cash Custody was refreshed; inspect the current state before any retry.'
+          : 'The request may have reached Bearly, but current state could not be loaded. Refresh before any retry.';
+    }
+    return refreshed
+        ? 'The request could not be confirmed. Cash Custody was refreshed; inspect its current state before any retry.'
+        : 'The request could not be confirmed and current state could not be loaded. Refresh before any retry.';
+  }
+
+  String _refundValidationMessage(ApiHttpException error) {
+    for (final messages in error.validationErrors.values) {
+      if (messages.isNotEmpty) return messages.first;
+    }
+    return 'The amount, reference, Rider, or verification note was rejected.';
+  }
 
   Widget _history(List<LogisticsCashCustodyHistoryEvent> events) {
     if (events.isEmpty) return const SizedBox.shrink();
